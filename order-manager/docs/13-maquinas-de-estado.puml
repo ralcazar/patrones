@@ -1,9 +1,9 @@
 @startuml 13-maquinas-de-estado
-title Máquinas de estado: EstadoSaga, EstadoPaso y EstadoOrden
+title Máquinas de estado: EstadoSaga y EstadoPaso (negocio) + EstadoOrden (cola de infraestructura)
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
-state "EstadoSaga (Saga)" as MSaga {
+state "EstadoSaga (Saga) — único estado de ejecución de negocio" as MSaga {
   state INICIADA
   state EN_CURSO
   state COMPLETADA
@@ -11,9 +11,9 @@ state "EstadoSaga (Saga)" as MSaga {
 
   [*] --> INICIADA : crear()
   INICIADA --> EN_CURSO : iniciar()\nsolicita pasoInicial()
-  EN_CURSO --> COMPLETADA : finalizar() tras completar\nel último paso
+  EN_CURSO --> COMPLETADA : finalizar() tras completar\nel último paso\n(fin del camino: sin eventos)
   INICIADA --> CANCELADA : cancelarPorSoporte()
-  EN_CURSO --> CANCELADA : cancelarPorSoporte()\n[solo SagaPrincipal y antes\ndel punto de no retorno (PASO7)]
+  EN_CURSO --> CANCELADA : cancelarPorSoporte()\n[solo SagaPrincipalRoot y antes\ndel punto de no retorno (PASO7)]
   COMPLETADA --> [*]
   CANCELADA --> [*]
 }
@@ -47,7 +47,7 @@ state "EstadoPaso (EjecucionPaso)" as MPaso {
   COMPENSADO --> [*]
 }
 
-state "EstadoOrden (Orden, patrón lease)" as MOrden {
+state "EstadoOrden (Orden, patrón lease) — estado interno de la cola: INFRAESTRUCTURA, no dominio" as MOrden {
   state PENDIENTE_O as "PENDIENTE"
   state EN_PROCESO
   state COMPLETADA_O as "COMPLETADA"
@@ -61,5 +61,10 @@ state "EstadoOrden (Orden, patrón lease)" as MOrden {
   COMPLETADA_O --> [*]
   FALLIDA --> [*]
 }
+
+note bottom of MOrden
+  La Orden ya no es un concepto de dominio: es la cola de tareas
+  durable del GestorOrdenes (paquete infraestructure.ordermanager.cola).
+end note
 
 @enduml

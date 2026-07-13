@@ -10,14 +10,13 @@ box "Aplicación" #F5FBEF
   participant "ServicioSagaPrincipal" as SVC
 end box
 box "Dominio" #FBF5EF
-  participant "SagaPrincipal" as SAGA
+  participant "SagaPrincipalRoot" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "PuertoConsultaSagasSoporte\n(queries BBDD, CQRS ligero)" as LECT
   participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
   participant "PuertoPaso2 / PuertoPaso1\n(compensaciones REST)" as PCOMP
   participant "PuertoTicketsSoporte" as TICK
-  participant "PuertoEventos" as EVT
 end box
 
 == Consultar todas las sagas en ejecución ==
@@ -25,7 +24,7 @@ OP -> REST ++ : ver sagas en ejecución
 REST -> SOP ++ : sagasEnEjecucion()
 SOP -> LECT ++ : sagasEnEjecucion()
 LECT -> LECT : SELECT sobre las tablas de sagas\nWHERE estado IN (INICIADA, EN_CURSO)
-return [SagaResumen(id, tipo, estado,\niniciadaEn, actualizadaEn, ...)]
+return [SagaResumen(id, tipo, externalId,\nestado, iniciadaEn, actualizadaEn, ...)]
 return
 return listado
 
@@ -37,6 +36,12 @@ LECT -> LECT : WHERE dinámico:\nlos criterios a null no aplican
 return [SagaResumen ...]
 return
 return listado filtrado
+
+note over SOP
+  Las intervenciones sobre un paso llegan con el paso por NOMBRE
+  (texto del REST) y el TipoSaga: ServicioSoporteSagas lo resuelve
+  al enum de la saga concreta y rutea al servicio correcto.
+end note
 
 == Arrancar la saga compensatoria (cancelación de la principal) ==
 OP -> REST ++ : cancelar tramitación (id, motivo)
@@ -50,8 +55,8 @@ group Transacción
     SAGA --> SVC : lanza PuntoNoRetornoSuperadoException
     note right of REST : el backoffice lo mapea a 409 Conflict
   else cancelable
-    SAGA -> SAGA : estado = CANCELADA\ncancela pasos activos + auditoría
-    SAGA --> SVC : [Compensar(PASO2), Compensar(PASO1),\nPublicarEvento(TramitacionCancelada)]\n(solo los pasos ya completados,\nen orden inverso)
+    SAGA -> SAGA : estado = CANCELADA\ncancela pasos activos + auditoría\n(la cancelación queda en estado y\nauditoría: no se publica ningún evento)
+    SAGA --> SVC : [Compensar(PASO2), Compensar(PASO1)]\n(solo los pasos ya completados,\nen orden inverso)
   end
   deactivate SAGA
   SVC -> REPO ++ : guardar(saga CANCELADA)
@@ -59,7 +64,7 @@ group Transacción
 end
 
 loop compensaciones en orden inverso: PASO2 y después PASO1
-  SVC -> PCOMP ++ : compensar(ComandoPaso.CompensarPasoN)
+  SVC -> PCOMP ++ : compensar(ComandoPasoPrincipal.CompensarPasoN)
   return ok
   group Transacción
     SVC -> REPO ++ : cargar(id)
@@ -70,8 +75,6 @@ loop compensaciones en orden inverso: PASO2 y después PASO1
     return
   end
 end
-SVC -> EVT ++ : publicar(TramitacionCancelada)
-return
 return
 return
 return 200 OK

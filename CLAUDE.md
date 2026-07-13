@@ -18,3 +18,19 @@ Guía para trabajar en este repositorio.
   en un flujo natural. Mostrar líneas de activación (`activate`/`deactivate`)
   para poder seguir el flujo.
 - Mantener también al día el índice `order-manager/docs/README.md`.
+
+## order-manager: pureza de las capas business
+
+- Todo lo que cuelga de `order-manager/src/main/java/com/ejemplo/app/business/**`
+  (dominio + aplicación) se escribe SOLO con Java puro (JDK) y la librería
+  **jMolecules** (`org.jmolecules:jmolecules-ddd`), cuyas anotaciones
+  (`@AggregateRoot`, `@Entity`, `@ValueObject`, `@Repository`, `@Service`,
+  `@Factory`, `@Identity` de `org.jmolecules.ddd.annotation.*`) expresan los
+  conceptos DDD del modelo.
+- Prohibido en `business/**`: Spring (`org.springframework.*`), JPA
+  (`jakarta.persistence.*`), Jackson (`com.fasterxml.*`), Kafka y cualquier
+  otra librería de infraestructura. Todo eso vive exclusivamente bajo
+  `com.ejemplo.app.infraestructure/**`.
+- La regla la verifica el test de ArchUnit `ReglasArquitecturaTest`
+  (`order-manager/src/test/java/...`): si un cambio lo rompe, el cambio está
+  mal ubicado, no el test.

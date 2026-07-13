@@ -8,7 +8,7 @@ box "Aplicación" #F5FBEF
   participant "ServicioSagaPrincipal" as SVC
 end box
 box "Dominio" #FBF5EF
-  participant "SagaPrincipal" as SAGA
+  participant "SagaPrincipalRoot" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
@@ -23,8 +23,8 @@ end note
 TRAB -> SVC ++ : (viene de 01: PASO1 quedó SOLICITADO\ny despachar() arranca la cadena)
 
 loop para cada paso N = 1..8
-  SVC -> PASOS ++ : puertoPasoN.ejecutar(ComandoPaso.EjecutarPasoN)
-  PASOS -> PASOS : llamada REST al servicio del paso N\n(idempotente por datoNegocio1)
+  SVC -> PASOS ++ : puertoPasoN.ejecutar(\nComandoPasoPrincipal.EjecutarPasoN)
+  PASOS -> PASOS : llamada REST al servicio del paso N\n(idempotente por externalId)
   return ResultadoPasoN
 
   SVC -> SVC : pasoCompletado(id, PASO_N, resultado)

@@ -9,9 +9,10 @@ gestor-ordenes:
   lease-segundos: 300
   ventana-reclamo: 20
 
-tramitacion:
+ordermanager:
   topics:
-    respuesta-asincrona: respuesta.asincrona
+    # Único uso de Kafka: la respuesta (diferida, puede tardar horas) de la saga secundaria 2
+    respuesta-secundaria2: respuesta.secundaria2
   limpieza:
     cron: "0 0 3 * * *"   # cada noche a las 03:00
     retencion-dias: 30    # solo se purga lo finalizado-bien más viejo que esto

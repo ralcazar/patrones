@@ -1,0 +1,96 @@
+@startuml 05-saga-secundaria2
+title Saga SECUNDARIA2 de principio a fin: solicitud REST, respuesta diferida por evento Kafka, timeout de 24h
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "ConsumidorRespuesta\nSecundaria2 (Kafka)" as CONS
+end box
+box "Aplicación" #F5FBEF
+  participant "ManejadorTareasSaga" as MANEJ
+  participant "ServicioSagaSecundaria2" as SSEC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaSecundaria2Root" as SAGA
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagaSecundaria2\n(BBDD sagas)" as REPOS
+  participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
+  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+  participant "PuertoSagaSecundaria2\n(REST de solicitud)" as PSOL
+end box
+
+== Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
+TRAB -> ORD ++ : reclamar orden PENDIENTE (lease)
+return Orden (ARRANCAR_SAGA, tipo SECUNDARIA2)
+TRAB -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
+MANEJ -> SSEC ++ : continuar(sagaId)
+group Transacción
+  SSEC -> REPOS ++ : cargar(id)
+  return SagaSecundaria2Root INICIADA
+  SSEC -> SAGA ++ : continuar() -> iniciar()
+  SAGA -> SAGA : estado = EN_CURSO\nSOLICITUD -> SOLICITADO
+  return [Decision.Ejecutar(SOLICITUD)]
+  SSEC -> ORD ++ : encolar(TimeoutSagaSecundaria2,\nejecutar_desde = ahora + 24 h)
+  return
+  SSEC -> REPOS ++ : guardar(saga)
+  return
+end
+SSEC -> PSOL ++ : solicitar(sagaId,\nComandoPasoSecundaria2.Solicitar) — REST,\nfuera de la tx (sagaId como correlación)
+return
+return
+return
+TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+
+== El servicio externo responde a posteriori (puede tardar) por Kafka ==
+[o-> CONS : evento en topic respuesta.secundaria2
+activate CONS
+CONS -> ORD ++ : encolar(TareaSaga.ResultadoSagaSecundaria2Ok\n(sagaId, ref, mensajeId))
+return
+[<-o CONS : ack del offset
+deactivate CONS
+
+== El pool procesa el resultado: la saga finaliza ==
+TRAB -> ORD ++ : reclamar orden (RESULTADO_SECUNDARIA2_OK)
+return Orden
+TRAB -> MANEJ ++ : procesar(tarea)
+MANEJ -> SSEC ++ : pasoCompletado(id, SOLICITUD,\nRespuesta(ref), mensajeId externo)
+SSEC -> DEDUP ++ : yaProcesado(mensajeId)?
+return no
+group Transacción
+  SSEC -> DEDUP ++ : registrar(mensajeId)
+  return
+  SSEC -> REPOS ++ : cargar(id)
+  return saga
+  SSEC -> SAGA ++ : completar(SOLICITUD, Respuesta(ref))
+  SAGA -> SAGA : finalizar():\nestado = COMPLETADA
+  return [] (la saga termina aquí:\nno se publica ningún evento)
+  SSEC -> REPOS ++ : guardar(saga)
+  return
+end
+return
+return
+TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+
+== Cuando el timeout vence (24 h después) ==
+TRAB -> ORD ++ : reclamar orden diferida (TIMEOUT_SECUNDARIA2)
+return Orden
+TRAB -> MANEJ ++ : procesar(tarea)
+MANEJ -> SSEC ++ : timeoutVencido(id)
+group Transacción
+  SSEC -> REPOS ++ : cargar(id)
+  return saga
+  SSEC -> SAGA ++ : fallar(SOLICITUD, timeout)
+  SAGA -> SAGA : guard: el paso ya está COMPLETADO
+  return [] (no-op)
+end
+return
+return
+note over SAGA, ORD
+  Si la respuesta NO hubiera llegado en 24 h, el timeout se convierte en
+  fallo reintentable: backoff y nueva solicitud REST (autocurativo) — ver 07.
+  El timeout se encola en la MISMA tx que deja SOLICITADO: si el proceso
+  muere tras el commit y antes del REST, también se autorecupera.
+end note
+@enduml

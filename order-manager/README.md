@@ -1,19 +1,25 @@
-# Sagas + GestorOrdenes fusionados (Java 21)
+# Sagas + GestorOrdenes fusionados (Java 21 + jMolecules)
 
 Flujo: saga principal `PASO1 → PASO2 → ... → PASO8` y, al completar el PASO8,
-arrancan 3 sagas independientes sin join: `ASINCRONA` (un paso vía Kafka),
-`SECUENCIAL` (SECUENCIAL1→SECUENCIAL2) y `SIMPLE` (un paso síncrono).
-Punto de no retorno en PASO7; backoff 30s→4h, ticket al 10º intento;
-soporte puede cancelar (solo pre-PASO7, arranca la compensación), reintentar,
-marcar-OK manual y consultar/filtrar las sagas (estado, fecha de inicio,
-fecha de última actualización). Un planificador purga periódicamente los
-datos antiguos que acabaron bien (ServicioLimpiezaDatos).
+arrancan 3 sagas secundarias independientes sin join: `SECUNDARIA1` (dos
+llamadas REST encadenadas al mismo servicio), `SECUNDARIA2` (una llamada REST
+cuya respuesta llega después como evento Kafka, puede tardar; timeout de 24 h)
+y `SECUNDARIA3` (una llamada REST). Punto de no retorno en PASO7; backoff
+30s→4h, ticket al 10º intento; soporte puede cancelar (solo pre-PASO7, arranca
+la compensación), reintentar, marcar-OK manual y consultar/filtrar las sagas
+(estado, fecha de inicio, fecha de última actualización). Un planificador
+purga periódicamente los datos antiguos que acabaron bien
+(ServicioLimpiezaDatos). **Todo termina cuando las sagas se completan: no se
+publican eventos de salida.**
 
-No hay sagas "padre" ni "hijas": todas son sagas del mismo concepto (`Saga`).
-Que al completarse una arranquen otras es una decisión del agregado que
-termina (`Decision.ArrancarSaga`); la saga arrancada nace independiente, con
-su contexto recortado, y no conserva ningún vínculo con la que la originó
-(la correlación de negocio es el `datoNegocio1Id`).
+No hay sagas "padre" ni "hijas": todas son sagas del mismo concepto (la base
+abstracta `Saga<P>`, que NO es un agregado; los agregados son
+`SagaPrincipalRoot` y las 3 `SagaSecundariaNRoot`). Que al completarse una
+arranquen otras es una decisión del agregado que termina
+(`Decision.ArrancarSaga`); la saga arrancada nace independiente, con su
+contexto recortado, y no conserva ningún vínculo con la que la originó: la
+única correlación es el **`externalId`** (UUID único por tramitación, presente
+en las 4 sagas).
 
 En [`docs/`](docs/README.md) hay diagramas de secuencia PlantUML de cada
 funcionalidad, con las capas en bloques de izquierda a derecha (adaptadores
@@ -22,8 +28,9 @@ activación. Se mantienen sincronizados con el código (ver `CLAUDE.md`).
 
 ## La idea de la fusión
 
-**Cada Orden = continuar una saga.** La tabla `ordenes` del GestorOrdenes pasa
-a ser la cola de tareas transaccional de las sagas:
+**Cada Orden = continuar una saga.** La tabla `ordenes` del GestorOrdenes es
+la cola de tareas transaccional de las sagas — y es infraestructura pura
+(paquete `infraestructure.ordermanager.cola`), no dominio:
 
 | Antes (diseño saga)                   | Ahora (fusionado)                        |
 |---------------------------------------|------------------------------------------|
@@ -31,10 +38,10 @@ a ser la cola de tareas transaccional de las sagas:
 | Caso de uso de recuperación de sagas   | Lease del GestorOrdenes (reentrega sola) |
 | Despacho post-commit (hueco de caída)  | Tarea encolada EN la misma transacción   |
 | Virtual threads para el paralelismo    | Pool de trabajadores del GestorOrdenes   |
-| Timeout del paso asíncrono programado  | Orden TIMEOUT_ASINCRONO diferida 15 min  |
+| Timeout de la respuesta programado     | Orden TIMEOUT_SECUNDARIA2 diferida 24 h  |
 
 **Regla de oro:** dentro de la transacción solo BBDD (estado de saga + sagas
-nuevas + tareas encoladas); fuera solo I/O externo (REST, Kafka, tickets). Si
+nuevas + tareas encoladas); fuera solo I/O externo (REST, tickets). Si
 el proceso muere en cualquier punto, el lease reentrega la tarea y
 `continuar()` reanuda desde el último paso confirmado.
 
@@ -43,47 +50,62 @@ el proceso muere en cualquier punto, el lease reentrega la tarea y
 - `INICIAR` — crea la saga principal (o la retoma si ya existía: idempotente)
   y ejecuta la cadena síncrona completa dentro de un procesar().
 - `ARRANCAR_SAGA` — encolada ×3 en la MISMA transacción que marca la
-  principal COMPLETADA y crea las 3 sagas nuevas. El pool las procesa en paralelo.
-- `REINTENTAR` — con `ejecutar_desde = ahora + backoff`. Sustituye al scheduler.
-- `TIMEOUT_ASINCRONO` — encolada al solicitar el paso ASINCRONO, en la misma
-  tx; si la respuesta no llega en 15 min se convierte en fallo reintentable
-  (autocurativo incluso si el proceso murió antes de publicar en Kafka).
-- `RESULTADO_ASINCRONO_OK / _ERROR` — las encola el consumer fino de Kafka
-  (ConsumidorRespuestaAsincrona) y hace ack; deduplicadas por mensajeId.
+  principal COMPLETADA y crea las 3 sagas secundarias; lleva el `tipoSaga`
+  para rutear al servicio correcto. El pool las procesa en paralelo.
+- `REINTENTAR` — con `ejecutar_desde = ahora + backoff`. Sustituye al
+  scheduler. El paso viaja por nombre y se reconstruye con `PasoSaga.de`.
+- `TIMEOUT_SECUNDARIA2` — encolada al solicitar el paso SOLICITUD, en la misma
+  tx; si la respuesta no llega en 24 h se convierte en fallo reintentable
+  (autocurativo incluso si el proceso murió antes de la llamada REST).
+- `RESULTADO_SECUNDARIA2_OK / _ERROR` — las encola el consumer fino de Kafka
+  (ConsumidorRespuestaSecundaria2, único uso de Kafka) y hace ack;
+  deduplicadas por mensajeId.
 
-## Estructura
-
-Nada vive suelto en la raíz del demonio: cada capa separa en dos subcarpetas
-la saga (el negocio) del gestor de órdenes (el motor de trabajo).
+## Estructura (business = Java puro + jMolecules; infraestructure = Spring)
 
 ```
-com/ejemplo/tramitacion/
-  dominio/
-    saga/    NÚCLEO puro de las sagas (sin frameworks; junto con
-             aplicacion/saga compila con javac 21): Saga, SagaPrincipal,
-             SagaSucesora (Asincrona/Secuencial/Simple), Decision,
-             ComandoPaso, ResultadoPaso, value objects y excepciones.
-    orden/   Modelo del gestor de trabajo: Orden, EstadoOrden,
-             ProcesadorOrden (contrato de procesamiento, idempotente).
-             La entidad lleva anotaciones JPA a propósito: el patrón lease
-             se apoya en la tabla y un mapeo aparte sería 1:1.
-  aplicacion/
-    saga/
-      tarea/            TareaSaga (sealed)
-      puerto/entrada/   CasoUso* (iniciar, intervenir, consultar, resultados)
-      puerto/salida/    PuertoPaso1..8, PuertoAsincrono/Secuencial/Simple,
-                        PuertoColaTareas, repositorios, UnidadDeTrabajo...
-      servicio/         ServicioSagaPrincipal, ServicioSagasSucesoras,
-                        ManejadorTareasSaga, ServicioEncolarTramitacion,
-                        ServicioSoporteSagas
-  infraestructura/
-    orden/   El demonio genérico (Spring): GestorOrdenes, TrabajadorOrdenes,
+com/ejemplo/app/
+  business/ordermanager/          SOLO JDK + jMolecules (regla en CLAUDE.md,
+    │                             verificada por ReglasArquitecturaTest)
+    dominio/
+      comun/           Shared kernel: Saga<P> (base, no agregado), PasoSaga,
+                       Decision<P>, ComandoPaso/ResultadoPaso (marcadoras),
+                       ContextoArranque, SagaId, ExternalId, EstadoSaga,
+                       EstadoPaso, TipoSaga, RefPaso1/5/7, excepciones.
+      sagaprincipal/   SagaPrincipalRoot (@AggregateRoot), PasoSagaPrincipal,
+                       ComandoPasoPrincipal, ResultadoPasoPrincipal,
+                       ContextoTramitacion, RefPaso2/3/4/6/8, DatoNegocio2/3.
+      sagasecundaria1/ SagaSecundaria1Root: INICIO → CONFIRMACION (2 REST).
+      sagasecundaria2/ SagaSecundaria2Root: SOLICITUD (REST + evento Kafka).
+      sagasecundaria3/ SagaSecundaria3Root: EJECUCION (1 REST).
+    aplicacion/
+      tarea/           TareaSaga (sealed)
+      puerto/entrada/  CasoUso* (iniciar, resultados<P>, intervenir,
+                       consultar, limpiar)
+      puerto/salida/   PuertoPaso1..8, PuertoSagaSecundaria1/2/3,
+                       RepositorioSagaPrincipal + RepositorioSagaSecundaria1/2/3,
+                       PuertoColaTareas, PuertoMensajesProcesados,
+                       PuertoTicketsSoporte, PuertoConsultaSagasSoporte,
+                       UnidadDeTrabajo
+      servicio/        ServicioSagaBase<P,S> + ServicioSagaPrincipal +
+                       ServicioSagaSecundaria1/2/3, ManejadorTareasSaga,
+                       ServicioSoporteSagas, ServicioEncolarTramitacion,
+                       ServicioLimpiezaDatos
+  infraestructure/ordermanager/   Spring, JPA, Kafka, Jackson
+    cola/    El motor genérico de trabajo: Orden (@Entity), EstadoOrden,
+             ProcesadorOrden, GestorOrdenes, TrabajadorOrdenes,
              ServicioOrdenes, RepositorioOrdenes, ConfiguracionEjecucionAsincrona.
-             No importa NADA del paquete de sagas.
+             No importa NADA del modelo de sagas.
     saga/    El puente sagas<->gestor: ProcesadorOrdenSaga, AdaptadorColaTareas,
-             CodecTareaSaga, UnidadDeTrabajoSpring, ConsumidorRespuestaAsincrona.
+             CodecTareaSaga, UnidadDeTrabajoSpring, PlanificadorLimpieza,
+             ConsumidorRespuestaSecundaria2, ConfiguracionAplicacion.
+  OrderManagerApplication.java
 resources/db/migration/V1, V2       resources/application.yml
 ```
+
+Build: Gradle (`./gradlew build`). El test `ReglasArquitecturaTest` (ArchUnit)
+verifica que `business/**` no depende de Spring/JPA/Jackson/Kafka ni de
+`infraestructure/**`.
 
 ## Ajustes del GestorOrdenes para la fusión (mínimos)
 
@@ -102,22 +124,22 @@ resources/db/migration/V1, V2       resources/application.yml
 
 La reentrega por lease implica at-least-once hacia los servicios externos:
 si un paso quedó SOLICITADO sin resultado registrado, `continuar()` lo
-re-ejecuta. Los servicios de los pasos 1, 3 y 8 y de las sagas ASINCRONA,
-SECUENCIAL y SIMPLE deben ser idempotentes por datoNegocio1 (o tolerar el
-duplicado). Dentro del sistema, la idempotencia la garantizan los guards de
-estado de los agregados y la dedup por mensajeId.
+re-ejecuta. Los servicios de los pasos 1, 3 y 8 y de las 3 sagas secundarias
+deben ser idempotentes por externalId (o tolerar el duplicado). Dentro del
+sistema, la idempotencia la garantizan los guards de estado de los agregados
+y la dedup por mensajeId.
 
 ## Pendiente de implementar (infra restante)
 
-- Adaptadores REST de PuertoPaso1..PuertoSimple (fallo → ExcepcionServicioExterno).
-- PuertoAsincrono: publicación del comando en Kafka con sagaId como correlación.
-- Repositorios JPA de SagaPrincipal/SagaSucesora con versión optimista
+- Adaptadores REST de PuertoPaso1..8 y PuertoSagaSecundaria1/2/3
+  (fallo → ExcepcionServicioExterno).
+- Repositorios JPA de las 4 sagas con versión optimista
   (lanzar ConcurrenciaOptimistaException) + sus migraciones.
 - PuertoMensajesProcesados (tabla dedup, misma tx).
 - PuertoConsultaSagasSoporte (queries para la pantalla: sagasBloqueadas,
-  sagasEnEjecucion, buscar con FiltroSagas; puede unir ordenes por saga_id
-  para mostrar también las tareas pendientes/diferidas).
-- Adaptadores JPA de las purgas de la limpieza (purgarFinalizadasAntesDe de
-  ambos repositorios y purgarAnterioresA del dedup; la de ordenes ya existe).
+  sagasEnEjecucion, buscar con FiltroSagas, vistaTramitacion por externalId;
+  puede unir ordenes por saga_id para mostrar también las tareas
+  pendientes/diferidas).
+- PuertoTicketsSoporte.
 - Controlador REST del backoffice sobre CasoUsoIntervenirSaga (mapear
-  PuntoNoRetornoSuperadoException → 409).
+  PuntoNoRetornoSuperadoException → 409; el paso viaja por nombre).

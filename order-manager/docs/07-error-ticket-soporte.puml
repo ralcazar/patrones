@@ -5,10 +5,10 @@ box "Adaptadores de entrada" #EFF5FB
   participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
 end box
 box "Aplicación" #F5FBEF
-  participant "Servicio de la saga\n(ServicioSagaPrincipal o\nServicioSagasSucesoras)" as SVC
+  participant "Servicio de la saga\n(ServicioSagaPrincipal o\nServicioSagaSecundaria1/2/3)" as SVC
 end box
 box "Dominio" #FBF5EF
-  participant "Saga\n(principal o sucesora)" as SAGA
+  participant "Saga\n(principal o secundaria)" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "Repositorio de la saga\n(BBDD sagas)" as REPO

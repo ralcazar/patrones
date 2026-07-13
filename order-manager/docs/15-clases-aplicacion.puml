@@ -1,5 +1,5 @@
 @startuml 15-clases-aplicacion
-title Capa de aplicación: casos de uso, servicios y puertos (arquitectura hexagonal)
+title Capa de aplicación (business.ordermanager.aplicacion): casos de uso, servicios y puertos
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
@@ -8,23 +8,20 @@ package "puerto.entrada (casos de uso)" {
   interface CasoUsoIniciarTramitacion {
     +iniciar(ComandoIniciarTramitacion) : SagaId
   }
-  interface CasoUsoProcesarResultadoPrincipal {
-    +pasoCompletado(id, paso, resultado, msgId)
-    +pasoFallido(id, paso, motivo, msgId)
-  }
-  interface CasoUsoProcesarResultadoSucesora {
-    +pasoCompletado(id, paso, resultado, msgId)
-    +pasoFallido(id, paso, motivo, msgId)
+  interface "CasoUsoProcesarResultadoPaso<P>" as CasoUsoProcesarResultadoPaso {
+    +pasoCompletado(id, paso : P, resultado, msgId)
+    +pasoFallido(id, paso : P, motivo, msgId)
   }
   interface CasoUsoIntervenirSaga {
     +cancelarPrincipal(id, quien, motivo)
-    +reintentarPaso(tipo, id, paso, quien)
-    +marcarPasoOk(tipo, id, paso, quien, ...)
+    +reintentarPaso(tipo, id, nombrePaso, quien)
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)
   }
   interface CasoUsoConsultarSagasSoporte {
     +sagasBloqueadas() : List<SagaResumen>
     +sagasEnEjecucion() : List<SagaResumen>
     +buscar(FiltroSagas) : List<SagaResumen>
+    +vistaTramitacion(externalId) : VistaTramitacion
     +detalle(tipo, id) : SagaDetalle
   }
   interface CasoUsoLimpiarDatosAntiguos {
@@ -33,8 +30,25 @@ package "puerto.entrada (casos de uso)" {
 }
 
 package "servicio" {
-  class ServicioEncolarTramitacion {
-    -cola : PuertoColaTareas
+  abstract class "ServicioSagaBase<P, S extends Saga<P>>" as Base <<@Service>> {
+    #tx : UnidadDeTrabajo
+    #dedup : PuertoMensajesProcesados
+    #cola : PuertoColaTareas
+    #tickets : PuertoTicketsSoporte
+    +continuar(id)
+    +pasoCompletado / pasoFallido / reintentar
+    +reanudarPaso / marcarPasoOk
+    #procesar(msgId, id, accion)  «tx + dedup + reintento optimista»
+    #despachar(id, decisiones)  «I/O fuera de la tx»
+    {abstract} #cargar(id) : S
+    {abstract} #guardar(S)
+    {abstract} #ejecutar(id, paso, cmd)
+    #alSolicitarEjecucion(saga, d)  «hook tx»
+    #arrancarSaga(saga, d)  «hook tx»
+    #compensar(id, paso, cmd)
+  }
+
+  class ServicioEncolarTramitacion <<@Service>> {
     +iniciar(cmd) : SagaId
   }
   note bottom of ServicioEncolarTramitacion
@@ -43,87 +57,80 @@ package "servicio" {
     y responde 202 al instante.
   end note
 
-  class ManejadorTareasSaga {
-    -principal : ServicioSagaPrincipal
-    -sucesoras : ServicioSagasSucesoras
+  class ManejadorTareasSaga <<@Service>> {
     +procesar(TareaSaga)
   }
+  note bottom of ManejadorTareasSaga
+    Router: switch por tipo de tarea y TipoSaga.
+    Única frontera donde PasoSaga se baja
+    al enum concreto de cada saga.
+  end note
 
-  class ServicioSagaPrincipal {
-    -repo : RepositorioSagaPrincipal
-    -repoSucesoras : RepositorioSagasSucesoras
-    -tx : UnidadDeTrabajo
-    -dedup : PuertoMensajesProcesados
-    -cola : PuertoColaTareas
-    -tickets : PuertoTicketsSoporte
-    -eventos : PuertoEventos
+  class ServicioSagaPrincipal <<@Service>> {
+    -repo + 3 repos secundarios
     -puertoPaso1..puertoPaso8
-    +iniciarOContinuar(id, datoNegocio1Id, ...)
-    +pasoCompletado(id, paso, resultado, msgId)
-    +pasoFallido(id, paso, motivo, msgId)
-    +reintentar(id, paso)
+    +iniciarOContinuar(id, externalId, ...)
     +cancelar(id, quien, motivo)
-    +reanudarPaso(id, paso, quien)
-    +marcarPasoOk(id, paso, quien, ...)
+    #arrancarSaga: crea la secundaria +\nencola ArrancarSaga(id, tipo) en la tx
+  }
+  class ServicioSagaSecundaria1 <<@Service>> {
+    -repo : RepositorioSagaSecundaria1
+    -puerto : PuertoSagaSecundaria1
+    #ejecutar: INICIO y CONFIRMACION\nsíncronos, reentran con el resultado
+  }
+  class ServicioSagaSecundaria2 <<@Service>> {
+    -repo : RepositorioSagaSecundaria2
+    -puerto : PuertoSagaSecundaria2
+    TIMEOUT_RESPUESTA = 24 h
+    +timeoutVencido(id)
+    #alSolicitarEjecucion: encola el timeout en la tx
+    #ejecutar: REST de solicitud; NO reentra\n(la respuesta llega por Kafka)
+  }
+  class ServicioSagaSecundaria3 <<@Service>> {
+    -repo : RepositorioSagaSecundaria3
+    -puerto : PuertoSagaSecundaria3
+    #ejecutar: un paso síncrono
   }
 
-  class ServicioSagasSucesoras {
-    -repo : RepositorioSagasSucesoras
-    -tx / dedup / cola / tickets / eventos
-    -puertoAsincrono / puertoSecuencial / puertoSimple
-    +continuar(id)
-    +pasoCompletado(id, paso, resultado, msgId)
-    +pasoFallido(id, paso, motivo, msgId)
-    +timeoutVencido(id, paso)
-    +reintentar(id, paso)
-    +reanudarPaso(id, paso, quien)
-    +marcarPasoOk(id, paso, quien, ...)
-  }
-
-  class ServicioSoporteSagas {
-    -principal : ServicioSagaPrincipal
-    -sucesoras : ServicioSagasSucesoras
+  class ServicioSoporteSagas <<@Service>> {
+    -principal + 3 secundarias
     -consultas : PuertoConsultaSagasSoporte
+    resuelve nombrePaso -> enum por TipoSaga
   }
 
-  class ServicioLimpiezaDatos {
-    -repoPrincipal / repoSucesoras
+  class ServicioLimpiezaDatos <<@Service>> {
+    -repoPrincipal + 3 repos secundarios
     -dedup / cola / tx
     +purgarAnterioresA(corte) : ResultadoLimpieza
   }
-  note bottom of ServicioLimpiezaDatos
-    Purga en UNA transacción lo finalizado-bien
-    anterior al corte: sagas COMPLETADA/CANCELADA,
-    dedup caducado y tareas COMPLETADAs.
-  end note
 
   class ReintentoOptimista <<package-private>> {
     {static} ejecutar(Supplier<T>) : T
     MAX_REINTENTOS = 5
   }
-  class FabricaResultadoManual <<package-private>> {
-    {static} paraPaso(paso, Map datos) : ResultadoPaso
+  class FabricaResultadoManual <<@Factory, package-private>> {
+    {static} paraPaso(PasoSaga, Map datos) : ResultadoPaso
   }
 }
 
 package "tarea" {
   interface TareaSaga <<sealed>> {
     +sagaId() : SagaId
-    IniciarTramitacion(sagaId, datoNegocio1Id, datos, datoNegocio2)
-    ArrancarSaga(sagaId)
+    IniciarTramitacion(sagaId, externalId, datos, datoNegocio2)
+    ArrancarSaga(sagaId, tipo)
     Reintentar(tipo, sagaId, paso, intentoNum)
-    TimeoutAsincrono(sagaId)
-    ResultadoAsincronoOk(sagaId, ref, mensajeId)
-    ResultadoAsincronoError(sagaId, ..., reintentable, mensajeId)
+    TimeoutSagaSecundaria2(sagaId)
+    ResultadoSagaSecundaria2Ok(sagaId, ref, mensajeId)
+    ResultadoSagaSecundaria2Error(sagaId, ..., reintentable, mensajeId)
   }
 }
 
 package "puerto.salida" {
-  interface RepositorioSagaPrincipal {
+  interface RepositorioSagaPrincipal <<@Repository>> {
     +crear / existe / cargar / guardar
     +purgarFinalizadasAntesDe(corte)
   }
-  interface RepositorioSagasSucesoras {
+  interface "RepositorioSagaSecundaria1/2/3" as ReposSecundarias <<@Repository>> {
     +crear / cargar / guardar
     +purgarFinalizadasAntesDe(corte)
   }
@@ -143,70 +150,80 @@ package "puerto.salida" {
   interface PuertoTicketsSoporte {
     +abrir(sagaId, tipo, paso, motivo, ...) : TicketId
   }
-  interface PuertoEventos {
-    +publicar(EventoTramitacion)
-  }
   interface PuertoConsultaSagasSoporte {
     +sagasBloqueadas() / sagasEnEjecucion()
-    +buscar(filtro) / detalle(tipo, id)
+    +buscar(filtro) / vistaTramitacion(externalId)
+    +detalle(tipo, id)
   }
   interface "PuertoPaso1 .. PuertoPaso8" as PuertosPaso {
     +ejecutar(cmd)
     +compensar(cmd)  «solo 1 y 2»
   }
-  interface "PuertoAsincrono / PuertoSecuencial / PuertoSimple" as PuertosSucesoras {
-    +ejecutar(sagaId, cmd)
+  interface PuertoSagaSecundaria1 {
+    +iniciar(cmd) / confirmar(cmd)  «REST síncrono»
+  }
+  interface PuertoSagaSecundaria2 {
+    +solicitar(sagaId, cmd)  «REST; respuesta\ndiferida por evento Kafka»
+  }
+  interface PuertoSagaSecundaria3 {
+    +ejecutar(cmd)  «REST síncrono»
   }
 }
 
-' Layout: apilar los puertos de salida en columnas (smetana los pone en fila)
-RepositorioSagaPrincipal -[hidden]down- RepositorioSagasSucesoras
-RepositorioSagasSucesoras -[hidden]down- UnidadDeTrabajo
+' Layout: apilar los puertos en columnas (smetana los pone en fila)
+RepositorioSagaPrincipal -[hidden]down- ReposSecundarias
+ReposSecundarias -[hidden]down- UnidadDeTrabajo
 PuertoColaTareas -[hidden]down- PuertoMensajesProcesados
 PuertoMensajesProcesados -[hidden]down- PuertoTicketsSoporte
-PuertoTicketsSoporte -[hidden]down- PuertoEventos
-PuertosPaso -[hidden]down- PuertosSucesoras
-PuertosSucesoras -[hidden]down- PuertoConsultaSagasSoporte
-CasoUsoIniciarTramitacion -[hidden]down- CasoUsoProcesarResultadoPrincipal
-CasoUsoProcesarResultadoPrincipal -[hidden]down- CasoUsoProcesarResultadoSucesora
+PuertosPaso -[hidden]down- PuertoSagaSecundaria1
+PuertoSagaSecundaria1 -[hidden]down- PuertoSagaSecundaria2
+PuertoSagaSecundaria2 -[hidden]down- PuertoSagaSecundaria3
+CasoUsoIniciarTramitacion -[hidden]down- CasoUsoProcesarResultadoPaso
 CasoUsoIntervenirSaga -[hidden]down- CasoUsoConsultarSagasSoporte
 CasoUsoConsultarSagasSoporte -[hidden]down- CasoUsoLimpiarDatosAntiguos
 
 ' Realizaciones
 CasoUsoIniciarTramitacion <|.. ServicioEncolarTramitacion
-CasoUsoProcesarResultadoPrincipal <|.. ServicioSagaPrincipal
-CasoUsoProcesarResultadoSucesora <|.. ServicioSagasSucesoras
+CasoUsoProcesarResultadoPaso <|.. Base
 CasoUsoIntervenirSaga <|.. ServicioSoporteSagas
 CasoUsoConsultarSagasSoporte <|.. ServicioSoporteSagas
 CasoUsoLimpiarDatosAntiguos <|.. ServicioLimpiezaDatos
 
+' Herencia de la base
+Base <|-- ServicioSagaPrincipal
+Base <|-- ServicioSagaSecundaria1
+Base <|-- ServicioSagaSecundaria2
+Base <|-- ServicioSagaSecundaria3
+
 ' Dependencias
 ServicioEncolarTramitacion --> PuertoColaTareas
 ManejadorTareasSaga --> ServicioSagaPrincipal
-ManejadorTareasSaga --> ServicioSagasSucesoras
+ManejadorTareasSaga --> ServicioSagaSecundaria1
+ManejadorTareasSaga --> ServicioSagaSecundaria2
+ManejadorTareasSaga --> ServicioSagaSecundaria3
 ManejadorTareasSaga ..> TareaSaga : despacha por tipo
 ServicioSoporteSagas --> ServicioSagaPrincipal
-ServicioSoporteSagas --> ServicioSagasSucesoras
+ServicioSoporteSagas --> ServicioSagaSecundaria1
+ServicioSoporteSagas --> ServicioSagaSecundaria2
+ServicioSoporteSagas --> ServicioSagaSecundaria3
 ServicioSoporteSagas --> PuertoConsultaSagasSoporte
+ServicioSoporteSagas ..> FabricaResultadoManual
+Base --> UnidadDeTrabajo
+Base --> PuertoMensajesProcesados
+Base --> PuertoColaTareas
+Base --> PuertoTicketsSoporte
+Base ..> ReintentoOptimista
 ServicioSagaPrincipal --> RepositorioSagaPrincipal
-ServicioSagaPrincipal --> RepositorioSagasSucesoras : crea sucesoras\nen la misma tx
-ServicioSagaPrincipal --> UnidadDeTrabajo
-ServicioSagaPrincipal --> PuertoMensajesProcesados
-ServicioSagaPrincipal --> PuertoColaTareas
-ServicioSagaPrincipal --> PuertoTicketsSoporte
-ServicioSagaPrincipal --> PuertoEventos
+ServicioSagaPrincipal --> ReposSecundarias : crea secundarias\nen la misma tx
 ServicioSagaPrincipal --> PuertosPaso
-ServicioSagaPrincipal ..> ReintentoOptimista
-ServicioSagaPrincipal ..> FabricaResultadoManual
-ServicioSagasSucesoras --> RepositorioSagasSucesoras
-ServicioSagasSucesoras --> UnidadDeTrabajo
-ServicioSagasSucesoras --> PuertoMensajesProcesados
-ServicioSagasSucesoras --> PuertoColaTareas
-ServicioSagasSucesoras --> PuertoTicketsSoporte
-ServicioSagasSucesoras --> PuertoEventos
-ServicioSagasSucesoras --> PuertosSucesoras
+ServicioSagaSecundaria1 --> ReposSecundarias
+ServicioSagaSecundaria1 --> PuertoSagaSecundaria1
+ServicioSagaSecundaria2 --> ReposSecundarias
+ServicioSagaSecundaria2 --> PuertoSagaSecundaria2
+ServicioSagaSecundaria3 --> ReposSecundarias
+ServicioSagaSecundaria3 --> PuertoSagaSecundaria3
 ServicioLimpiezaDatos --> RepositorioSagaPrincipal
-ServicioLimpiezaDatos --> RepositorioSagasSucesoras
+ServicioLimpiezaDatos --> ReposSecundarias
 ServicioLimpiezaDatos --> PuertoMensajesProcesados
 ServicioLimpiezaDatos --> PuertoColaTareas
 ServicioLimpiezaDatos --> UnidadDeTrabajo

@@ -13,7 +13,7 @@ box "Aplicación" #F5FBEF
   participant "ServicioSagaPrincipal" as SVC
 end box
 box "Dominio" #FBF5EF
-  participant "SagaPrincipal" as SAGA
+  participant "SagaPrincipalRoot" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
@@ -45,12 +45,12 @@ return Orden (INICIAR)
 TRAB -> PROC ++ : procesar(orden)
 PROC -> PROC : decodificar contenido a\nTareaSaga.IniciarTramitacion
 PROC -> MANEJ ++ : procesar(tarea)
-MANEJ -> SVC ++ : iniciarOContinuar(sagaId,\ndatoNegocio1Id, datos, datoNegocio2)
+MANEJ -> SVC ++ : iniciarOContinuar(sagaId,\nexternalId, datos, datoNegocio2)
 
 group Transacción (UnidadDeTrabajo)
   SVC -> REPO ++ : existe(sagaId)?
   return no: saga nueva
-  SVC -> SAGA ++ : SagaPrincipal.crear(...)
+  SVC -> SAGA ++ : SagaPrincipalRoot.crear(sagaId,\nexternalId, ...)
   return saga INICIADA
   SVC -> SAGA ++ : iniciar()
   SAGA -> SAGA : estado = EN_CURSO\nPASO1 -> SOLICITADO

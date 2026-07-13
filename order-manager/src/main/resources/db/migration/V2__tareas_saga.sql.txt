@@ -1,5 +1,6 @@
 -- Fusión GestorOrdenes + sagas: las órdenes pasan a ser tareas de saga,
--- con ejecución diferida (backoff de reintentos, timeout del paso asíncrono).
+-- con ejecución diferida (backoff de reintentos, timeout de 24h de la respuesta
+-- de la saga secundaria 2).
 
 ALTER TABLE ordenes ADD COLUMN ejecutar_desde TIMESTAMPTZ NOT NULL DEFAULT now();
 ALTER TABLE ordenes ADD COLUMN saga_id        VARCHAR(36);
