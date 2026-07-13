@@ -1,0 +1,57 @@
+@startuml 03-finalizacion-saga-principal
+title Finalización de la saga principal: COMPLETADA + 3 órdenes PENDIENTE en un solo commit
+
+box "Aplicación" #F5FBEF
+  participant "ServicioSagaPrincipal" as SVC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaPrincipal" as SAGA
+  participant "SagaAsincrona /\nSagaSecuencial /\nSagaSimple" as SUC
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
+  participant "RepositorioSagasSucesoras\n(BBDD sagas)" as REPOS
+  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+  participant "PuertoEventos" as EVT
+end box
+
+[-> SVC : PuertoPaso8 devuelve su resultado (ver 02)
+activate SVC
+
+group Transacción única (UnidadDeTrabajo)
+  SVC -> REPO ++ : cargar(id)
+  return saga (PASO8 SOLICITADO)
+  SVC -> SAGA ++ : completar(PASO8, resultado)
+  SAGA -> SAGA : completarYArrancarSagas():\nestado = COMPLETADA
+  return [ArrancarSaga(ContextoAsincrona),\nArrancarSaga(ContextoSecuencial),\nArrancarSaga(ContextoSimple),\nPublicarEvento(SagaCompletada)]
+
+  loop por cada Decision.ArrancarSaga (x3)
+    SVC -> SUC ++ : SagaXxx.crear(SagaId.nuevo(),\ncontexto recortado)
+    return sucesora INICIADA\n(independiente, sin vínculo con la principal)
+    SVC -> REPOS ++ : crear(sucesora)
+    return
+    SVC -> ORD ++ : encolar(TareaSaga.ArrancarSaga(idNueva))
+    ORD -> ORD : INSERT orden estado = PENDIENTE\n(tipo_tarea = ARRANCAR_SAGA)
+    return
+  end
+
+  SVC -> REPO ++ : guardar(principal COMPLETADA)
+  return
+end
+
+note over SVC, ORD
+  UN solo commit: la principal COMPLETADA, las 3 sagas sucesoras
+  creadas y sus 3 órdenes en estado PENDIENTE. Sin hueco de caída:
+  si el proceso muere antes del commit, el lease reentrega la tarea.
+end note
+
+SVC -> EVT ++ : publicar(SagaCompletada)\n(fuera de la transacción)
+return
+[<- SVC
+deactivate SVC
+
+note over ORD
+  El pool del GestorOrdenes encontrará las 3 órdenes PENDIENTE
+  y procesará cada sucesora en paralelo — ver 04, 05 y 06.
+end note
+@enduml

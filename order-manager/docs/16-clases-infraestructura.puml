@@ -1,0 +1,115 @@
+@startuml 16-clases-infraestructura
+title Capa de infraestructura: gestor de órdenes (lease) y adaptadores de saga
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+package "infraestructura.orden" {
+  class GestorOrdenes <<@Component>> {
+    -servicioOrdenes : ServicioOrdenes
+    -trabajador : TrabajadorOrdenes
+    +despachar()  «@Scheduled»
+  }
+  class TrabajadorOrdenes <<@Component>> {
+    -servicioOrdenes : ServicioOrdenes
+    -procesador : ProcesadorOrden
+    +drenar()  «pool @Async»
+    +parar()
+  }
+  class ServicioOrdenes <<@Service>> {
+    -repo : RepositorioOrdenes
+    -lease : Duration
+    +encolar(contenido, sagaId, tipoTarea, ejecutarDesde)
+    +purgarCompletadas(corte)
+    +hayTrabajoPendiente() : boolean
+    +reclamarSiguiente(token) : Optional<Orden>
+    +finalizar(id, token, ok)
+  }
+  interface RepositorioOrdenes <<JpaRepository>> {
+    +buscarCandidatas(ahora, limiteLease, ventana)
+    +reclamar(id, token, ahora, limiteLease)
+    +finalizar(id, estado, token)
+    +purgarCompletadasAntesDe(corte)
+  }
+  note bottom of RepositorioOrdenes
+    Patrón lease con UPDATE condicional.
+    Elegible si ejecutar_desde <= now:
+    reintentos y timeouts son órdenes
+    diferidas, sin scheduler externo.
+  end note
+  class ConfiguracionEjecucionAsincrona <<@Configuration>> {
+    +ejecutorOrdenes(tamanoPool) : Executor
+  }
+}
+
+package "infraestructura.saga" {
+  class ProcesadorOrdenSaga <<@Component>> {
+    -manejador : ManejadorTareasSaga
+    -codec : CodecTareaSaga
+    +procesar(Orden)
+  }
+  class CodecTareaSaga <<@Component>> {
+    +tipoDe(TareaSaga) : String
+    +codificar(TareaSaga) : String
+    +decodificar(String) : TareaSaga
+  }
+  class AdaptadorColaTareas <<@Component>> {
+    -servicioOrdenes : ServicioOrdenes
+    -codec : CodecTareaSaga
+    +encolar(tarea)
+    +encolar(tarea, noAntesDe)
+    +purgarTerminadasAntesDe(corte)
+  }
+  class PlanificadorLimpieza <<@Component>> {
+    -limpieza : CasoUsoLimpiarDatosAntiguos
+    -retencion : Duration
+    +ejecutar()  «@Scheduled cron»
+  }
+  class ConsumidorRespuestaAsincrona <<@Component>> {
+    -cola : PuertoColaTareas
+    +onRespuesta(mensaje, ...)  «@KafkaListener»
+  }
+  class UnidadDeTrabajoSpring <<@Component>> {
+    -template : TransactionTemplate
+    +enTransaccion(Supplier<T>) : T
+  }
+}
+
+package "dominio.orden" {
+  interface ProcesadorOrden {
+    +procesar(Orden)
+  }
+  class Orden <<@Entity>>
+}
+
+package "aplicacion (puertos y servicios)" {
+  interface PuertoColaTareas
+  interface UnidadDeTrabajo
+  interface CasoUsoLimpiarDatosAntiguos
+  class ManejadorTareasSaga
+  class ServicioEncolarTramitacion
+}
+
+' Realizaciones de puertos e interfaces
+ProcesadorOrden <|.. ProcesadorOrdenSaga
+PuertoColaTareas <|.. AdaptadorColaTareas
+UnidadDeTrabajo <|.. UnidadDeTrabajoSpring
+
+' Flujo del gestor de órdenes (agnóstico de sagas)
+GestorOrdenes --> ServicioOrdenes : ¿hay trabajo?
+GestorOrdenes --> TrabajadorOrdenes : drenar()
+TrabajadorOrdenes --> ServicioOrdenes : reclamar / finalizar
+TrabajadorOrdenes --> ProcesadorOrden : procesar(orden)
+ServicioOrdenes --> RepositorioOrdenes
+RepositorioOrdenes ..> Orden
+
+' Fusión gestor <-> sagas (el gestor NO conoce el modelo de sagas)
+ProcesadorOrdenSaga --> CodecTareaSaga : decodificar contenido
+ProcesadorOrdenSaga --> ManejadorTareasSaga : procesar(TareaSaga)
+AdaptadorColaTareas --> ServicioOrdenes : encolar(JSON, sagaId, tipo)
+AdaptadorColaTareas --> CodecTareaSaga : codificar
+ConsumidorRespuestaAsincrona --> PuertoColaTareas : encola resultado\ncomo TareaSaga
+ServicioEncolarTramitacion --> PuertoColaTareas
+PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos : purgarAnterioresA\n(ahora - retención)
+
+@enduml

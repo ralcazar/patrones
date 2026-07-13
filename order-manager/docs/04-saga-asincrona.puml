@@ -1,0 +1,97 @@
+@startuml 04-saga-asincrona
+title Saga ASINCRONA de principio a fin: comando por Kafka, respuesta por evento, timeout vigilante
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "ConsumidorRespuesta\nAsincrona (Kafka)" as CONS
+end box
+box "Aplicación" #F5FBEF
+  participant "ManejadorTareasSaga" as MANEJ
+  participant "ServicioSagasSucesoras" as SSUC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaAsincrona" as SAGA
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagasSucesoras\n(BBDD sagas)" as REPOS
+  participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
+  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+  participant "PuertoAsincrono\n(topic comando Kafka)" as KAF
+  participant "PuertoEventos" as EVT
+end box
+
+== Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
+TRAB -> ORD ++ : reclamar orden PENDIENTE (lease)
+return Orden (ARRANCAR_SAGA)
+TRAB -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
+MANEJ -> SSUC ++ : continuar(sagaId)
+group Transacción
+  SSUC -> REPOS ++ : cargar(id)
+  return SagaAsincrona INICIADA
+  SSUC -> SAGA ++ : continuar() -> iniciar()
+  SAGA -> SAGA : estado = EN_CURSO\nASINCRONO -> SOLICITADO
+  return [Decision.Ejecutar(ASINCRONO)]
+  SSUC -> ORD ++ : encolar(TimeoutAsincrono,\nejecutar_desde = ahora + 15 min)
+  return
+  SSUC -> REPOS ++ : guardar(saga)
+  return
+end
+SSUC -> KAF ++ : publicar comando\n(sagaId como correlación) — fuera de la tx
+return
+return
+return
+TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+
+== El servicio externo responde por Kafka ==
+[o-> CONS : evento en topic respuesta.asincrona
+activate CONS
+CONS -> ORD ++ : encolar(TareaSaga.ResultadoAsincronoOk\n(sagaId, ref, mensajeId))
+return
+[<-o CONS : ack del offset
+deactivate CONS
+
+== El pool procesa el resultado: la saga finaliza ==
+TRAB -> ORD ++ : reclamar orden (RESULTADO_ASINCRONO_OK)
+return Orden
+TRAB -> MANEJ ++ : procesar(tarea)
+MANEJ -> SSUC ++ : pasoCompletado(id, ASINCRONO,\nresultado, mensajeId externo)
+SSUC -> DEDUP ++ : yaProcesado(mensajeId)?
+return no
+group Transacción
+  SSUC -> DEDUP ++ : registrar(mensajeId)
+  return
+  SSUC -> REPOS ++ : cargar(id)
+  return saga
+  SSUC -> SAGA ++ : completar(ASINCRONO, ref)
+  SAGA -> SAGA : finalizar():\nestado = COMPLETADA
+  return [PublicarEvento(SagaCompletada)]
+  SSUC -> REPOS ++ : guardar(saga)
+  return
+end
+SSUC -> EVT ++ : publicar(SagaCompletada)
+return
+return
+return
+TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+
+== Cuando el timeout vence (15 min después) ==
+TRAB -> ORD ++ : reclamar orden diferida (TIMEOUT_ASINCRONO)
+return Orden
+TRAB -> MANEJ ++ : procesar(tarea)
+MANEJ -> SSUC ++ : timeoutVencido(id, ASINCRONO)
+group Transacción
+  SSUC -> REPOS ++ : cargar(id)
+  return saga
+  SSUC -> SAGA ++ : fallar(ASINCRONO, timeout)
+  SAGA -> SAGA : guard: el paso ya está COMPLETADO
+  return [] (no-op)
+end
+return
+return
+note over SAGA, ORD
+  Si la respuesta NO hubiera llegado, el timeout se convierte en fallo
+  reintentable: backoff y nueva publicación en Kafka (autocurativo) — ver 07.
+end note
+@enduml

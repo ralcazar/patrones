@@ -1,0 +1,65 @@
+@startuml 13-maquinas-de-estado
+title Máquinas de estado: EstadoSaga, EstadoPaso y EstadoOrden
+' Sin Graphviz instalado: usar el motor de layout embebido
+!pragma layout smetana
+
+state "EstadoSaga (Saga)" as MSaga {
+  state INICIADA
+  state EN_CURSO
+  state COMPLETADA
+  state CANCELADA
+
+  [*] --> INICIADA : crear()
+  INICIADA --> EN_CURSO : iniciar()\nsolicita pasoInicial()
+  EN_CURSO --> COMPLETADA : finalizar() tras completar\nel último paso
+  INICIADA --> CANCELADA : cancelarPorSoporte()
+  EN_CURSO --> CANCELADA : cancelarPorSoporte()\n[solo SagaPrincipal y antes\ndel punto de no retorno (PASO7)]
+  COMPLETADA --> [*]
+  CANCELADA --> [*]
+}
+
+state "EstadoPaso (EjecucionPaso)" as MPaso {
+  state PENDIENTE
+  state SOLICITADO
+  state ESPERANDO_REINTENTO
+  state BLOQUEADO_SOPORTE
+  state COMPLETADO
+  state COMPLETADO_MANUAL
+  state CANCELADO
+  state COMPENSADO
+
+  [*] --> PENDIENTE : EjecucionPaso.nuevo()
+  PENDIENTE --> SOLICITADO : solicitar()\nDecision.Ejecutar(comando)
+  SOLICITADO --> COMPLETADO : completar(resultado)
+  SOLICITADO --> ESPERANDO_REINTENTO : fallar(motivo)\n[reintentable y no agotado]\nDecision.ProgramarReintento(backoff)
+  SOLICITADO --> BLOQUEADO_SOPORTE : fallar(motivo)\n[no reintentable o intentos agotados]\nDecision.AbrirTicketSoporte
+  ESPERANDO_REINTENTO --> SOLICITADO : reintentar()\nal vencer el backoff
+  BLOQUEADO_SOPORTE --> SOLICITADO : reanudarPorSoporte()\nresetea intentos
+  BLOQUEADO_SOPORTE --> COMPLETADO_MANUAL : marcarOkManual()\n[con datos si el paso los exige]
+  SOLICITADO --> CANCELADO : cancelación de la saga
+  ESPERANDO_REINTENTO --> CANCELADO : cancelación de la saga
+  BLOQUEADO_SOPORTE --> CANCELADO : cancelación de la saga
+  COMPLETADO --> COMPENSADO : compensacionCompletada()\n[solo PASO1 y PASO2\nal cancelar la principal]
+
+  COMPLETADO --> [*]
+  COMPLETADO_MANUAL --> [*]
+  CANCELADO --> [*]
+  COMPENSADO --> [*]
+}
+
+state "EstadoOrden (Orden, patrón lease)" as MOrden {
+  state PENDIENTE_O as "PENDIENTE"
+  state EN_PROCESO
+  state COMPLETADA_O as "COMPLETADA"
+  state FALLIDA
+
+  [*] --> PENDIENTE_O : encolar()\n[elegible cuando ejecutar_desde <= now]
+  PENDIENTE_O --> EN_PROCESO : reclamar()\nUPDATE condicional: token + reclamada_en
+  EN_PROCESO --> EN_PROCESO : lease expirado\n(reclamada_en < limiteLease):\nre-reclamada por otro trabajador
+  EN_PROCESO --> COMPLETADA_O : finalizar(ok)\n[token coincide]
+  EN_PROCESO --> FALLIDA : finalizar(error)\n[token coincide]
+  COMPLETADA_O --> [*]
+  FALLIDA --> [*]
+}
+
+@enduml

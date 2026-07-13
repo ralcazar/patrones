@@ -1,0 +1,74 @@
+@startuml 01-arranque-saga-nueva
+title Arranque de una nueva saga: el pool encuentra en BBDD una orden en estado PENDIENTE
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "API REST\ntramitación" as REST
+  participant "GestorOrdenes\n(sondeo @Scheduled)" as GESTOR
+  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
+  participant "ProcesadorOrdenSaga\n+ CodecTareaSaga" as PROC
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioEncolar\nTramitacion" as ENC
+  participant "ManejadorTareasSaga" as MANEJ
+  participant "ServicioSagaPrincipal" as SVC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaPrincipal" as SAGA
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
+  participant "Tabla ordenes\n(ServicioOrdenes +\nRepositorioOrdenes)" as ORD
+end box
+
+== Intake: el registro queda PENDIENTE en BBDD ==
+[o-> REST : POST /tramitaciones
+activate REST
+REST -> ENC ++ : iniciar(comando)
+ENC -> ENC : sagaId = SagaId.nuevo()
+ENC -> ORD ++ : encolar(TareaSaga.IniciarTramitacion)
+ORD -> ORD : INSERT orden estado = PENDIENTE\n(tipo_tarea = INICIAR)
+return
+return sagaId
+[<-o REST : 202 Accepted (sagaId)
+deactivate REST
+
+== El sondeo encuentra la orden PENDIENTE: arranca la saga ==
+loop cada intervalo-sondeo-ms
+  GESTOR -> ORD ++ : hayTrabajoPendiente()
+  return sí: hay orden PENDIENTE\ncon ejecutar_desde <= ahora
+end
+GESTOR ->> TRAB : drenar() (hilo del pool)
+activate TRAB
+TRAB -> ORD ++ : reclamarSiguiente(token)
+ORD -> ORD : UPDATE condicional (lease):\nPENDIENTE -> EN_PROCESO
+return Orden (INICIAR)
+TRAB -> PROC ++ : procesar(orden)
+PROC -> PROC : decodificar contenido a\nTareaSaga.IniciarTramitacion
+PROC -> MANEJ ++ : procesar(tarea)
+MANEJ -> SVC ++ : iniciarOContinuar(sagaId,\ndatoNegocio1Id, datos, datoNegocio2)
+
+group Transacción (UnidadDeTrabajo)
+  SVC -> REPO ++ : existe(sagaId)?
+  return no: saga nueva
+  SVC -> SAGA ++ : SagaPrincipal.crear(...)
+  return saga INICIADA
+  SVC -> SAGA ++ : iniciar()
+  SAGA -> SAGA : estado = EN_CURSO\nPASO1 -> SOLICITADO
+  return [Decision.Ejecutar(PASO1)]
+  SVC -> REPO ++ : crear(saga)
+  return
+end
+note right of SVC
+  Si la saga ya existía (reentrega del lease
+  tras una caída), continuar() reanuda desde
+  el último paso confirmado: idempotente.
+end note
+
+note over SVC : despachar(decisiones): ejecuta la cadena\nPASO1..PASO8 — ver 02-pasos-saga-principal
+return
+return
+return
+TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+deactivate TRAB
+@enduml

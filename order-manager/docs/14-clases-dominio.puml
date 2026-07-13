@@ -1,0 +1,218 @@
+@startuml 14-clases-dominio
+title Capa de dominio: agregados de saga y modelo de la cola de órdenes
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+package "dominio.saga.general" {
+
+  abstract class Saga <<sealed>> {
+    #id : SagaId
+    #pasos : EnumMap<Paso, EjecucionPaso>
+    #auditoria : List<AuditoriaIntervencion>
+    #reintentos : PoliticaReintentos
+    #estado : EstadoSaga
+    #version : long
+    +iniciar() : List<Decision>
+    +continuar() : List<Decision>
+    +completar(paso, resultado) : List<Decision>
+    +fallar(paso, motivo) : List<Decision>
+    +reintentar(paso) : List<Decision>
+    +reanudarPorSoporte(paso, quien) : List<Decision>
+    +marcarOkManual(paso, quien, justificacion, datos) : List<Decision>
+    +esCancelable() : boolean
+    {abstract} +tipo() : TipoSaga
+    {abstract} +datoNegocio1Id() : DatoNegocio1Id
+    {abstract} #pasoInicial() : Paso
+    {abstract} #comandoPara(paso) : ComandoPaso
+    {abstract} #aplicarResultado(paso, resultado)
+    {abstract} #transicionTras(paso) : List<Decision>
+  }
+
+  class SagaPrincipal <<final>> {
+    -ctx : ContextoTramitacion
+    +{static} crear(id, datoNegocio1Id, datos, datoNegocio2)
+    +{static} rehidratar(...)
+    +cancelarPorSoporte(quien, motivo) : List<Decision>
+    +compensacionCompletada(paso)
+    +compensacionFallida(paso, motivo) : List<Decision>
+    +esCancelable() : boolean
+  }
+  note right of SagaPrincipal
+    PASO1..PASO8 síncronos.
+    Punto de no retorno: PASO7 completado.
+    Al completar PASO8 emite ArrancarSaga
+    para ASINCRONA, SECUENCIAL y SIMPLE.
+  end note
+
+  abstract class SagaSucesora <<sealed>> {
+    #datoNegocio1Id : DatoNegocio1Id
+  }
+
+  class SagaAsincrona <<final>> {
+    +{static} crear(id, ContextoArranque.ContextoAsincrona)
+    +refPaso5() : RefPaso5
+    +refAsincrono() : RefAsincrono
+  }
+  class SagaSecuencial <<final>> {
+    +{static} crear(id, ContextoArranque.ContextoSecuencial)
+    +refPaso1() : RefPaso1
+    +refSecuencial1() : RefSecuencial1
+    +refSecuencial2() : RefSecuencial2
+  }
+  class SagaSimple <<final>> {
+    +{static} crear(id, ContextoArranque.ContextoSimple)
+    +refPaso7() : RefPaso7
+    +refSimple() : RefSimple
+  }
+
+  class EjecucionPaso {
+    -paso : Paso
+    -estado : EstadoPaso
+    -intentos : int
+    -ultimoFallo : MotivoFallo
+    ~solicitar()
+    ~completar()
+    ~completarManual()
+    ~esperarReintento()
+    ~bloquear()
+    ~cancelar()
+    ~compensado()
+    ~resetearIntentos()
+    ~registrarFallo(motivo)
+  }
+
+  enum EstadoSaga {
+    INICIADA
+    EN_CURSO
+    COMPLETADA
+    CANCELADA
+  }
+  enum EstadoPaso {
+    PENDIENTE
+    SOLICITADO
+    ESPERANDO_REINTENTO
+    BLOQUEADO_SOPORTE
+    COMPLETADO
+    COMPLETADO_MANUAL
+    CANCELADO
+    COMPENSADO
+    +esActivo() : boolean
+    +cuentaComoCompletado() : boolean
+  }
+  enum Paso {
+    PASO1 .. PASO8
+    ASINCRONO
+    SECUENCIAL1
+    SECUENCIAL2
+    SIMPLE
+  }
+  enum TipoSaga {
+    PRINCIPAL
+    ASINCRONA
+    SECUENCIAL
+    SIMPLE
+  }
+
+  interface Decision <<sealed>> {
+    Ejecutar(paso, comando)
+    ProgramarReintento(paso, espera, intentoNum)
+    AbrirTicketSoporte(sagaId, tipo, paso, motivo, intentos, cancelable)
+    Compensar(paso, comando)
+    ArrancarSaga(contexto)
+    PublicarEvento(evento)
+  }
+  interface ComandoPaso <<sealed>> {
+    EjecutarPaso1 .. EjecutarPaso8
+    EjecutarAsincrono / Secuencial1 / Secuencial2 / Simple
+    CompensarPaso1 / CompensarPaso2
+  }
+  interface ResultadoPaso <<sealed>> {
+    ResultadoPaso1 .. ResultadoPaso8
+    ResultadoAsincrono / Secuencial1 / Secuencial2 / Simple
+  }
+  interface ContextoArranque <<sealed>> {
+    ContextoAsincrona(datoNegocio1Id, refPaso5)
+    ContextoSecuencial(datoNegocio1Id, refPaso1)
+    ContextoSimple(datoNegocio1Id, refPaso7)
+  }
+  interface EventoTramitacion <<sealed>> {
+    SagaCompletada(sagaId, tipo, datoNegocio1Id)
+    TramitacionCancelada(sagaId, motivo)
+  }
+
+  class ContextoTramitacion {
+    -datoNegocio1Id / datoNegocio3 / datoNegocio2
+    -refPaso1 .. refPaso8
+    +aplicar(ResultadoPaso)
+  }
+  class PoliticaReintentos {
+    +esperaTras(intentosFallidos) : Duration
+    +agotado(intentosFallidos) : boolean
+  }
+  class MotivoFallo <<record>> {
+    codigo / detalle / esReintentable
+    +{static} timeout() / errorTecnico() / errorNegocio()
+  }
+  class AuditoriaIntervencion <<record>> {
+    cuando / quien / accion / detalle
+  }
+
+  class SagaId <<VO>>
+  class DatoNegocio1Id <<VO>>
+  class MensajeId <<VO>>
+  class TicketId <<VO>>
+  class UsuarioSoporte <<VO>>
+
+  Saga <|-- SagaPrincipal
+  Saga <|-- SagaSucesora
+  SagaSucesora <|-- SagaAsincrona
+  SagaSucesora <|-- SagaSecuencial
+  SagaSucesora <|-- SagaSimple
+
+  Saga "1" *-- "n" EjecucionPaso : pasos
+  Saga *-- PoliticaReintentos
+  Saga o-- EstadoSaga
+  Saga "1" *-- "n" AuditoriaIntervencion
+  EjecucionPaso o-- EstadoPaso
+  EjecucionPaso o-- Paso
+  EjecucionPaso o-- MotivoFallo
+  SagaPrincipal *-- ContextoTramitacion
+  Saga ..> Decision : emite
+  Saga ..> ComandoPaso
+  Saga ..> ResultadoPaso
+  SagaPrincipal ..> ContextoArranque : ArrancarSaga
+  Saga ..> EventoTramitacion
+}
+
+package "dominio.saga.pasoN / secuencial / asincrono / simple" {
+  class "RefPaso1..RefPaso8,\nRefSecuencial1/2, RefAsincrono, RefSimple,\nDatoNegocio2, DatoNegocio3" as Refs <<VO>>
+}
+ContextoTramitacion o-- Refs
+
+package "dominio.orden" {
+  class Orden <<@Entity ordenes>> {
+    -id : Long
+    -estado : EstadoOrden
+    -reclamadaEn : Instant
+    -token : String
+    -contenido : String  «TareaSaga JSON»
+    -ejecutarDesde : Instant
+    -sagaId : String
+    -tipoTarea : String
+    +{static} tareaSaga(contenido, sagaId, tipoTarea, ejecutarDesde)
+  }
+  enum EstadoOrden {
+    PENDIENTE
+    EN_PROCESO
+    COMPLETADA
+    FALLIDA
+  }
+  interface ProcesadorOrden {
+    +procesar(Orden)
+  }
+  Orden o-- EstadoOrden
+  ProcesadorOrden ..> Orden
+}
+
+@enduml

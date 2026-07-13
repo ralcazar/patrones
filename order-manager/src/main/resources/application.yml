@@ -1,0 +1,35 @@
+# --- Parámetros del GestorOrdenes (fusionado con las sagas) ---
+gestor-ordenes:
+  tamano-pool: 10          # nº de trabajadores = tareas de saga procesadas en paralelo
+  intervalo-sondeo-ms: 500 # cada cuánto el dispatcher revisa/rellena el pool
+  # ¡IMPORTANTE tras la fusión!: la tarea INICIAR ejecuta la cadena completa
+  # PASO1->...->PASO8 dentro de un solo procesar().
+  # El lease DEBE superar la duración del peor caso de esa cadena (suma de
+  # timeouts HTTP de los 8 servicios), o otro trabajador "robará" la orden en curso.
+  lease-segundos: 300
+  ventana-reclamo: 20
+
+tramitacion:
+  topics:
+    respuesta-asincrona: respuesta.asincrona
+  limpieza:
+    cron: "0 0 3 * * *"   # cada noche a las 03:00
+    retencion-dias: 30    # solo se purga lo finalizado-bien más viejo que esto
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/tu_bbdd   # AJUSTA
+    username: tu_usuario                            # AJUSTA
+    password: tu_password                           # AJUSTA
+    hikari:
+      maximum-pool-size: 15   # >= tamano-pool + margen
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true

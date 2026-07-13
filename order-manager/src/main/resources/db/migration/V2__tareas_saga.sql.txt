@@ -1,0 +1,13 @@
+-- Fusión GestorOrdenes + sagas: las órdenes pasan a ser tareas de saga,
+-- con ejecución diferida (backoff de reintentos, timeout del paso asíncrono).
+
+ALTER TABLE ordenes ADD COLUMN ejecutar_desde TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE ordenes ADD COLUMN saga_id        VARCHAR(36);
+ALTER TABLE ordenes ADD COLUMN tipo_tarea     VARCHAR(30);
+
+-- La consulta de candidatas ahora filtra por ejecutar_desde:
+DROP INDEX IF EXISTS idx_ordenes_estado_creada;
+CREATE INDEX idx_ordenes_reclamables ON ordenes (estado, ejecutar_desde, creada_en);
+
+-- Trazabilidad: todas las tareas de una saga
+CREATE INDEX idx_ordenes_saga ON ordenes (saga_id);

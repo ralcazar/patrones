@@ -1,0 +1,55 @@
+@startuml 02-pasos-saga-principal
+title Saga principal: todos los pasos (PASO1 -> ... -> PASO8) con checkpoint por paso
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioSagaPrincipal" as SVC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaPrincipal" as SAGA
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
+  participant "PuertoPaso1 .. PuertoPaso8\n(REST a los servicios externos)" as PASOS
+end box
+
+note over TRAB, SVC
+  Contexto: la cadena completa corre dentro del procesar() de UNA orden
+  INICIAR (ver 01). El lease del GestorOrdenes debe superar su peor caso.
+end note
+
+TRAB -> SVC ++ : (viene de 01: PASO1 quedó SOLICITADO\ny despachar() arranca la cadena)
+
+loop para cada paso N = 1..8
+  SVC -> PASOS ++ : puertoPasoN.ejecutar(ComandoPaso.EjecutarPasoN)
+  PASOS -> PASOS : llamada REST al servicio del paso N\n(idempotente por datoNegocio1)
+  return ResultadoPasoN
+
+  SVC -> SVC : pasoCompletado(id, PASO_N, resultado)
+  group Transacción (checkpoint del paso)
+    SVC -> REPO ++ : cargar(id)
+    return saga (PASO_N SOLICITADO)
+    SVC -> SAGA ++ : completar(PASO_N, resultado)
+    SAGA -> SAGA : guard: ignora duplicados y tardíos\n(si el paso no está SOLICITADO, no-op)
+    SAGA -> SAGA : aplicar resultado al contexto\n+ transicionTras(PASO_N)
+    return N < 8: [Ejecutar(PASO_N+1)]\n(PASO_N+1 -> SOLICITADO)
+    SVC -> REPO ++ : guardar(saga)\n(versión optimista)
+    return
+  end
+end
+
+note over SAGA
+  Al completar PASO7 se supera el punto de no retorno:
+  la saga deja de ser cancelable.
+  Al completar PASO8 no hay paso siguiente:
+  finalización — ver 03-finalizacion-saga-principal.
+end note
+
+note over SVC, PASOS
+  Si un puerto lanza ExcepcionServicioExterno: fallo con backoff
+  y, si se agota o no es reintentable, ticket — ver 07.
+end note
+deactivate SVC
+@enduml

@@ -1,0 +1,52 @@
+@startuml 09-limpieza-datos
+title Limpieza periódica: purgar los datos ya no utilizados (acabaron bien y son antiguos)
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "PlanificadorLimpieza\n(@Scheduled cron)" as PLAN
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioLimpiezaDatos" as LIMP
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
+  participant "RepositorioSagasSucesoras\n(BBDD sagas)" as REPOS
+  participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
+  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+end box
+
+note over PLAN, LIMP
+  La limpieza no pasa por el dominio: solo toca lo YA finalizado.
+  Criterio: sagas que se sabe que NO acabaron mal (COMPLETADA o
+  CANCELADA-compensada) y que son antiguas (corte = ahora - retención).
+end note
+
+[o-> PLAN : dispara el cron\n(p. ej. cada noche a las 03:00)
+activate PLAN
+PLAN -> PLAN : corte = ahora - retención\n(retencion-dias, p. ej. 30 días)
+PLAN -> LIMP ++ : purgarAnterioresA(corte)
+
+group Transacción única (UnidadDeTrabajo)
+  LIMP -> REPO ++ : purgarFinalizadasAntesDe(corte)
+  REPO -> REPO : DELETE sagas COMPLETADA/CANCELADA\ncon última actualización < corte
+  return nº borradas
+  LIMP -> REPOS ++ : purgarFinalizadasAntesDe(corte)
+  REPOS -> REPOS : DELETE sucesoras COMPLETADAs\nantiguas
+  return nº borradas
+  LIMP -> DEDUP ++ : purgarAnterioresA(corte)
+  DEDUP -> DEDUP : DELETE registros de deduplicación\nviejos (ya no llegan duplicados)
+  return nº borrados
+  LIMP -> ORD ++ : purgarTerminadasAntesDe(corte)
+  ORD -> ORD : DELETE ordenes COMPLETADA < corte\n(las FALLIDA se conservan: señal de bug)
+  return nº borradas
+end
+
+return ResultadoLimpieza(recuentos)
+PLAN -> PLAN : log del resultado
+deactivate PLAN
+
+note over REPO, ORD
+  Nunca se borra trabajo vivo: sagas EN_CURSO, pasos
+  BLOQUEADO_SOPORTE y órdenes PENDIENTE/diferidas
+  quedan siempre fuera del corte. Todo o nada: un solo commit.
+end note
+@enduml

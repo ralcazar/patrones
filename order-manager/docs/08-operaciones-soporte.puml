@@ -1,0 +1,85 @@
+@startuml 08-operaciones-soporte
+title Operaciones del equipo de soporte: consultar, filtrar y arrancar la saga compensatoria
+
+box "Adaptadores de entrada" #EFF5FB
+  actor "Equipo de soporte" as OP
+  participant "Backoffice\n(adaptador REST)" as REST
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioSoporteSagas" as SOP
+  participant "ServicioSagaPrincipal" as SVC
+end box
+box "Dominio" #FBF5EF
+  participant "SagaPrincipal" as SAGA
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "PuertoConsultaSagasSoporte\n(queries BBDD, CQRS ligero)" as LECT
+  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
+  participant "PuertoPaso2 / PuertoPaso1\n(compensaciones REST)" as PCOMP
+  participant "PuertoTicketsSoporte" as TICK
+  participant "PuertoEventos" as EVT
+end box
+
+== Consultar todas las sagas en ejecución ==
+OP -> REST ++ : ver sagas en ejecución
+REST -> SOP ++ : sagasEnEjecucion()
+SOP -> LECT ++ : sagasEnEjecucion()
+LECT -> LECT : SELECT sobre las tablas de sagas\nWHERE estado IN (INICIADA, EN_CURSO)
+return [SagaResumen(id, tipo, estado,\niniciadaEn, actualizadaEn, ...)]
+return
+return listado
+
+== Filtrar por estado, fecha de inicio o fecha de última actualización ==
+OP -> REST ++ : aplicar filtros
+REST -> SOP ++ : buscar(FiltroSagas(estado,\niniciadaDesde/Hasta,\nactualizadaDesde/Hasta))
+SOP -> LECT ++ : buscar(filtro)
+LECT -> LECT : WHERE dinámico:\nlos criterios a null no aplican
+return [SagaResumen ...]
+return
+return listado filtrado
+
+== Arrancar la saga compensatoria (cancelación de la principal) ==
+OP -> REST ++ : cancelar tramitación (id, motivo)
+REST -> SOP ++ : cancelarPrincipal(id, quien, motivo)
+SOP -> SVC ++ : cancelar(id, quien, motivo)
+group Transacción
+  SVC -> REPO ++ : cargar(id)
+  return saga
+  SVC -> SAGA ++ : cancelarPorSoporte(quien, motivo)
+  alt PASO7 ya completado (punto de no retorno)
+    SAGA --> SVC : lanza PuntoNoRetornoSuperadoException
+    note right of REST : el backoffice lo mapea a 409 Conflict
+  else cancelable
+    SAGA -> SAGA : estado = CANCELADA\ncancela pasos activos + auditoría
+    SAGA --> SVC : [Compensar(PASO2), Compensar(PASO1),\nPublicarEvento(TramitacionCancelada)]\n(solo los pasos ya completados,\nen orden inverso)
+  end
+  deactivate SAGA
+  SVC -> REPO ++ : guardar(saga CANCELADA)
+  return
+end
+
+loop compensaciones en orden inverso: PASO2 y después PASO1
+  SVC -> PCOMP ++ : compensar(ComandoPaso.CompensarPasoN)
+  return ok
+  group Transacción
+    SVC -> REPO ++ : cargar(id)
+    return saga
+    SVC -> SAGA ++ : compensacionCompletada(PASO_N)
+    return paso -> COMPENSADO
+    SVC -> REPO ++ : guardar(saga)
+    return
+  end
+end
+SVC -> EVT ++ : publicar(TramitacionCancelada)
+return
+return
+return
+return 200 OK
+
+opt una compensación falla (ExcepcionServicioExterno)
+  SVC -> SAGA ++ : compensacionFallida(paso, motivo)
+  return [AbrirTicketSoporte] (inconsistencia real)
+  SVC -> TICK ++ : abrir(...) — ticket inmediato
+  return
+end
+@enduml
