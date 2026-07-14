@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoDespacharTareas;
+import com.ejemplo.app.business.ordermanager.aplicacion.tarea.TareaReclamada;
+
 
 /**
  * Un trabajador del pool. {@link #drenar()} corre en un hilo del executor
@@ -23,32 +26,35 @@ import org.springframework.stereotype.Component;
  * Concurrencia: el executor está dimensionado a N hilos (ver
  * ConfiguracionEjecucionAsincrona), así que como mucho N drenadores corren a la
  * vez = hasta N órdenes en paralelo.
+ *
+ * Como adaptador de entrada, no toca la cola (adaptador de salida) ni la BBDD:
+ * reclama, procesa y finaliza a través del caso de uso de despacho (capa de
+ * aplicación). Aquí viven solo el CUÁNDO (hilos, bucle, lease) y la política de
+ * errores; el QUÉ vive en la aplicación (regla de arquitectura del CLAUDE.md).
  */
 @Component
 public class TrabajadorOrdenes {
 
     private static final Logger log = LoggerFactory.getLogger(TrabajadorOrdenes.class);
 
-    private final ServicioOrdenes servicioOrdenes;
-    private final ProcesadorOrden procesador;
+    private final CasoUsoDespacharTareas despacho;
 
     /** Al apagar el contexto, dejamos de reclamar trabajo nuevo (parada limpia). */
     private volatile boolean apagando = false;
 
-    public TrabajadorOrdenes(ServicioOrdenes servicioOrdenes, ProcesadorOrden procesador) {
-        this.servicioOrdenes = servicioOrdenes;
-        this.procesador = procesador;
+    public TrabajadorOrdenes(CasoUsoDespacharTareas despacho) {
+        this.despacho = despacho;
     }
 
     @Async("ejecutorOrdenes")
     public void drenar() {
         int procesadas = 0;
         while (!apagando) {
-            String token = UUID.randomUUID().toString(); // un lease único por reclamo
+            String lease = UUID.randomUUID().toString(); // un lease único por reclamo
 
-            Optional<Orden> reclamada;
+            Optional<TareaReclamada> reclamada;
             try {
-                reclamada = servicioOrdenes.reclamarSiguiente(token);
+                reclamada = despacho.reclamarSiguiente(lease);
             } catch (Exception e) {
                 // BBDD caída u otro fallo al reclamar: salimos y reintentamos en el
                 // siguiente ciclo del dispatcher (backoff natural del fixedDelay).
@@ -63,20 +69,20 @@ public class TrabajadorOrdenes {
                 return; // nada más que hacer: libera el hilo del pool
             }
 
-            Orden orden = reclamada.get();
+            TareaReclamada tarea = reclamada.get();
             boolean ok = true;
             try {
-                procesador.procesar(orden); // idempotente, fuera de transacción
+                despacho.procesar(tarea); // idempotente, fuera de transacción
             } catch (Exception e) {
                 ok = false;
-                log.error("Error procesando la orden {}", orden.getId(), e);
+                log.error("Error procesando la orden {}", tarea.referencia(), e);
             }
 
             try {
-                servicioOrdenes.finalizar(orden.getId(), token, ok);
+                despacho.finalizar(tarea, ok);
             } catch (Exception e) {
                 // Si falla la finalización, el lease caducará y otro trabajador la retomará.
-                log.error("Error al finalizar la orden {}", orden.getId(), e);
+                log.error("Error al finalizar la orden {}", tarea.referencia(), e);
             }
             procesadas++;
         }

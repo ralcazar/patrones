@@ -2,10 +2,11 @@
 title Saga SECUNDARIA2 de principio a fin: solicitud REST, respuesta diferida por Kafka, timeout de 24h con conciliación
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
   participant "ConsumidorRespuesta\nSecundaria2 (Kafka)" as CONS
 end box
 box "Aplicación" #F5FBEF
+  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
   participant "ManejadorTareasSaga" as MANEJ
   participant "ServicioSagaSecundaria2" as SSEC
   participant "ServicioRegistrarRespuesta\nSecundaria2" as SREG
@@ -16,15 +17,18 @@ end box
 box "Adaptadores de salida" #F3EFFB
   participant "RepositorioSagaSecundaria2\n(BBDD sagas)" as REPOS
   participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
-  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+  participant "Tabla ordenes\n(AdaptadorColaTareas /\nAdaptadorRecepcionTareas)" as ORD
   participant "PuertoSagaSecundaria2\n(REST de solicitud)" as PSOL
   participant "PuertoConciliacion\nSecundaria2 (REST)" as PCON
 end box
 
 == Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
-TRAB -> ORD ++ : reclamar orden PENDIENTE (lease)
+TRAB -> DESP ++ : reclamarSiguiente(lease)
+DESP -> ORD ++ : reclamar orden PENDIENTE (lease)
 return Orden (ARRANCAR_SAGA, tipo SECUNDARIA2)
-TRAB -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
+return TareaReclamada
+TRAB -> DESP ++ : procesar(tareaReclamada)
+DESP -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
 MANEJ -> SSEC ++ : continuar(sagaId)
 group Transacción
   SSEC -> REPOS ++ : cargar(id)
@@ -41,7 +45,10 @@ SSEC -> PSOL ++ : solicitar(sagaId,\nComandoPasoSecundaria2.Solicitar) — REST,
 return
 return
 return
-TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
+DESP -> ORD ++ : finalizar(orden, COMPLETADA)
+return
 return
 
 == El servicio externo responde a posteriori (puede tardar) por Kafka ==
@@ -55,9 +62,12 @@ return
 deactivate CONS
 
 == El pool procesa el resultado: la saga finaliza ==
-TRAB -> ORD ++ : reclamar orden (RESULTADO_SECUNDARIA2_OK)
+TRAB -> DESP ++ : reclamarSiguiente(lease)
+DESP -> ORD ++ : reclamar orden (RESULTADO_SECUNDARIA2_OK)
 return Orden
-TRAB -> MANEJ ++ : procesar(tarea)
+return TareaReclamada
+TRAB -> DESP ++ : procesar(tareaReclamada)
+DESP -> MANEJ ++ : procesar(tarea)
 MANEJ -> SSEC ++ : pasoCompletado(id, SOLICITUD,\nRespuesta(ref), mensajeId externo)
 SSEC -> DEDUP ++ : yaProcesado(mensajeId)?
 return no
@@ -74,13 +84,19 @@ group Transacción
 end
 return
 return
-TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
+DESP -> ORD ++ : finalizar(orden, COMPLETADA)
+return
 return
 
 == Cuando el timeout vence (24 h después): conciliación ==
-TRAB -> ORD ++ : reclamar orden diferida (TIMEOUT_SECUNDARIA2)
+TRAB -> DESP ++ : reclamarSiguiente(lease)
+DESP -> ORD ++ : reclamar orden diferida (TIMEOUT_SECUNDARIA2)
 return Orden
-TRAB -> MANEJ ++ : procesar(tarea)
+return TareaReclamada
+TRAB -> DESP ++ : procesar(tareaReclamada)
+DESP -> MANEJ ++ : procesar(tarea)
 MANEJ -> SSEC ++ : timeoutVencido(id)
 SSEC -> REPOS ++ : cargar(id) — guard barato, fuera de tx
 return saga
@@ -102,7 +118,10 @@ else sigue SOLICITADO: preguntar al servicio de conciliación
 end
 return
 return
-TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
+DESP -> ORD ++ : finalizar(orden, COMPLETADA)
+return
 return
 note over SAGA, ORD
   El timeout nunca da la respuesta por perdida: cada 24 h concilia y,

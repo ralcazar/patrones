@@ -2,9 +2,10 @@
 title Saga SECUNDARIA1 de principio a fin: INICIO -> CONFIRMACION, dos llamadas REST al mismo servicio
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
+  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
   participant "ManejadorTareasSaga" as MANEJ
   participant "ServicioSagaSecundaria1" as SSEC
 end box
@@ -18,9 +19,12 @@ box "Adaptadores de salida" #F3EFFB
 end box
 
 == Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
-TRAB -> ORD ++ : reclamar orden PENDIENTE (lease)
+TRAB -> DESP ++ : reclamarSiguiente(lease)
+DESP -> ORD ++ : reclamar orden PENDIENTE (lease)
 return Orden (ARRANCAR_SAGA, tipo SECUNDARIA1)
-TRAB -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
+return TareaReclamada
+TRAB -> DESP ++ : procesar(tareaReclamada)
+DESP -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
 MANEJ -> SSEC ++ : continuar(sagaId)
 group Transacción
   SSEC -> REPOS ++ : cargar(id)
@@ -61,7 +65,10 @@ group Transacción
 end
 return
 return
-TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+return
+TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
+DESP -> ORD ++ : finalizar(orden, COMPLETADA)
+return
 return
 
 note over SSEC, PSEC

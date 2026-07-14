@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoDespacharTareas;
+
 /**
  * El concepto general: coordina el procesamiento de las órdenes.
  *
@@ -13,31 +15,35 @@ import org.springframework.stereotype.Component;
  * el executor (DiscardPolicy), así que el efecto neto es: mantener hasta N
  * drenadores vivos mientras haya cola.
  *
+ * Como adaptador de entrada (@Scheduled), no consulta la BBDD directamente:
+ * pregunta por trabajo al caso de uso de despacho (capa de aplicación), que se
+ * apoya en el puerto de recepción (regla de arquitectura del CLAUDE.md).
+ *
  * Flujo:
  *  - Con cola llena: los N hilos están drenando; las N llamadas de este ciclo
  *    se descartan (no-op) y no tocan la BBDD.
- *  - Cola vacía: {@link ServicioOrdenes#hayTrabajoPendiente()} devuelve false y
- *    ni siquiera despertamos al pool (1 consulta barata por ciclo).
+ *  - Cola vacía: {@link CasoUsoDespacharTareas#hayTrabajoPendiente()} devuelve
+ *    false y ni siquiera despertamos al pool (1 consulta barata por ciclo).
  *  - Llega trabajo: el siguiente ciclo lo detecta y relanza los drenadores libres.
  */
 @Component
 public class GestorOrdenes {
 
-    private final ServicioOrdenes servicioOrdenes;
+    private final CasoUsoDespacharTareas despacho;
     private final TrabajadorOrdenes trabajador;
     private final int tamanoPool;
 
-    public GestorOrdenes(ServicioOrdenes servicioOrdenes,
+    public GestorOrdenes(CasoUsoDespacharTareas despacho,
                          TrabajadorOrdenes trabajador,
                          @Value("${gestor-ordenes.tamano-pool:10}") int tamanoPool) {
-        this.servicioOrdenes = servicioOrdenes;
+        this.despacho = despacho;
         this.trabajador = trabajador;
         this.tamanoPool = tamanoPool;
     }
 
     @Scheduled(fixedDelayString = "${gestor-ordenes.intervalo-sondeo-ms:500}")
     public void despachar() {
-        if (!servicioOrdenes.hayTrabajoPendiente()) {
+        if (!despacho.hayTrabajoPendiente()) {
             return; // nada pendiente: no despertamos al pool
         }
         // Rellena el pool. Las llamadas que no encuentren hilo libre se descartan

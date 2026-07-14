@@ -5,16 +5,16 @@ hide empty members
 skinparam classAttributeIconSize 0
 
 class GestorOrdenes <<@Component>> {
-  -servicioOrdenes : ServicioOrdenes
+  -despacho : CasoUsoDespacharTareas
   -trabajador : TrabajadorOrdenes
   +despachar()  «@Scheduled»
 }
 class TrabajadorOrdenes <<@Component>> {
-  -servicioOrdenes : ServicioOrdenes
-  -procesador : ProcesadorOrden
+  -despacho : CasoUsoDespacharTareas
   +drenar()  «pool @Async»
   +parar()
 }
+interface "CasoUsoDespacharTareas\n(aplicación — ver 17)" as CasoUsoDespacharTareas
 class ServicioOrdenes <<@Service>> {
   -repo : RepositorioOrdenes
   -lease : Duration
@@ -49,9 +49,6 @@ enum EstadoOrden {
   COMPLETADA
   FALLIDA
 }
-interface ProcesadorOrden {
-  +procesar(Orden)
-}
 class ConfiguracionEjecucionAsincrona <<@Configuration>> {
   +ejecutorOrdenes(tamanoPool) : Executor
 }
@@ -62,11 +59,18 @@ note bottom of Orden
   Este motor no importa NADA del modelo de sagas
   (el puente está en 24-clases-infraestructura-saga).
 end note
+note right of CasoUsoDespacharTareas
+  El pool NO consulta la BBDD directamente: pregunta
+  y entrega el trabajo al caso de uso de despacho
+  (aplicación). Su servicio se apoya en el
+  PuertoRecepcionTareas, que reimplementa el
+  AdaptadorRecepcionTareas sobre ServicioOrdenes
+  (ver 24). Así entrada -> aplicación -> salida.
+end note
 
-GestorOrdenes --> ServicioOrdenes : ¿hay trabajo?
+GestorOrdenes --> CasoUsoDespacharTareas : ¿hay trabajo?
 GestorOrdenes --> TrabajadorOrdenes : drenar()
-TrabajadorOrdenes --> ServicioOrdenes : reclamar / finalizar
-TrabajadorOrdenes --> ProcesadorOrden : procesar(orden)
+TrabajadorOrdenes --> CasoUsoDespacharTareas : reclamar / procesar / finalizar
 ServicioOrdenes --> RepositorioOrdenes
 RepositorioOrdenes ..> Orden
 Orden o-- EstadoOrden

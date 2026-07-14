@@ -12,6 +12,12 @@ package "puerto.entrada" {
     +pasoCompletado(id, paso : P, resultado, msgId)
     +pasoFallido(id, paso : P, motivo, msgId)
   }
+  interface CasoUsoDespacharTareas {
+    +hayTrabajoPendiente() : boolean
+    +reclamarSiguiente(lease) : Optional<TareaReclamada>
+    +procesar(TareaReclamada)
+    +finalizar(TareaReclamada, exito)
+  }
 }
 
 package "servicio" {
@@ -55,6 +61,19 @@ package "servicio" {
     IniciarTramitacion y responde 202.
   end note
 
+  class ServicioDespachoTareas <<@Service>> {
+    +hayTrabajoPendiente() : boolean
+    +reclamarSiguiente(lease)
+    +procesar(TareaReclamada)
+    +finalizar(TareaReclamada, exito)
+  }
+  note bottom of ServicioDespachoTareas
+    Media entre el pool (entrada) y la cola
+    (salida) al RECIBIR trabajo: delega en
+    PuertoRecepcionTareas y ManejadorTareasSaga.
+    El bucle y los hilos son del pool (ver 23).
+  end note
+
   class ReintentoOptimista <<package-private>> {
     {static} ejecutar(Supplier<T>) : T
     MAX_REINTENTOS = 5
@@ -71,6 +90,11 @@ package "tarea" {
     ResultadoSagaSecundaria2Ok(sagaId, ref, mensajeId)
     ResultadoSagaSecundaria2Error(sagaId, ..., reintentable, mensajeId)
   }
+  class TareaReclamada <<record>> {
+    +referencia : String  «asa opaca de la Orden»
+    +lease : String
+    +tarea : TareaSaga
+  }
 }
 
 package "puerto.salida (transversales)" {
@@ -82,6 +106,11 @@ package "puerto.salida (transversales)" {
     +encolar(tarea, noAntesDe)
     +purgarTerminadasAntesDe(corte)
   }
+  interface PuertoRecepcionTareas {
+    +hayPendientes() : boolean
+    +reclamarSiguiente(lease) : Optional<TareaReclamada>
+    +finalizar(TareaReclamada, exito)
+  }
   interface PuertoMensajesProcesados {
     +yaProcesado(msgId) : boolean
     +registrar(msgId)
@@ -91,6 +120,7 @@ package "puerto.salida (transversales)" {
 
 CasoUsoIniciarTramitacion <|.. ServicioEncolarTramitacion
 CasoUsoProcesarResultadoPaso <|.. Base
+CasoUsoDespacharTareas <|.. ServicioDespachoTareas
 
 Base --> UnidadDeTrabajo
 Base --> PuertoMensajesProcesados
@@ -100,7 +130,11 @@ Base ..> TareaSaga : encola Reintentar
 ManejadorTareasSaga ..> TareaSaga : despacha por tipo
 ManejadorTareasSaga ..> Base : rutea a la subclase\nde la saga correcta
 ServicioEncolarTramitacion --> PuertoColaTareas
+ServicioDespachoTareas --> PuertoRecepcionTareas : reclamar / finalizar
+ServicioDespachoTareas --> ManejadorTareasSaga : procesar(TareaSaga)
+PuertoRecepcionTareas ..> TareaReclamada : devuelve
 
 UnidadDeTrabajo -[hidden]down- PuertoColaTareas
-PuertoColaTareas -[hidden]down- PuertoMensajesProcesados
+PuertoColaTareas -[hidden]down- PuertoRecepcionTareas
+PuertoRecepcionTareas -[hidden]down- PuertoMensajesProcesados
 @enduml

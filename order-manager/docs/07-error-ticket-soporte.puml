@@ -2,7 +2,7 @@
 title Error en un paso: backoff 1..180 min, reintento indefinido con flag de ticket, y barrido @Scheduled que abre UN ticket
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
   participant "PlanificadorTicketsSoporte\n(@Scheduled 8,11,14,17h)" as PLAN
 end box
 box "Aplicación" #F5FBEF

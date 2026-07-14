@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoRecepcionTareas;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
@@ -26,6 +27,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.Repositori
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ManejadorTareasSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioDespachoTareas;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioEncolarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioRegistrarRespuestaSecundaria2;
@@ -96,6 +98,12 @@ public class ConfiguracionAplicacion {
             ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
             ServicioSagaSecundaria3 secundaria3) {
         return new ManejadorTareasSaga(principal, secundaria1, secundaria2, secundaria3);
+    }
+
+    @Bean
+    ServicioDespachoTareas servicioDespachoTareas(PuertoRecepcionTareas recepcion,
+            ManejadorTareasSaga manejador) {
+        return new ServicioDespachoTareas(recepcion, manejador);
     }
 
     @Bean

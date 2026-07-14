@@ -5,10 +5,10 @@ box "Adaptadores de entrada" #EFF5FB
   participant "API REST\ntramitación" as REST
   participant "GestorOrdenes\n(sondeo @Scheduled)" as GESTOR
   participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
-  participant "ProcesadorOrdenSaga\n+ CodecTareaSaga" as PROC
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioEncolar\nTramitacion" as ENC
+  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
   participant "ManejadorTareasSaga" as MANEJ
   participant "ServicioSagaPrincipal" as SVC
 end box
@@ -17,7 +17,7 @@ box "Dominio" #FBF5EF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
-  participant "Tabla ordenes\n(ServicioOrdenes +\nRepositorioOrdenes)" as ORD
+  participant "Tabla ordenes\n(AdaptadorRecepcionTareas\n+ ServicioOrdenes + Codec)" as ORD
 end box
 
 == Intake: el registro queda PENDIENTE en BBDD ==
@@ -34,17 +34,20 @@ deactivate REST
 
 == El sondeo encuentra la orden PENDIENTE: arranca la saga ==
 loop cada intervalo-sondeo-ms
-  GESTOR -> ORD ++ : hayTrabajoPendiente()
+  GESTOR -> DESP ++ : hayTrabajoPendiente()
+  DESP -> ORD ++ : hayPendientes()
   return sí: hay orden PENDIENTE\ncon ejecutar_desde <= ahora
+  return sí
 end
 GESTOR ->> TRAB : drenar() (hilo del pool)
 activate TRAB
-TRAB -> ORD ++ : reclamarSiguiente(token)
-ORD -> ORD : UPDATE condicional (lease):\nPENDIENTE -> EN_PROCESO
-return Orden (INICIAR)
-TRAB -> PROC ++ : procesar(orden)
-PROC -> PROC : decodificar contenido a\nTareaSaga.IniciarTramitacion
-PROC -> MANEJ ++ : procesar(tarea)
+TRAB -> DESP ++ : reclamarSiguiente(lease)
+DESP -> ORD ++ : reclamarSiguiente(lease)
+ORD -> ORD : UPDATE condicional (lease):\nPENDIENTE -> EN_PROCESO\ny decodifica contenido a TareaSaga
+return TareaReclamada (INICIAR)
+return TareaReclamada
+TRAB -> DESP ++ : procesar(tareaReclamada)
+DESP -> MANEJ ++ : procesar(tarea)
 MANEJ -> SVC ++ : iniciarOContinuar(sagaId,\nexternalId, datos, datoNegocio2)
 
 group Transacción (UnidadDeTrabajo)
@@ -68,7 +71,9 @@ note over SVC : despachar(decisiones): ejecuta la cadena\nPASO1..PASO8 — ver 0
 return
 return
 return
-TRAB -> ORD ++ : finalizar(orden, COMPLETADA)
+TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
+DESP -> ORD ++ : finalizar(orden, COMPLETADA)
+return
 return
 deactivate TRAB
 @enduml

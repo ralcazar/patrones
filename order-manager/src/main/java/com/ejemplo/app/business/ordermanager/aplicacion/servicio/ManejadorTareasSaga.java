@@ -12,14 +12,15 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ResultadoPa
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.PasoSagaSecundaria3;
 
 /**
- * Router de tareas: el ProcesadorOrdenSaga del GestorOrdenes deserializa el
- * contenido de cada Orden y lo entrega aquí. "Procesar una orden" = ejecutar
- * exactamente uno de estos casos, ruteado al orquestador de la saga correcta.
+ * Router de tareas: el adaptador de recepción decodifica el contenido de cada
+ * Orden a TareaSaga y el ServicioDespachoTareas la entrega aquí. "Procesar una
+ * orden" = ejecutar exactamente uno de estos casos, ruteado al orquestador de
+ * la saga correcta.
  *
  * Esta es la única frontera donde el PasoSaga genérico se baja al enum
  * concreto (cast por rama del switch sobre TipoSaga).
  *
- * Contrato de idempotencia del ProcesadorOrden: garantizado por los guards de
+ * Contrato de idempotencia del despacho: garantizado por los guards de
  * estado de los agregados (continuar/reintentar/completar son no-op si el
  * estado ya avanzó) y por la deduplicación de MensajeId para los resultados
  * externos de la saga secundaria 2.

@@ -5,9 +5,6 @@ hide empty members
 skinparam classAttributeIconSize 0
 
 ' --- adaptadores de ENTRADA (invocan la capa de aplicación) ---
-class ProcesadorOrdenSaga <<@Component>> {
-  +procesar(Orden)
-}
 class ConsumidorRespuestaSecundaria2 <<@Component>> {
   +onRespuesta(mensaje, ...)  «@KafkaListener\ntopic respuesta.secundaria2»
 }
@@ -24,6 +21,7 @@ interface CasoUsoRegistrarRespuestaSecundaria2
 interface CasoUsoLimpiarDatosAntiguos
 interface CasoUsoAbrirTicketsPendientes
 interface PuertoColaTareas
+interface PuertoRecepcionTareas
 interface PuertoTicketsSoporte
 interface UnidadDeTrabajo
 
@@ -31,6 +29,11 @@ interface UnidadDeTrabajo
 class AdaptadorColaTareas <<@Component>> {
   +encolar(tarea) / encolar(tarea, noAntesDe)
   +purgarTerminadasAntesDe(corte)
+}
+class AdaptadorRecepcionTareas <<@Component>> {
+  +hayPendientes() : boolean
+  +reclamarSiguiente(lease) : Optional<TareaReclamada>
+  +finalizar(TareaReclamada, exito)
 }
 class AdaptadorTicketsLog <<@Component>> {
   +abrir(sagas): log.error("TICKET-SOPORTE-...")
@@ -53,45 +56,47 @@ note right of CodecTareaSaga
   TIMEOUT_SECUNDARIA2, RESULTADO_SECUNDARIA2_OK/_ERROR.
 end note
 class "ServicioOrdenes\n(cola — ver 23)" as ServicioOrdenes
-interface "ProcesadorOrden\n(cola — ver 23)" as ProcesadorOrden
 class ConfiguracionAplicacion <<@Configuration>> {
   +@Bean de los servicios de aplicación\n(POJOs sin anotaciones Spring)
 }
 
 ' Entrada -> aplicación
-ProcesadorOrden <|.up. ProcesadorOrdenSaga
-ProcesadorOrdenSaga --> CodecTareaSaga : decodificar\ncontenido
-ProcesadorOrdenSaga --> ManejadorTareasSaga : procesar(TareaSaga)
 ConsumidorRespuestaSecundaria2 --> CasoUsoRegistrarRespuestaSecundaria2
 PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
 PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
 
 ' Puertos de salida <- adaptadores
 PuertoColaTareas <|.. AdaptadorColaTareas
+PuertoRecepcionTareas <|.. AdaptadorRecepcionTareas
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
 UnidadDeTrabajo <|.. UnidadDeTrabajoSpring
 AdaptadorColaTareas --> ServicioOrdenes : encolar(JSON,\nsagaId, tipo)
 AdaptadorColaTareas --> CodecTareaSaga : codificar
+AdaptadorRecepcionTareas --> ServicioOrdenes : hayTrabajo /\nreclamar / finalizar
+AdaptadorRecepcionTareas --> CodecTareaSaga : decodificar
 
 ' Layout: entrada arriba, aplicación en medio, salida abajo
-ConsumidorRespuestaSecundaria2 -[hidden]right- ProcesadorOrdenSaga
+ConsumidorRespuestaSecundaria2 -[hidden]right- PlanificadorLimpieza
 PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
-ProcesadorOrdenSaga -[hidden]right- PlanificadorLimpieza
 CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- ManejadorTareasSaga
 CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
 PuertoColaTareas -[hidden]down- AdaptadorColaTareas
+PuertoRecepcionTareas -[hidden]down- AdaptadorRecepcionTareas
 PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
 UnidadDeTrabajo -[hidden]down- UnidadDeTrabajoSpring
 ManejadorTareasSaga -[hidden]down- PuertoColaTareas
 CasoUsoAbrirTicketsPendientes -[hidden]down- PuertoTicketsSoporte
+AdaptadorColaTareas -[hidden]right- AdaptadorRecepcionTareas
+AdaptadorRecepcionTareas -[hidden]right- AdaptadorTicketsLog
 AdaptadorTicketsLog -[hidden]right- UnidadDeTrabajoSpring
-AdaptadorColaTareas -[hidden]right- AdaptadorTicketsLog
 UnidadDeTrabajoSpring -[hidden]right- ConfiguracionAplicacion
 
 note as NRegla
   Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA (fila superior:
-  ProcesadorOrdenSaga, ConsumidorRespuestaSecundaria2 y los dos planificadores)
-  solo invocan la capa de aplicación (casos de uso, fila central); los adaptadores
-  de SALIDA (fila inferior) implementan los puertos de salida.
+  ConsumidorRespuestaSecundaria2 y los dos planificadores) solo invocan la capa
+  de aplicación (casos de uso, fila central); los adaptadores de SALIDA (fila
+  inferior) implementan los puertos de salida. El pool del gestor (GestorOrdenes/
+  TrabajadorOrdenes, ver 23) también entra por un caso de uso: reclama y finaliza
+  vía PuertoRecepcionTareas, que reimplementa AdaptadorRecepcionTareas.
 end note
 @enduml

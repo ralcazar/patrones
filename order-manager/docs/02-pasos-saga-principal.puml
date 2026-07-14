@@ -2,9 +2,11 @@
 title Saga principal: todos los pasos (PASO1 -> ... -> PASO8) con checkpoint por paso
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
+  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
+  participant "ManejadorTareasSaga" as MANEJ
   participant "ServicioSagaPrincipal" as SVC
 end box
 box "Dominio" #FBF5EF
@@ -20,7 +22,9 @@ note over TRAB, SVC
   INICIAR (ver 01). El lease del GestorOrdenes debe superar su peor caso.
 end note
 
-TRAB -> SVC ++ : (viene de 01: PASO1 quedó SOLICITADO\ny despachar() arranca la cadena)
+TRAB -> DESP ++ : procesar(tareaReclamada)\n(viene de 01: la orden INICIAR)
+DESP -> MANEJ ++ : procesar(tarea)
+MANEJ -> SVC ++ : iniciarOContinuar(...): PASO1 quedó\nSOLICITADO y despachar() arranca la cadena
 
 loop para cada paso N = 1..8
   SVC -> PASOS ++ : puertoPasoN.ejecutar(\nComandoPasoPrincipal.EjecutarPasoN)
@@ -52,5 +56,7 @@ note over SVC, PASOS
   reintento indefinido o, si no es reintentable, saga FALLIDA; el ticket
   lo abre después el planificador @Scheduled — ver 07.
 end note
-deactivate SVC
+return
+return
+return
 @enduml
