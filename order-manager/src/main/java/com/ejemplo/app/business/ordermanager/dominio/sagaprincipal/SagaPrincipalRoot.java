@@ -50,7 +50,7 @@ public final class SagaPrincipalRoot extends Saga<PasoSagaPrincipal> {
             PasoSagaPrincipal.PASO1, PasoSagaPrincipal.PASO2, PasoSagaPrincipal.PASO4,
             PasoSagaPrincipal.PASO5, PasoSagaPrincipal.PASO7);
 
-    private final ContextoTramitacion ctx;
+    private ContextoTramitacion ctx;
 
     private SagaPrincipalRoot(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
                               EnumSet<PasoSagaPrincipal> misPasos, EstadoSaga estado, long version) {
@@ -109,7 +109,7 @@ public final class SagaPrincipalRoot extends Saga<PasoSagaPrincipal> {
         if (!(resultado instanceof ResultadoPasoPrincipal r)) {
             throw new IllegalArgumentException("Resultado ajeno a la saga principal: " + resultado);
         }
-        ctx.aplicar(r);
+        ctx = ctx.aplicar(r);
     }
 
     @Override

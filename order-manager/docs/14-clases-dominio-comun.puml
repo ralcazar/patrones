@@ -37,7 +37,7 @@ note right of Saga
   completar() borra el flag de ticket.
 end note
 
-class "EjecucionPaso<P>" as EjecucionPaso <<@Entity>> {
+class "EjecucionPaso<P>" as EjecucionPaso <<@ValueObject>> {
   -paso : P
   -estado : EstadoPaso
   -intentos : int

@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 import org.jmolecules.ddd.annotation.Identity;
 
@@ -141,23 +142,22 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
         if (estado == EstadoSaga.CANCELADA || ep.estado() != EstadoPaso.SOLICITADO) {
             return List.of(); // duplicado, tardío o saga cancelada: se ignora
         }
-        ep.completar();
+        transformar(paso, EjecucionPaso::completar);
         limpiarTicket(); // el reintento (o el primer intento) acabó bien: nada que contar a soporte
         aplicarResultado(paso, resultado);
         return transicionTras(paso);
     }
 
     public final List<Decision<P>> fallar(P paso, MotivoFallo motivo) {
-        var ep = pasoDe(paso);
-        if (estado == EstadoSaga.CANCELADA || ep.estado() != EstadoPaso.SOLICITADO) {
+        if (estado == EstadoSaga.CANCELADA || pasoDe(paso).estado() != EstadoPaso.SOLICITADO) {
             return List.of();
         }
-        ep.registrarFallo(motivo);
+        var ep = pasoDe(paso).registrarFallo(motivo);
 
         if (!motivo.esReintentable()) {
             // p. ej. fallo de datos al parsear un JSON: reintentar no lo arreglará.
             // Sin reintento automático: FALLIDA, y que el planificador pida el ticket.
-            ep.bloquear();
+            pasos.put(paso, ep.bloquear());
             estado = EstadoSaga.FALLIDA;
             solicitarTicket();
             return List.of();
@@ -166,7 +166,7 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
             // Se sigue reintentando (cada 180 min, indefinidamente), pero ya con ticket pedido.
             solicitarTicket();
         }
-        ep.esperarReintento();
+        pasos.put(paso, ep.esperarReintento());
         return List.of(new Decision.ProgramarReintento<>(
                 paso, reintentos.esperaTras(ep.intentos()), ep.intentos() + 1));
     }
@@ -189,7 +189,7 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
             throw new PasoNoIntervenibleException(id, paso, ep.estado());
         }
         reactivar();
-        ep.resetearIntentos(); // borra también el ticket: un nuevo bloqueo será un estado de error nuevo
+        transformar(paso, EjecucionPaso::resetearIntentos); // borra también el ticket: un nuevo bloqueo será un estado de error nuevo
         auditoria.add(AuditoriaIntervencion.de(quien, "REINTENTO_MANUAL", paso.name()));
         return solicitar(paso);
     }
@@ -209,7 +209,7 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
             throw new DatosManualesRequeridosException(id, paso);
         }
         reactivar();
-        ep.completarManual();
+        transformar(paso, EjecucionPaso::completarManual);
         limpiarTicket(); // soporte lo arregló: el problema deja de estar vivo
         if (datos != null) {
             aplicarResultado(paso, datos);
@@ -260,14 +260,12 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
      * debe mirar una persona), y pide ticket para soporte.
      */
     protected final void bloquearPorFallo(P paso, MotivoFallo motivo) {
-        var ep = pasoDe(paso);
-        ep.registrarFallo(motivo);
-        ep.bloquear();
+        transformar(paso, ep -> ep.registrarFallo(motivo).bloquear());
         solicitarTicket();
     }
 
     protected final List<Decision<P>> solicitar(P p) {
-        pasoDe(p).solicitar();
+        transformar(p, EjecucionPaso::solicitar);
         return List.of(new Decision.Ejecutar<>(p, comandoPara(p)));
     }
 
@@ -282,13 +280,11 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
 
     /** Las transiciones de EjecucionPaso son package-private: los agregados pasan por aquí. */
     protected final void cancelarPasosActivos() {
-        pasos.values().stream()
-                .filter(ep -> ep.estado().esActivo())
-                .forEach(EjecucionPaso::cancelar);
+        pasos.replaceAll((p, ep) -> ep.estado().esActivo() ? ep.cancelar() : ep);
     }
 
     protected final void marcarCompensado(P paso) {
-        pasoDe(paso).compensado();
+        transformar(paso, EjecucionPaso::compensado);
     }
 
     protected final EjecucionPaso<P> pasoDe(P p) {
@@ -297,6 +293,11 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
             throw new IllegalArgumentException("Paso " + p + " ajeno a la saga " + tipo());
         }
         return ep;
+    }
+
+    /** Aplica una transición (inmutable) al paso y guarda el nuevo estado en el mapa. */
+    private void transformar(P p, UnaryOperator<EjecucionPaso<P>> transicion) {
+        pasos.put(p, transicion.apply(pasoDe(p)));
     }
 
     // --- lectura (persistencia y pantalla de soporte) ---

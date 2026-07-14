@@ -1,25 +1,15 @@
 package com.ejemplo.app.business.ordermanager.dominio.comun;
 
-import org.jmolecules.ddd.annotation.Entity;
+import org.jmolecules.ddd.annotation.ValueObject;
 
 /**
- * Estado de ejecución de un paso. Las transiciones las gobiernan los agregados
- * (métodos package-private); el exterior solo lee.
+ * Estado de ejecución de un paso. Value object inmutable: las transiciones no
+ * mutan en sitio, devuelven una nueva instancia. Las gobiernan los agregados
+ * (métodos package-private, vía {@code Saga.transformar}); el exterior solo lee.
  */
-@Entity
-public class EjecucionPaso<P extends Enum<P> & PasoSaga> {
-
-    private final P paso;
-    private EstadoPaso estado;
-    private int intentos;
-    private MotivoFallo ultimoFallo;
-
-    private EjecucionPaso(P paso, EstadoPaso estado, int intentos, MotivoFallo ultimoFallo) {
-        this.paso = paso;
-        this.estado = estado;
-        this.intentos = intentos;
-        this.ultimoFallo = ultimoFallo;
-    }
+@ValueObject
+public record EjecucionPaso<P extends Enum<P> & PasoSaga>(
+        P paso, EstadoPaso estado, int intentos, MotivoFallo ultimoFallo) {
 
     public static <P extends Enum<P> & PasoSaga> EjecucionPaso<P> nuevo(P paso) {
         return new EjecucionPaso<>(paso, EstadoPaso.PENDIENTE, 0, null);
@@ -31,23 +21,21 @@ public class EjecucionPaso<P extends Enum<P> & PasoSaga> {
         return new EjecucionPaso<>(paso, estado, intentos, ultimoFallo);
     }
 
-    void solicitar()        { estado = EstadoPaso.SOLICITADO; }
-    void completar()        { estado = EstadoPaso.COMPLETADO; }
-    void completarManual()  { estado = EstadoPaso.COMPLETADO_MANUAL; }
-    void esperarReintento() { estado = EstadoPaso.ESPERANDO_REINTENTO; }
-    void bloquear()         { estado = EstadoPaso.BLOQUEADO_SOPORTE; }
-    void cancelar()         { estado = EstadoPaso.CANCELADO; }
-    void compensado()       { estado = EstadoPaso.COMPENSADO; }
+    EjecucionPaso<P> solicitar()        { return conEstado(EstadoPaso.SOLICITADO); }
+    EjecucionPaso<P> completar()        { return conEstado(EstadoPaso.COMPLETADO); }
+    EjecucionPaso<P> completarManual()  { return conEstado(EstadoPaso.COMPLETADO_MANUAL); }
+    EjecucionPaso<P> esperarReintento() { return conEstado(EstadoPaso.ESPERANDO_REINTENTO); }
+    EjecucionPaso<P> bloquear()         { return conEstado(EstadoPaso.BLOQUEADO_SOPORTE); }
+    EjecucionPaso<P> cancelar()         { return conEstado(EstadoPaso.CANCELADO); }
+    EjecucionPaso<P> compensado()       { return conEstado(EstadoPaso.COMPENSADO); }
 
-    void resetearIntentos() { intentos = 0; ultimoFallo = null; }
+    EjecucionPaso<P> resetearIntentos() { return new EjecucionPaso<>(paso, estado, 0, null); }
 
-    void registrarFallo(MotivoFallo motivo) {
-        intentos++;
-        ultimoFallo = motivo;
+    EjecucionPaso<P> registrarFallo(MotivoFallo motivo) {
+        return new EjecucionPaso<>(paso, estado, intentos + 1, motivo);
     }
 
-    public P paso() { return paso; }
-    public EstadoPaso estado() { return estado; }
-    public int intentos() { return intentos; }
-    public MotivoFallo ultimoFallo() { return ultimoFallo; }
+    private EjecucionPaso<P> conEstado(EstadoPaso nuevoEstado) {
+        return new EjecucionPaso<>(paso, nuevoEstado, intentos, ultimoFallo);
+    }
 }

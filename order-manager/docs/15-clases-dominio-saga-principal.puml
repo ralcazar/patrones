@@ -37,10 +37,10 @@ package "dominio.sagaprincipal" {
   interface ResultadoPasoPrincipal <<sealed>> {
     ResultadoPaso1 .. ResultadoPaso8
   }
-  class ContextoTramitacion <<@Entity>> {
+  class ContextoTramitacion <<@ValueObject>> {
     -datoNegocio3 / datoNegocio2
     -refPaso1 .. refPaso8
-    +aplicar(ResultadoPasoPrincipal)
+    ~aplicar(ResultadoPasoPrincipal) : ContextoTramitacion
   }
   class "RefPaso2/3/4/6/8,\nDatoNegocio2, DatoNegocio3" as Refs <<@ValueObject>>
 }
