@@ -1,0 +1,133 @@
+@startuml 14-clases-dominio-comun
+title Dominio — shared kernel (dominio.comun): base Saga<P> y su vocabulario
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "Saga<P extends Enum<P> & PasoSaga>" as Saga {
+  #id : SagaId  «@Identity»
+  #externalId : ExternalId
+  #pasos : EnumMap<P, EjecucionPaso<P>>
+  #auditoria : List<AuditoriaIntervencion>
+  #reintentos : PoliticaReintentos
+  #estado : EstadoSaga
+  #estadoTicket : EstadoTicket
+  #ticketAbiertoEn : Instant
+  #version : long
+  +iniciar() / continuar() : List<Decision<P>>
+  +completar(paso, resultado) : List<Decision<P>>
+  +fallar(paso, motivo) : List<Decision<P>>
+  +reintentar(paso) : List<Decision<P>>
+  +reanudarPorSoporte(paso, quien) : List<Decision<P>>
+  +marcarOkManual(paso, quien, justificacion, datos) : List<Decision<P>>
+  +marcarTicketAbierto(cuando) : List<Decision<P>>
+  +esCancelable() : boolean
+  #bloquearPorFallo(paso, motivo)
+  {abstract} +tipo() : TipoSaga
+  {abstract} #pasoInicial() : P
+  {abstract} #comandoPara(paso) : ComandoPaso
+  {abstract} #aplicarResultado(paso, resultado)
+  {abstract} #transicionTras(paso) : List<Decision<P>>
+}
+note right of Saga
+  Base abstracta común: NO es un agregado.
+  finalizar() = COMPLETADA y nada más (sin eventos).
+  fallar(): reintentable -> ProgramarReintento (indefinido);
+  no reintentable -> FALLIDA + ticket PENDIENTE.
+  completar() borra el flag de ticket.
+end note
+
+class "EjecucionPaso<P>" as EjecucionPaso <<@Entity>> {
+  -paso : P
+  -estado : EstadoPaso
+  -intentos : int
+  -ultimoFallo : MotivoFallo
+}
+
+interface PasoSaga {
+  +name() : String
+  +{static} de(tipo, nombre) : PasoSaga
+}
+
+class PoliticaReintentos {
+  escalera: 1, 3, 5, 10, 20,
+  45, 90, 180 minutos
+  +esperaTras(intentosFallidos) : Duration
+  +escaleraConsumida(intentosFallidos) : boolean
+}
+note bottom of PoliticaReintentos
+  Nunca se agota: consumida la escalera
+  se sigue reintentando cada 180 min
+  (con flag de ticket PENDIENTE).
+end note
+
+enum EstadoSaga {
+  INICIADA
+  EN_CURSO
+  FALLIDA
+  COMPLETADA
+  CANCELADA
+}
+enum EstadoTicket {
+  SIN_TICKET
+  PENDIENTE
+  ABIERTO
+}
+enum EstadoPaso {
+  PENDIENTE
+  SOLICITADO
+  ESPERANDO_REINTENTO
+  BLOQUEADO_SOPORTE
+  COMPLETADO
+  COMPLETADO_MANUAL
+  CANCELADO
+  COMPENSADO
+}
+enum TipoSaga {
+  PRINCIPAL
+  SECUNDARIA1
+  SECUNDARIA2
+  SECUNDARIA3
+}
+
+interface "Decision<P>" as Decision <<sealed>> {
+  Ejecutar(paso, comando)
+  ProgramarReintento(paso, espera, intentoNum)
+  Compensar(paso, comando)
+  ArrancarSaga(contexto)
+}
+interface ComandoPaso <<marcadora>>
+interface ResultadoPaso <<marcadora>>
+interface ContextoArranque <<sealed>> {
+  ArranqueSecundaria1(externalId, refPaso1)
+  ArranqueSecundaria2(externalId, refPaso5)
+  ArranqueSecundaria3(externalId, refPaso7)
+}
+
+class MotivoFallo <<@ValueObject>> {
+  codigo / detalle / esReintentable
+}
+class "SagaId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion,\nRefPaso1 / RefPaso5 / RefPaso7" as VOs <<@ValueObject>>
+
+Saga "1" *-- "n" EjecucionPaso : pasos
+Saga *-- PoliticaReintentos
+Saga o-- EstadoSaga
+Saga o-- EstadoTicket
+EjecucionPaso o-- EstadoPaso
+EjecucionPaso o-- MotivoFallo
+Saga .right.> Decision : emite
+Decision ..> ContextoArranque : ArrancarSaga
+
+' Layout: columnas sin cruces
+EstadoSaga -[hidden]down- EstadoTicket
+EstadoTicket -[hidden]down- EstadoPaso
+PasoSaga -[hidden]down- ComandoPaso
+ComandoPaso -[hidden]down- ResultadoPaso
+TipoSaga -[hidden]down- VOs
+
+note bottom of ComandoPaso
+  Marcadoras en comun: cada agregado define su sealed local
+  (sin module-info los sealed exigen mismo paquete).
+  Los 4 agregados y sus tipos por saga: ver 15 y 16.
+end note
+@enduml

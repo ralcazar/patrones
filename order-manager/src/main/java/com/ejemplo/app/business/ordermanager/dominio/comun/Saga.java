@@ -1,5 +1,6 @@
 package com.ejemplo.app.business.ordermanager.dominio.comun;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -27,8 +28,15 @@ import org.jmolecules.ddd.annotation.Identity;
  * Ciclo de vida común que esta base encapsula:
  * - iniciar/continuar idempotentes: la reentrega por lease del GestorOrdenes
  *   puede reinvocarlos; si el estado ya avanzó son un no-op o una reanudación.
- * - Ante fallo: backoff exponencial hasta agotar intentos, luego ticket a soporte.
- * - Soporte puede reintentar manualmente o marcar el paso como OK.
+ * - Fallo reintentable: backoff exponencial (1..180 min) y, consumida la
+ *   escalera, reintento indefinido cada 180 min con el flag de ticket
+ *   PENDIENTE (se borra si un reintento acaba bien).
+ * - Fallo NO reintentable (p. ej. JSON imparseable): sin reintento automático;
+ *   la saga queda FALLIDA (paso BLOQUEADO_SOPORTE) y con ticket PENDIENTE.
+ * - Los tickets NO se abren aquí: el planificador barre los PENDIENTE, abre
+ *   UN ticket para todos y los deja en ABIERTO con su fecha.
+ * - Soporte puede reintentar manualmente o marcar el paso como OK: la saga
+ *   FALLIDA vuelve a EN_CURSO.
  */
 public abstract class Saga<P extends Enum<P> & PasoSaga> {
 
@@ -40,6 +48,8 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
     protected final List<AuditoriaIntervencion> auditoria;
     protected final PoliticaReintentos reintentos = new PoliticaReintentos();
     protected EstadoSaga estado;
+    protected EstadoTicket estadoTicket;
+    protected Instant ticketAbiertoEn;
     protected long version;
 
     protected Saga(SagaId id, ExternalId externalId, Class<P> tipoPaso,
@@ -51,19 +61,24 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
         misPasos.forEach(p -> pasos.put(p, EjecucionPaso.nuevo(p)));
         this.auditoria = new ArrayList<>();
         this.estado = estado;
+        this.estadoTicket = EstadoTicket.SIN_TICKET;
+        this.ticketAbiertoEn = null;
         this.version = version;
     }
 
     /** Constructor de rehidratación para el adaptador de persistencia. */
     protected Saga(SagaId id, ExternalId externalId, Class<P> tipoPaso,
                    EnumMap<P, EjecucionPaso<P>> pasos, List<AuditoriaIntervencion> auditoria,
-                   EstadoSaga estado, long version) {
+                   EstadoSaga estado, EstadoTicket estadoTicket, Instant ticketAbiertoEn,
+                   long version) {
         this.id = id;
         this.externalId = externalId;
         this.tipoPaso = tipoPaso;
         this.pasos = pasos;
         this.auditoria = new ArrayList<>(auditoria);
         this.estado = estado;
+        this.estadoTicket = estadoTicket;
+        this.ticketAbiertoEn = ticketAbiertoEn;
         this.version = version;
     }
 
@@ -127,6 +142,7 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
             return List.of(); // duplicado, tardío o saga cancelada: se ignora
         }
         ep.completar();
+        limpiarTicket(); // el reintento (o el primer intento) acabó bien: nada que contar a soporte
         aplicarResultado(paso, resultado);
         return transicionTras(paso);
     }
@@ -138,14 +154,21 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
         }
         ep.registrarFallo(motivo);
 
-        if (motivo.esReintentable() && !reintentos.agotado(ep.intentos())) {
-            ep.esperarReintento();
-            return List.of(new Decision.ProgramarReintento<>(
-                    paso, reintentos.esperaTras(ep.intentos()), ep.intentos() + 1));
+        if (!motivo.esReintentable()) {
+            // p. ej. fallo de datos al parsear un JSON: reintentar no lo arreglará.
+            // Sin reintento automático: FALLIDA, y que el planificador pida el ticket.
+            ep.bloquear();
+            estado = EstadoSaga.FALLIDA;
+            solicitarTicket();
+            return List.of();
         }
-        ep.bloquear();
-        return List.of(new Decision.AbrirTicketSoporte<>(
-                id, tipo(), paso, motivo, ep.intentos(), esCancelable()));
+        if (reintentos.escaleraConsumida(ep.intentos())) {
+            // Se sigue reintentando (cada 180 min, indefinidamente), pero ya con ticket pedido.
+            solicitarTicket();
+        }
+        ep.esperarReintento();
+        return List.of(new Decision.ProgramarReintento<>(
+                paso, reintentos.esperaTras(ep.intentos()), ep.intentos() + 1));
     }
 
     /** Lo invoca el caso de uso cuando vence el reintento programado. */
@@ -162,10 +185,11 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
     /** Reintento manual: resetea el contador (vuelve a haber intentos) y relanza el paso. */
     public final List<Decision<P>> reanudarPorSoporte(P paso, UsuarioSoporte quien) {
         var ep = pasoDe(paso);
-        if (ep.estado() != EstadoPaso.BLOQUEADO_SOPORTE) {
+        if (estado == EstadoSaga.CANCELADA || ep.estado() != EstadoPaso.BLOQUEADO_SOPORTE) {
             throw new PasoNoIntervenibleException(id, paso, ep.estado());
         }
-        ep.resetearIntentos();
+        reactivar();
+        ep.resetearIntentos(); // borra también el ticket: un nuevo bloqueo será un estado de error nuevo
         auditoria.add(AuditoriaIntervencion.de(quien, "REINTENTO_MANUAL", paso.name()));
         return solicitar(paso);
     }
@@ -178,13 +202,15 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
     public final List<Decision<P>> marcarOkManual(P paso, UsuarioSoporte quien,
                                                   String justificacion, ResultadoPaso datos) {
         var ep = pasoDe(paso);
-        if (ep.estado() != EstadoPaso.BLOQUEADO_SOPORTE) {
+        if (estado == EstadoSaga.CANCELADA || ep.estado() != EstadoPaso.BLOQUEADO_SOPORTE) {
             throw new PasoNoIntervenibleException(id, paso, ep.estado());
         }
         if (pasosConDatosManualesObligatorios().contains(paso) && datos == null) {
             throw new DatosManualesRequeridosException(id, paso);
         }
+        reactivar();
         ep.completarManual();
+        limpiarTicket(); // soporte lo arregló: el problema deja de estar vivo
         if (datos != null) {
             aplicarResultado(paso, datos);
         }
@@ -192,7 +218,53 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
         return transicionTras(paso); // la saga continúa (o finaliza) su curso normal
     }
 
+    // --- tickets (los abre el planificador, no el flujo de fallo) ---
+
+    /**
+     * El planificador de tickets ya avisó a soporte (el ticket se abre
+     * escribiendo en el log: no hay id que guardar). Idempotente: si el flag
+     * ya no está PENDIENTE (el problema se curó entre medias), es un no-op.
+     */
+    public final List<Decision<P>> marcarTicketAbierto(Instant cuando) {
+        if (estadoTicket == EstadoTicket.PENDIENTE) {
+            estadoTicket = EstadoTicket.ABIERTO;
+            ticketAbiertoEn = cuando;
+        }
+        return List.of();
+    }
+
     // --- helpers para las subclases ---
+
+    /** Soporte ha intervenido: la saga FALLIDA vuelve a estar viva. */
+    private void reactivar() {
+        if (estado == EstadoSaga.FALLIDA) {
+            estado = EstadoSaga.EN_CURSO;
+        }
+    }
+
+    /** Pide ticket; si ya hay uno pedido o abierto por un problema vivo, no se duplica. */
+    private void solicitarTicket() {
+        if (estadoTicket == EstadoTicket.SIN_TICKET) {
+            estadoTicket = EstadoTicket.PENDIENTE;
+        }
+    }
+
+    private void limpiarTicket() {
+        estadoTicket = EstadoTicket.SIN_TICKET;
+        ticketAbiertoEn = null;
+    }
+
+    /**
+     * Deja el paso bloqueado registrando el motivo, sin pasar por el ciclo de
+     * reintentos (p. ej. una compensación que falla: inconsistencia real que
+     * debe mirar una persona), y pide ticket para soporte.
+     */
+    protected final void bloquearPorFallo(P paso, MotivoFallo motivo) {
+        var ep = pasoDe(paso);
+        ep.registrarFallo(motivo);
+        ep.bloquear();
+        solicitarTicket();
+    }
 
     protected final List<Decision<P>> solicitar(P p) {
         pasoDe(p).solicitar();
@@ -232,6 +304,9 @@ public abstract class Saga<P extends Enum<P> & PasoSaga> {
     public final SagaId id() { return id; }
     public final ExternalId externalId() { return externalId; }
     public final EstadoSaga estado() { return estado; }
+    public final EstadoTicket estadoTicket() { return estadoTicket; }
+    /** Fecha de apertura del ticket; null salvo que estadoTicket == ABIERTO. */
+    public final Instant ticketAbiertoEn() { return ticketAbiertoEn; }
     public final long version() { return version; }
     public final Map<P, EjecucionPaso<P>> pasos() { return Collections.unmodifiableMap(pasos); }
     public final List<AuditoriaIntervencion> auditoria() { return Collections.unmodifiableList(auditoria); }

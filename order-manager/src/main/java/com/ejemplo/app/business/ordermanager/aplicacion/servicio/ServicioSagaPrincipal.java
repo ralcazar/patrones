@@ -12,7 +12,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso8;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaPrincipal;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria2;
@@ -65,11 +64,10 @@ public class ServicioSagaPrincipal extends ServicioSagaBase<PasoSagaPrincipal, S
             RepositorioSagaSecundaria1 repoSecundaria1, RepositorioSagaSecundaria2 repoSecundaria2,
             RepositorioSagaSecundaria3 repoSecundaria3,
             UnidadDeTrabajo tx, PuertoMensajesProcesados dedup, PuertoColaTareas cola,
-            PuertoTicketsSoporte tickets,
             PuertoPaso1 puertoPaso1, PuertoPaso2 puertoPaso2, PuertoPaso3 puertoPaso3,
             PuertoPaso4 puertoPaso4, PuertoPaso5 puertoPaso5, PuertoPaso6 puertoPaso6,
             PuertoPaso7 puertoPaso7, PuertoPaso8 puertoPaso8) {
-        super(tx, dedup, cola, tickets);
+        super(tx, dedup, cola);
         this.repo = repo;
         this.repoSecundaria1 = repoSecundaria1;
         this.repoSecundaria2 = repoSecundaria2;
@@ -209,13 +207,14 @@ public class ServicioSagaPrincipal extends ServicioSagaBase<PasoSagaPrincipal, S
                 return null;
             }));
         } catch (ExcepcionServicioExterno e) {
-            var decisiones = ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
+            // Inconsistencia real: el paso queda BLOQUEADO_SOPORTE y el
+            // planificador de tickets lo detectará en su siguiente pasada.
+            ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
                 var saga = repo.cargar(id);
-                var ds = saga.compensacionFallida(paso, e.motivo());
+                saga.compensacionFallida(paso, e.motivo());
                 repo.guardar(saga);
-                return ds;
+                return null;
             }));
-            despachar(id, decisiones);
         }
     }
 }

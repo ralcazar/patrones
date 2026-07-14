@@ -1,0 +1,73 @@
+@startuml 23-clases-infraestructura-cola
+title Infraestructura — la cola de órdenes con lease (infraestructure.ordermanager.cola)
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+class GestorOrdenes <<@Component>> {
+  -servicioOrdenes : ServicioOrdenes
+  -trabajador : TrabajadorOrdenes
+  +despachar()  «@Scheduled»
+}
+class TrabajadorOrdenes <<@Component>> {
+  -servicioOrdenes : ServicioOrdenes
+  -procesador : ProcesadorOrden
+  +drenar()  «pool @Async»
+  +parar()
+}
+class ServicioOrdenes <<@Service>> {
+  -repo : RepositorioOrdenes
+  -lease : Duration
+  +encolar(contenido, sagaId, tipoTarea, ejecutarDesde)
+  +purgarCompletadas(corte)
+  +hayTrabajoPendiente() : boolean
+  +reclamarSiguiente(token) : Optional<Orden>
+  +finalizar(id, token, ok)
+}
+interface RepositorioOrdenes <<JpaRepository>> {
+  +buscarCandidatas(ahora, limiteLease, ventana)
+  +reclamar(id, token, ahora, limiteLease)
+  +finalizar(id, estado, token)
+  +purgarCompletadasAntesDe(corte)
+}
+note right of RepositorioOrdenes
+  Patrón lease con UPDATE condicional.
+  Elegible si ejecutar_desde <= now:
+  reintentos y timeouts son órdenes
+  diferidas, sin scheduler externo.
+end note
+class Orden <<@Entity ordenes>> {
+  -id : Long
+  -estado : EstadoOrden
+  -token / reclamadaEn
+  -contenido : String  «TareaSaga JSON»
+  -ejecutarDesde / sagaId / tipoTarea
+}
+enum EstadoOrden {
+  PENDIENTE
+  EN_PROCESO
+  COMPLETADA
+  FALLIDA
+}
+interface ProcesadorOrden {
+  +procesar(Orden)
+}
+class ConfiguracionEjecucionAsincrona <<@Configuration>> {
+  +ejecutorOrdenes(tamanoPool) : Executor
+}
+note bottom of Orden
+  La Orden es infraestructura pura: la cola de
+  tareas durable del gestor. El estado de negocio
+  vive solo en las sagas (EstadoSaga/EstadoTicket).
+  Este motor no importa NADA del modelo de sagas
+  (el puente está en 24-clases-infraestructura-saga).
+end note
+
+GestorOrdenes --> ServicioOrdenes : ¿hay trabajo?
+GestorOrdenes --> TrabajadorOrdenes : drenar()
+TrabajadorOrdenes --> ServicioOrdenes : reclamar / finalizar
+TrabajadorOrdenes --> ProcesadorOrden : procesar(orden)
+ServicioOrdenes --> RepositorioOrdenes
+RepositorioOrdenes ..> Orden
+Orden o-- EstadoOrden
+@enduml

@@ -1,0 +1,28 @@
+@startuml 19-clases-aplicacion-saga-secundaria1
+title Aplicación — saga secundaria 1: ServicioSagaSecundaria1 y sus puertos
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "ServicioSagaBase<PasoSagaSecundaria1,\nSagaSecundaria1Root> (ver 17)" as Base <<@Service>>
+
+class ServicioSagaSecundaria1 <<@Service>> {
+  #ejecutar: INICIO y CONFIRMACION síncronos,\nreentran con el resultado (checkpoint por paso)
+}
+
+package "puerto.salida" {
+  interface RepositorioSagaSecundaria1 <<@Repository>> {
+    +crear / cargar / guardar
+    +purgarFinalizadasAntesDe(corte)
+  }
+  interface PuertoSagaSecundaria1 {
+    +iniciar(cmd) : Iniciada(refInicio)
+    +confirmar(cmd) : Confirmada(refConfirmacion)
+    «dos métodos REST del mismo servicio»
+  }
+}
+
+Base <|-down- ServicioSagaSecundaria1
+ServicioSagaSecundaria1 --> RepositorioSagaSecundaria1
+ServicioSagaSecundaria1 --> PuertoSagaSecundaria1 : REST síncrono\n(fuera de la tx)
+@enduml

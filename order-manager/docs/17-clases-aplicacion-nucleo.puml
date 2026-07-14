@@ -1,0 +1,106 @@
+@startuml 17-clases-aplicacion-nucleo
+title Aplicación — núcleo: ServicioSagaBase, router de tareas e intake
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+package "puerto.entrada" {
+  interface CasoUsoIniciarTramitacion {
+    +iniciar(ComandoIniciarTramitacion) : SagaId
+  }
+  interface "CasoUsoProcesarResultadoPaso<P>" as CasoUsoProcesarResultadoPaso {
+    +pasoCompletado(id, paso : P, resultado, msgId)
+    +pasoFallido(id, paso : P, motivo, msgId)
+  }
+}
+
+package "servicio" {
+  abstract class "ServicioSagaBase<P, S extends Saga<P>>" as Base <<@Service>> {
+    #tx : UnidadDeTrabajo
+    #dedup : PuertoMensajesProcesados
+    #cola : PuertoColaTareas
+    +continuar(id)
+    +pasoCompletado / pasoFallido / reintentar
+    +reanudarPaso / marcarPasoOk
+    +marcarTicketAbierto(id, apertura)
+    #procesar(msgId, id, accion)  «tx + dedup + reintento optimista»
+    #despachar(id, decisiones)  «I/O fuera de la tx»
+    {abstract} #cargar(id) : S
+    {abstract} #guardar(S)
+    {abstract} #ejecutar(id, paso, cmd)
+    #alSolicitarEjecucion(saga, d)  «hook tx»
+    #arrancarSaga(saga, d)  «hook tx»
+    #compensar(id, paso, cmd)
+  }
+  note right of Base
+    Regla de oro: dentro de la tx solo BBDD
+    (estado + tareas encoladas); fuera solo
+    I/O externo (REST). Subclases: ver 18-21.
+  end note
+
+  class ManejadorTareasSaga <<@Service>> {
+    +procesar(TareaSaga)
+  }
+  note bottom of ManejadorTareasSaga
+    Router: switch por tipo de tarea y TipoSaga.
+    Única frontera donde PasoSaga se baja al
+    enum concreto de cada saga.
+  end note
+
+  class ServicioEncolarTramitacion <<@Service>> {
+    +iniciar(cmd) : SagaId
+  }
+  note bottom of ServicioEncolarTramitacion
+    Intake durable: genera SagaId, encola
+    IniciarTramitacion y responde 202.
+  end note
+
+  class ReintentoOptimista <<package-private>> {
+    {static} ejecutar(Supplier<T>) : T
+    MAX_REINTENTOS = 5
+  }
+}
+
+package "tarea" {
+  interface TareaSaga <<sealed>> {
+    +sagaId() : SagaId
+    IniciarTramitacion(sagaId, externalId, datos, datoNegocio2)
+    ArrancarSaga(sagaId, tipo)
+    Reintentar(tipo, sagaId, paso, intentoNum)
+    TimeoutSagaSecundaria2(sagaId)
+    ResultadoSagaSecundaria2Ok(sagaId, ref, mensajeId)
+    ResultadoSagaSecundaria2Error(sagaId, ..., reintentable, mensajeId)
+  }
+}
+
+package "puerto.salida (transversales)" {
+  interface UnidadDeTrabajo {
+    +enTransaccion(Supplier<T>) : T
+  }
+  interface PuertoColaTareas {
+    +encolar(tarea)
+    +encolar(tarea, noAntesDe)
+    +purgarTerminadasAntesDe(corte)
+  }
+  interface PuertoMensajesProcesados {
+    +yaProcesado(msgId) : boolean
+    +registrar(msgId)
+    +purgarAnterioresA(corte)
+  }
+}
+
+CasoUsoIniciarTramitacion <|.. ServicioEncolarTramitacion
+CasoUsoProcesarResultadoPaso <|.. Base
+
+Base --> UnidadDeTrabajo
+Base --> PuertoMensajesProcesados
+Base --> PuertoColaTareas
+Base ..> ReintentoOptimista
+Base ..> TareaSaga : encola Reintentar
+ManejadorTareasSaga ..> TareaSaga : despacha por tipo
+ManejadorTareasSaga ..> Base : rutea a la subclase\nde la saga correcta
+ServicioEncolarTramitacion --> PuertoColaTareas
+
+UnidadDeTrabajo -[hidden]down- PuertoColaTareas
+PuertoColaTareas -[hidden]down- PuertoMensajesProcesados
+@enduml

@@ -1,0 +1,93 @@
+@startuml 16-clases-dominio-sagas-secundarias
+title Dominio — las 3 sagas secundarias (dominio.sagasecundaria1/2/3)
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "Saga<P>\n(dominio.comun — ver 14)" as Saga {
+  ciclo de vida común: iniciar / completar /
+  fallar / reintentos / soporte / tickets
+}
+
+package "dominio.sagasecundaria1" {
+  class SagaSecundaria1Root <<@AggregateRoot>> {
+    -refPaso1 / refInicio / refConfirmacion
+    +{static} crear(id, ArranqueSecundaria1)
+  }
+  enum PasoSagaSecundaria1 {
+    INICIO
+    CONFIRMACION
+  }
+  interface ComandoPasoSecundaria1 <<sealed>> {
+    Iniciar(externalId, refPaso1)
+    Confirmar(refInicio)
+  }
+  interface ResultadoPasoSecundaria1 <<sealed>> {
+    Iniciada(refInicio)
+    Confirmada(refConfirmacion)
+  }
+  note bottom of SagaSecundaria1Root
+    Dos REST síncronos encadenados;
+    marcar-OK de INICIO exige aportar
+    refInicio (lo consume CONFIRMACION).
+  end note
+}
+
+package "dominio.sagasecundaria2" {
+  class SagaSecundaria2Root <<@AggregateRoot>> {
+    -refPaso5 / refRespuesta
+    +{static} crear(id, ArranqueSecundaria2)
+  }
+  enum PasoSagaSecundaria2 {
+    SOLICITUD
+  }
+  interface ComandoPasoSecundaria2 <<sealed>> {
+    Solicitar(externalId, refPaso5)
+  }
+  interface ResultadoPasoSecundaria2 <<sealed>> {
+    Respuesta(refRespuesta)
+  }
+  note bottom of SagaSecundaria2Root
+    Un paso SOLICITUD: REST cuya respuesta
+    llega por Kafka. El agregado no sabe nada
+    del timeout de 24h ni de la conciliación:
+    los orquesta la capa de aplicación (ver 20).
+  end note
+}
+
+package "dominio.sagasecundaria3" {
+  class SagaSecundaria3Root <<@AggregateRoot>> {
+    -refPaso7 / refEjecucion
+    +{static} crear(id, ArranqueSecundaria3)
+  }
+  enum PasoSagaSecundaria3 {
+    EJECUCION
+  }
+  interface ComandoPasoSecundaria3 <<sealed>> {
+    Ejecutar(externalId, refPaso7)
+  }
+  interface ResultadoPasoSecundaria3 <<sealed>> {
+    Ejecutada(refEjecucion)
+  }
+  note bottom of SagaSecundaria3Root
+    Una única llamada REST y COMPLETADA.
+  end note
+}
+
+Saga <|-down- SagaSecundaria1Root
+Saga <|-down- SagaSecundaria2Root
+Saga <|-down- SagaSecundaria3Root
+
+SagaSecundaria1Root ..> ComandoPasoSecundaria1
+SagaSecundaria1Root ..> ResultadoPasoSecundaria1
+SagaSecundaria2Root ..> ComandoPasoSecundaria2
+SagaSecundaria2Root ..> ResultadoPasoSecundaria2
+SagaSecundaria3Root ..> ComandoPasoSecundaria3
+SagaSecundaria3Root ..> ResultadoPasoSecundaria3
+
+note as NNace
+  Las 3 nacen cuando la principal completa
+  (tras el punto de no retorno): nunca se
+  cancelan ni compensan.
+end note
+@enduml

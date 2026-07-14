@@ -3,14 +3,26 @@
 Flujo: saga principal `PASO1 → PASO2 → ... → PASO8` y, al completar el PASO8,
 arrancan 3 sagas secundarias independientes sin join: `SECUNDARIA1` (dos
 llamadas REST encadenadas al mismo servicio), `SECUNDARIA2` (una llamada REST
-cuya respuesta llega después como evento Kafka, puede tardar; timeout de 24 h)
-y `SECUNDARIA3` (una llamada REST). Punto de no retorno en PASO7; backoff
-30s→4h, ticket al 10º intento; soporte puede cancelar (solo pre-PASO7, arranca
-la compensación), reintentar, marcar-OK manual y consultar/filtrar las sagas
-(estado, fecha de inicio, fecha de última actualización). Un planificador
-purga periódicamente los datos antiguos que acabaron bien
-(ServicioLimpiezaDatos). **Todo termina cuando las sagas se completan: no se
-publican eventos de salida.**
+cuya respuesta llega después como evento Kafka, puede tardar; si en 24 h no
+llega se consulta el REST de conciliación y, si sigue sin resultado, se abre
+otra ventana de 24 h) y `SECUNDARIA3` (una llamada REST). Punto de no retorno
+en PASO7.
+
+Fallos: backoff exponencial en minutos `1, 3, 5, 10, 20, 45, 90, 180`;
+consumida la escalera se sigue reintentando indefinidamente cada 180 min pero
+la saga queda con "abrir ticket pendiente" (el flag se borra si un reintento
+acaba bien). Un fallo NO reintentable (p. ej. JSON imparseable) no se
+reintenta: la saga queda FALLIDA con el paso BLOQUEADO_SOPORTE y también pide
+ticket. Los tickets no se abren en línea: un `@Scheduled` (cada 3 h, de 8 a
+17) barre las sagas PENDIENTE, abre UN único ticket para todas (escribir un
+texto en el log: no hay id de ticket) y las marca ABIERTO con la fecha.
+Soporte puede cancelar (solo pre-PASO7, arranca la compensación), reintentar,
+marcar-OK manual y consultar/filtrar las sagas — viendo el marcador de ticket
+(pendiente/abierto y desde cuándo), la fecha del próximo reintento y si un
+paso está bloqueado sin reintento automático. Un planificador purga
+periódicamente los datos antiguos que acabaron bien (ServicioLimpiezaDatos).
+**Todo termina cuando las sagas se completan: no se publican eventos de
+salida.**
 
 No hay sagas "padre" ni "hijas": todas son sagas del mismo concepto (la base
 abstracta `Saga<P>`, que NO es un agregado; los agregados son
@@ -55,8 +67,9 @@ el proceso muere en cualquier punto, el lease reentrega la tarea y
 - `REINTENTAR` — con `ejecutar_desde = ahora + backoff`. Sustituye al
   scheduler. El paso viaja por nombre y se reconstruye con `PasoSaga.de`.
 - `TIMEOUT_SECUNDARIA2` — encolada al solicitar el paso SOLICITUD, en la misma
-  tx; si la respuesta no llega en 24 h se convierte en fallo reintentable
-  (autocurativo incluso si el proceso murió antes de la llamada REST).
+  tx; al vencer NO da la respuesta por perdida: consulta el REST de
+  conciliación y procesa el resultado si ya existe, o encola otra ventana de
+  24 h si no (autocurativo incluso si el proceso murió antes de la llamada REST).
 - `RESULTADO_SECUNDARIA2_OK / _ERROR` — las encola el consumer fino de Kafka
   (ConsumidorRespuestaSecundaria2, único uso de Kafka) y hace ack;
   deduplicadas por mensajeId.
@@ -71,7 +84,8 @@ com/ejemplo/app/
       comun/           Shared kernel: Saga<P> (base, no agregado), PasoSaga,
                        Decision<P>, ComandoPaso/ResultadoPaso (marcadoras),
                        ContextoArranque, SagaId, ExternalId, EstadoSaga,
-                       EstadoPaso, TipoSaga, RefPaso1/5/7, excepciones.
+                       EstadoPaso, EstadoTicket, TipoSaga, PoliticaReintentos,
+                       RefPaso1/5/7, excepciones.
       sagaprincipal/   SagaPrincipalRoot (@AggregateRoot), PasoSagaPrincipal,
                        ComandoPasoPrincipal, ResultadoPasoPrincipal,
                        ContextoTramitacion, RefPaso2/3/4/6/8, DatoNegocio2/3.
@@ -81,16 +95,19 @@ com/ejemplo/app/
     aplicacion/
       tarea/           TareaSaga (sealed)
       puerto/entrada/  CasoUso* (iniciar, resultados<P>, intervenir,
-                       consultar, limpiar)
+                       consultar, limpiar, abrir tickets pendientes,
+                       registrar respuesta secundaria 2)
       puerto/salida/   PuertoPaso1..8, PuertoSagaSecundaria1/2/3,
+                       PuertoConciliacionSecundaria2,
                        RepositorioSagaPrincipal + RepositorioSagaSecundaria1/2/3,
                        PuertoColaTareas, PuertoMensajesProcesados,
-                       PuertoTicketsSoporte, PuertoConsultaSagasSoporte,
-                       UnidadDeTrabajo
+                       PuertoTicketsSoporte, PuertoSagasTicketPendiente,
+                       PuertoConsultaSagasSoporte, UnidadDeTrabajo
       servicio/        ServicioSagaBase<P,S> + ServicioSagaPrincipal +
                        ServicioSagaSecundaria1/2/3, ManejadorTareasSaga,
                        ServicioSoporteSagas, ServicioEncolarTramitacion,
-                       ServicioLimpiezaDatos
+                       ServicioRegistrarRespuestaSecundaria2,
+                       ServicioTicketsSoporte, ServicioLimpiezaDatos
   infraestructure/ordermanager/   Spring, JPA, Kafka, Jackson
     cola/    El motor genérico de trabajo: Orden (@Entity), EstadoOrden,
              ProcesadorOrden, GestorOrdenes, TrabajadorOrdenes,
@@ -98,6 +115,7 @@ com/ejemplo/app/
              No importa NADA del modelo de sagas.
     saga/    El puente sagas<->gestor: ProcesadorOrdenSaga, AdaptadorColaTareas,
              CodecTareaSaga, UnidadDeTrabajoSpring, PlanificadorLimpieza,
+             PlanificadorTicketsSoporte, AdaptadorTicketsLog,
              ConsumidorRespuestaSecundaria2, ConfiguracionAplicacion.
   OrderManagerApplication.java
 resources/db/migration/V1, V2       resources/application.yml
@@ -131,15 +149,18 @@ y la dedup por mensajeId.
 
 ## Pendiente de implementar (infra restante)
 
-- Adaptadores REST de PuertoPaso1..8 y PuertoSagaSecundaria1/2/3
-  (fallo → ExcepcionServicioExterno).
+- Adaptadores REST de PuertoPaso1..8, PuertoSagaSecundaria1/2/3 y
+  PuertoConciliacionSecundaria2 (fallo → ExcepcionServicioExterno).
 - Repositorios JPA de las 4 sagas con versión optimista
-  (lanzar ConcurrenciaOptimistaException) + sus migraciones.
+  (lanzar ConcurrenciaOptimistaException) + sus migraciones (incluir
+  estado_ticket y ticket_abierto_en).
 - PuertoMensajesProcesados (tabla dedup, misma tx).
 - PuertoConsultaSagasSoporte (queries para la pantalla: sagasBloqueadas,
-  sagasEnEjecucion, buscar con FiltroSagas, vistaTramitacion por externalId;
-  puede unir ordenes por saga_id para mostrar también las tareas
+  sagasEnEjecucion, sagasConTicket, buscar con FiltroSagas, vistaTramitacion
+  por externalId; une ordenes por saga_id para proximoReintentoEn y las tareas
   pendientes/diferidas).
-- PuertoTicketsSoporte.
+- PuertoSagasTicketPendiente (query de sagas con estado_ticket = PENDIENTE).
+  PuertoTicketsSoporte ya está implementado (AdaptadorTicketsLog: el ticket
+  es un texto en el log).
 - Controlador REST del backoffice sobre CasoUsoIntervenirSaga (mapear
   PuntoNoRetornoSuperadoException → 409; el paso viaja por nombre).

@@ -1,27 +1,36 @@
 package com.ejemplo.app.business.ordermanager.dominio.comun;
 
 import java.time.Duration;
+import java.util.List;
 
 /**
- * Backoff exponencial: 30s, 1m, 2m, 4m, 8m, 16m, 32m, ~1h, ~2h, 4h (tope).
- * Al agotar MAX_INTENTOS, el paso se bloquea y se abre ticket a soporte.
+ * Backoff exponencial en minutos: 1, 3, 5, 10, 20, 45, 90, 180.
+ * Los reintentos NUNCA se agotan: consumida la escalera se sigue reintentando
+ * indefinidamente cada 180 minutos, pero la saga queda marcada con
+ * "abrir ticket pendiente" para que el planificador de tickets avise a soporte
+ * (el flag se borra si un reintento por fin termina bien).
  */
 public final class PoliticaReintentos {
 
-    public static final int MAX_INTENTOS = 10;
-    private static final Duration BASE = Duration.ofSeconds(30);
-    private static final Duration TOPE = Duration.ofHours(4);
+    private static final List<Duration> ESCALERA = List.of(
+            Duration.ofMinutes(1), Duration.ofMinutes(3), Duration.ofMinutes(5),
+            Duration.ofMinutes(10), Duration.ofMinutes(20), Duration.ofMinutes(45),
+            Duration.ofMinutes(90), Duration.ofMinutes(180));
 
-    /** @param intentosFallidos nº de fallos ya acumulados (1..MAX_INTENTOS) */
+    /** @param intentosFallidos nº de fallos ya acumulados (>= 1); del 8º en adelante, 180 min. */
     public Duration esperaTras(int intentosFallidos) {
         if (intentosFallidos < 1) {
             throw new IllegalArgumentException("intentosFallidos debe ser >= 1");
         }
-        var espera = BASE.multipliedBy(1L << Math.min(intentosFallidos - 1L, 20L));
-        return espera.compareTo(TOPE) > 0 ? TOPE : espera;
+        return ESCALERA.get(Math.min(intentosFallidos, ESCALERA.size()) - 1);
     }
 
-    public boolean agotado(int intentosFallidos) {
-        return intentosFallidos >= MAX_INTENTOS;
+    /**
+     * La escalera entera ya se consumió y el paso sigue fallando (el fallo
+     * llega DESPUÉS de una espera de 180 min): hay que pedir ticket a soporte,
+     * aunque el reintento automático continúe.
+     */
+    public boolean escaleraConsumida(int intentosFallidos) {
+        return intentosFallidos > ESCALERA.size();
     }
 }

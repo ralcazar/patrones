@@ -1,0 +1,26 @@
+@startuml 21-clases-aplicacion-saga-secundaria3
+title Aplicación — saga secundaria 3: ServicioSagaSecundaria3 y sus puertos
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "ServicioSagaBase<PasoSagaSecundaria3,\nSagaSecundaria3Root> (ver 17)" as Base <<@Service>>
+
+class ServicioSagaSecundaria3 <<@Service>> {
+  #ejecutar: un único paso EJECUCION síncrono,\nreentra con el resultado
+}
+
+package "puerto.salida" {
+  interface RepositorioSagaSecundaria3 <<@Repository>> {
+    +crear / cargar / guardar
+    +purgarFinalizadasAntesDe(corte)
+  }
+  interface PuertoSagaSecundaria3 {
+    +ejecutar(cmd) : Ejecutada(refEjecucion)  «REST síncrono»
+  }
+}
+
+Base <|-down- ServicioSagaSecundaria3
+ServicioSagaSecundaria3 --> RepositorioSagaSecundaria3
+ServicioSagaSecundaria3 --> PuertoSagaSecundaria3 : REST síncrono\n(fuera de la tx)
+@enduml

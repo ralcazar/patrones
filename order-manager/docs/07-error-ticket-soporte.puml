@@ -1,11 +1,13 @@
 @startuml 07-error-ticket-soporte
-title Error en un paso: backoff y, al agotarse (o no ser reintentable), ticket al equipo de soporte
+title Error en un paso: backoff 1..180 min, reintento indefinido con flag de ticket, y barrido @Scheduled que abre UN ticket
 
 box "Adaptadores de entrada" #EFF5FB
   participant "TrabajadorOrdenes\n+ ProcesadorOrdenSaga" as TRAB
+  participant "PlanificadorTicketsSoporte\n(@Scheduled 8,11,14,17h)" as PLAN
 end box
 box "Aplicación" #F5FBEF
   participant "Servicio de la saga\n(ServicioSagaPrincipal o\nServicioSagaSecundaria1/2/3)" as SVC
+  participant "ServicioTicketsSoporte" as STICK
 end box
 box "Dominio" #FBF5EF
   participant "Saga\n(principal o secundaria)" as SAGA
@@ -14,7 +16,8 @@ box "Adaptadores de salida" #F3EFFB
   participant "Repositorio de la saga\n(BBDD sagas)" as REPO
   participant "Puerto del paso\n(servicio externo)" as PASO
   participant "Tabla ordenes" as ORD
-  participant "PuertoTicketsSoporte" as TICK
+  participant "PuertoSagasTicketPendiente\n(query BBDD)" as PPEND
+  participant "PuertoTicketsSoporte\n(AdaptadorTicketsLog)" as TICK
 end box
 
 == El paso falla ==
@@ -28,35 +31,59 @@ group Transacción
   SVC -> REPO ++ : cargar(id)
   return saga
   SVC -> SAGA ++ : fallar(paso, motivo)
-  alt motivo reintentable y quedan intentos (máx. 10)
+  alt motivo reintentable
     SAGA -> SAGA : paso -> ESPERANDO_REINTENTO
-    SAGA --> SVC : [ProgramarReintento(espera 30 s -> 4 h,\nbackoff exponencial)]
+    SAGA -> SAGA : si ya se consumió la escalera\n(fallo tras la espera de 180 min):\nflag ticket = PENDIENTE
+    SAGA --> SVC : [ProgramarReintento(espera 1, 3, 5, 10,\n20, 45, 90, 180 min; después siempre 180:\nse reintenta INDEFINIDAMENTE)]
     SVC -> ORD ++ : encolar(Reintentar,\nejecutar_desde = ahora + espera)
     ORD -> ORD : INSERT orden PENDIENTE diferida\n(sustituye al scheduler)
     return
-  else motivo NO reintentable o 10.º intento agotado
-    SAGA -> SAGA : paso -> BLOQUEADO_SOPORTE
-    SAGA --> SVC : [AbrirTicketSoporte(sagaId, tipo, paso,\nmotivo, intentos, cancelable)]
+  else motivo NO reintentable (p. ej. JSON imparseable)
+    SAGA -> SAGA : paso -> BLOQUEADO_SOPORTE\nestado = FALLIDA (sin reintento automático)\nflag ticket = PENDIENTE
+    SAGA --> SVC : [] (nada que despachar)
   end
   deactivate SAGA
   SVC -> REPO ++ : guardar(saga)
   return
 end
-
-== Apertura del ticket (fuera de la transacción) ==
-SVC -> TICK ++ : abrir(sagaId, tipo, paso, motivo,\nintentos, cancelable)
-return TicketId
 [<- SVC
 deactivate SVC
 
-note over ORD
-  Cuando el reintento diferido vence, el pool reclama la orden,
-  reintentar() vuelve a SOLICITAR el paso y reentra en este flujo
-  con un intento más si falla de nuevo.
+note over SAGA
+  Si un reintento por fin acaba bien, completar() borra el
+  flag de ticket: no se molesta a soporte por un susto curado.
 end note
-note over TICK
-  Con el ticket, el equipo de soporte interviene desde el
-  backoffice: reintento manual, marcar-OK o arrancar la
-  saga compensatoria — ver 08-operaciones-soporte.
+
+== Barrido de tickets (cada 3 h, de 8 a 17) ==
+PLAN -> STICK ++ : abrirTicketsPendientes()
+STICK -> PPEND ++ : buscar() — sagas con\nflag ticket = PENDIENTE
+return [SagaTicketPendiente(tipo, sagaId,\nexternalId, paso, motivo, intentos,\nsigueReintentando)]
+alt no hay sagas pendientes
+  STICK --> PLAN : 0 (sin ticket)
+else hay sagas pendientes
+  STICK -> TICK ++ : abrir(sagas) — UN ticket para TODAS:\nescribe el texto en el log\n(no devuelve id: no se conoce)
+  return
+  loop para cada saga pendiente
+    STICK -> SVC ++ : marcarTicketAbierto(sagaId, ahora)
+    group Transacción
+      SVC -> REPO ++ : cargar(id)
+      return saga
+      SVC -> SAGA ++ : marcarTicketAbierto(ahora)
+      SAGA -> SAGA : flag PENDIENTE -> ABIERTO\nticketAbiertoEn = ahora\n(si ya no está PENDIENTE: no-op)
+      return []
+      SVC -> REPO ++ : guardar(saga)
+      return
+    end
+    return
+  end
+  STICK --> PLAN : nº de sagas cubiertas
+end
+deactivate STICK
+
+note over PPEND, TICK
+  Sin duplicados: las sagas ABIERTO ya no salen de la query.
+  Soporte consulta quién tiene ticket pendiente/abierto (y desde
+  cuándo), el próximo reintento programado, o el aviso de paso
+  bloqueado sin reintento — ver 08-operaciones-soporte.
 end note
 @enduml

@@ -17,10 +17,6 @@ public sealed interface Decision<P extends Enum<P> & PasoSaga> {
     record ProgramarReintento<P extends Enum<P> & PasoSaga>(P paso, Duration espera, int intentoNum)
             implements Decision<P> {}
 
-    record AbrirTicketSoporte<P extends Enum<P> & PasoSaga>(
-            SagaId sagaId, TipoSaga tipo, P paso, MotivoFallo motivo,
-            int intentos, boolean sagaCancelable) implements Decision<P> {}
-
     record Compensar<P extends Enum<P> & PasoSaga>(P paso, ComandoPaso comando)
             implements Decision<P> {}
 

@@ -1,21 +1,37 @@
 @startuml 13-maquinas-de-estado
-title Máquinas de estado: EstadoSaga y EstadoPaso (negocio) + EstadoOrden (cola de infraestructura)
+title Máquinas de estado: EstadoSaga, EstadoPaso y EstadoTicket (negocio) + EstadoOrden (cola de infraestructura)
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
 state "EstadoSaga (Saga) — único estado de ejecución de negocio" as MSaga {
   state INICIADA
   state EN_CURSO
+  state FALLIDA
   state COMPLETADA
   state CANCELADA
 
   [*] --> INICIADA : crear()
   INICIADA --> EN_CURSO : iniciar()\nsolicita pasoInicial()
   EN_CURSO --> COMPLETADA : finalizar() tras completar\nel último paso\n(fin del camino: sin eventos)
+  EN_CURSO --> FALLIDA : fallar() con motivo NO reintentable\n(paso -> BLOQUEADO_SOPORTE,\nflag ticket = PENDIENTE)\nLos reintentables NUNCA fallan la saga:\nreintentan indefinidamente
+  FALLIDA --> EN_CURSO : reanudarPorSoporte() /\nmarcarOkManual()
   INICIADA --> CANCELADA : cancelarPorSoporte()
   EN_CURSO --> CANCELADA : cancelarPorSoporte()\n[solo SagaPrincipalRoot y antes\ndel punto de no retorno (PASO7)]
+  FALLIDA --> CANCELADA : cancelarPorSoporte()\n[misma restricción]
   COMPLETADA --> [*]
   CANCELADA --> [*]
+}
+
+state "EstadoTicket (Saga) — marcador para el planificador de tickets" as MTicket {
+  state SIN_TICKET
+  state PENDIENTE_T as "PENDIENTE"
+  state ABIERTO
+
+  [*] --> SIN_TICKET
+  SIN_TICKET --> PENDIENTE_T : fallo tras consumir la escalera\nde backoff (180 min) o fallo\nno reintentable / compensación fallida
+  PENDIENTE_T --> ABIERTO : barrido @Scheduled (8-17h, cada 3h):\nUN ticket en el log para todas;\nguarda ticketAbiertoEn\n(sin id: no se conoce)
+  PENDIENTE_T --> SIN_TICKET : completar() / marcarOkManual():\nel problema se curó antes del barrido
+  ABIERTO --> SIN_TICKET : completar() / marcarOkManual():\nel problema quedó resuelto
 }
 
 state "EstadoPaso (EjecucionPaso)" as MPaso {
@@ -30,9 +46,9 @@ state "EstadoPaso (EjecucionPaso)" as MPaso {
 
   [*] --> PENDIENTE : EjecucionPaso.nuevo()
   PENDIENTE --> SOLICITADO : solicitar()\nDecision.Ejecutar(comando)
-  SOLICITADO --> COMPLETADO : completar(resultado)
-  SOLICITADO --> ESPERANDO_REINTENTO : fallar(motivo)\n[reintentable y no agotado]\nDecision.ProgramarReintento(backoff)
-  SOLICITADO --> BLOQUEADO_SOPORTE : fallar(motivo)\n[no reintentable o intentos agotados]\nDecision.AbrirTicketSoporte
+  SOLICITADO --> COMPLETADO : completar(resultado)\n(borra el flag de ticket)
+  SOLICITADO --> ESPERANDO_REINTENTO : fallar(motivo) [reintentable]\nProgramarReintento(1,3,5,10,20,\n45,90,180 min; después siempre 180,\nsin límite de intentos)
+  SOLICITADO --> BLOQUEADO_SOPORTE : fallar(motivo) [NO reintentable]\nsaga -> FALLIDA, ticket PENDIENTE
   ESPERANDO_REINTENTO --> SOLICITADO : reintentar()\nal vencer el backoff
   BLOQUEADO_SOPORTE --> SOLICITADO : reanudarPorSoporte()\nresetea intentos
   BLOQUEADO_SOPORTE --> COMPLETADO_MANUAL : marcarOkManual()\n[con datos si el paso los exige]
@@ -40,6 +56,7 @@ state "EstadoPaso (EjecucionPaso)" as MPaso {
   ESPERANDO_REINTENTO --> CANCELADO : cancelación de la saga
   BLOQUEADO_SOPORTE --> CANCELADO : cancelación de la saga
   COMPLETADO --> COMPENSADO : compensacionCompletada()\n[solo PASO1 y PASO2\nal cancelar la principal]
+  COMPLETADO --> BLOQUEADO_SOPORTE : compensacionFallida()\n[inconsistencia real:\nticket PENDIENTE, sin reintento]
 
   COMPLETADO --> [*]
   COMPLETADO_MANUAL --> [*]
@@ -51,15 +68,15 @@ state "EstadoOrden (Orden, patrón lease) — estado interno de la cola: INFRAES
   state PENDIENTE_O as "PENDIENTE"
   state EN_PROCESO
   state COMPLETADA_O as "COMPLETADA"
-  state FALLIDA
+  state FALLIDA_O as "FALLIDA"
 
   [*] --> PENDIENTE_O : encolar()\n[elegible cuando ejecutar_desde <= now]
   PENDIENTE_O --> EN_PROCESO : reclamar()\nUPDATE condicional: token + reclamada_en
   EN_PROCESO --> EN_PROCESO : lease expirado\n(reclamada_en < limiteLease):\nre-reclamada por otro trabajador
   EN_PROCESO --> COMPLETADA_O : finalizar(ok)\n[token coincide]
-  EN_PROCESO --> FALLIDA : finalizar(error)\n[token coincide]
+  EN_PROCESO --> FALLIDA_O : finalizar(error)\n[token coincide]
   COMPLETADA_O --> [*]
-  FALLIDA --> [*]
+  FALLIDA_O --> [*]
 }
 
 note bottom of MOrden

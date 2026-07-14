@@ -1,5 +1,6 @@
 package com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2;
 
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -12,6 +13,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Decision;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EjecucionPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
@@ -44,8 +46,10 @@ public final class SagaSecundaria2Root extends Saga<PasoSagaSecundaria2> {
     private SagaSecundaria2Root(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
             RefRespuesta refRespuesta,
             EnumMap<PasoSagaSecundaria2, EjecucionPaso<PasoSagaSecundaria2>> pasos,
-            List<AuditoriaIntervencion> auditoria, EstadoSaga estado, long version) {
-        super(id, externalId, PasoSagaSecundaria2.class, pasos, auditoria, estado, version);
+            List<AuditoriaIntervencion> auditoria, EstadoSaga estado,
+            EstadoTicket estadoTicket, Instant ticketAbiertoEn, long version) {
+        super(id, externalId, PasoSagaSecundaria2.class, pasos, auditoria, estado,
+                estadoTicket, ticketAbiertoEn, version);
         this.refPaso5 = refPaso5;
         this.refRespuesta = refRespuesta;
     }
@@ -58,9 +62,10 @@ public final class SagaSecundaria2Root extends Saga<PasoSagaSecundaria2> {
     public static SagaSecundaria2Root rehidratar(SagaId id, ExternalId externalId,
             RefPaso5 refPaso5, RefRespuesta refRespuesta,
             EnumMap<PasoSagaSecundaria2, EjecucionPaso<PasoSagaSecundaria2>> pasos,
-            List<AuditoriaIntervencion> auditoria, EstadoSaga estado, long version) {
+            List<AuditoriaIntervencion> auditoria, EstadoSaga estado,
+            EstadoTicket estadoTicket, Instant ticketAbiertoEn, long version) {
         return new SagaSecundaria2Root(id, externalId, refPaso5, refRespuesta,
-                pasos, auditoria, estado, version);
+                pasos, auditoria, estado, estadoTicket, ticketAbiertoEn, version);
     }
 
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA2; }

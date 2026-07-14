@@ -48,8 +48,9 @@ note over SAGA
 end note
 
 note over SVC, PASOS
-  Si un puerto lanza ExcepcionServicioExterno: fallo con backoff
-  y, si se agota o no es reintentable, ticket — ver 07.
+  Si un puerto lanza ExcepcionServicioExterno: backoff 1..180 min con
+  reintento indefinido o, si no es reintentable, saga FALLIDA; el ticket
+  lo abre después el planificador @Scheduled — ver 07.
 end note
 deactivate SVC
 @enduml

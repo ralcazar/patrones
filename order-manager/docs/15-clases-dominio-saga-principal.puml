@@ -1,0 +1,54 @@
+@startuml 15-clases-dominio-saga-principal
+title Dominio — saga principal (dominio.sagaprincipal)
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "Saga<PasoSagaPrincipal>\n(dominio.comun — ver 14)" as Saga {
+  ciclo de vida común: iniciar / completar /
+  fallar / reintentos / soporte / tickets
+}
+
+package "dominio.sagaprincipal" {
+  class SagaPrincipalRoot <<@AggregateRoot>> {
+    -ctx : ContextoTramitacion
+    +{static} crear(id, externalId, datos, datoNegocio2)
+    +{static} rehidratar(...)
+    +cancelarPorSoporte(quien, motivo) : List<Decision>
+    +compensacionCompletada(paso)
+    +compensacionFallida(paso, motivo)
+    +esCancelable() : boolean
+  }
+  note right of SagaPrincipalRoot
+    PASO1..PASO8 síncronos.
+    Punto de no retorno: PASO7 completado.
+    Al completar PASO8 emite 3 ArrancarSaga.
+    compensacionFallida: paso BLOQUEADO_SOPORTE
+    + ticket PENDIENTE (saga sigue CANCELADA).
+  end note
+
+  enum PasoSagaPrincipal {
+    PASO1 .. PASO8
+  }
+  interface ComandoPasoPrincipal <<sealed>> {
+    EjecutarPaso1 .. EjecutarPaso8
+    CompensarPaso1 / CompensarPaso2
+  }
+  interface ResultadoPasoPrincipal <<sealed>> {
+    ResultadoPaso1 .. ResultadoPaso8
+  }
+  class ContextoTramitacion <<@Entity>> {
+    -datoNegocio3 / datoNegocio2
+    -refPaso1 .. refPaso8
+    +aplicar(ResultadoPasoPrincipal)
+  }
+  class "RefPaso2/3/4/6/8,\nDatoNegocio2, DatoNegocio3" as Refs <<@ValueObject>>
+}
+
+Saga <|-down- SagaPrincipalRoot
+SagaPrincipalRoot *-- ContextoTramitacion
+SagaPrincipalRoot ..> ComandoPasoPrincipal : comandoPara(paso)
+SagaPrincipalRoot ..> ResultadoPasoPrincipal : aplicarResultado
+ContextoTramitacion o-- Refs
+PasoSagaPrincipal -[hidden]down- ComandoPasoPrincipal
+@enduml

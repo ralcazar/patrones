@@ -6,6 +6,7 @@ import java.util.List;
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PasoSaga;
@@ -23,6 +24,9 @@ public interface CasoUsoConsultarSagasSoporte {
 
     /** Todas las sagas en ejecución (INICIADA o EN_CURSO). */
     List<SagaResumen> sagasEnEjecucion();
+
+    /** Sagas por marcador de ticket: PENDIENTE (aún sin abrir) o ABIERTO (con su fecha). */
+    List<SagaResumen> sagasConTicket(EstadoTicket estadoTicket);
 
     /** Búsqueda con filtros combinables; los criterios a null no aplican. */
     List<SagaResumen> buscar(FiltroSagas filtro);
@@ -50,8 +54,19 @@ public interface CasoUsoConsultarSagasSoporte {
         }
     }
 
+    /**
+     * Lo que soporte necesita ver de un vistazo:
+     * - estadoTicket / ticketAbiertoEn: ticket pendiente de abrir o ya abierto
+     *   (y desde cuándo).
+     * - proximoReintentoEn: si la saga sigue reintentando, el ejecutar_desde de
+     *   su orden REINTENTAR diferida; null si no hay reintento programado.
+     * - tienePasosBloqueados: aviso de que NO se está reintentando (fallo no
+     *   reintentable o compensación fallida): lo tiene que resolver una persona.
+     */
     record SagaResumen(SagaId id, TipoSaga tipo, ExternalId externalId,
                        EstadoSaga estado, boolean tienePasosBloqueados,
+                       EstadoTicket estadoTicket, Instant ticketAbiertoEn,
+                       Instant proximoReintentoEn,
                        Instant iniciadaEn, Instant actualizadaEn) {}
 
     record PasoDetalle(PasoSaga paso, EstadoPaso estado, int intentos, MotivoFallo ultimoFallo,

@@ -38,6 +38,7 @@ public class EjecucionPaso<P extends Enum<P> & PasoSaga> {
     void bloquear()         { estado = EstadoPaso.BLOQUEADO_SOPORTE; }
     void cancelar()         { estado = EstadoPaso.CANCELADO; }
     void compensado()       { estado = EstadoPaso.COMPENSADO; }
+
     void resetearIntentos() { intentos = 0; ultimoFallo = null; }
 
     void registrarFallo(MotivoFallo motivo) {

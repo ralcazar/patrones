@@ -16,17 +16,32 @@ box "Adaptadores de salida" #F3EFFB
   participant "PuertoConsultaSagasSoporte\n(queries BBDD, CQRS ligero)" as LECT
   participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
   participant "PuertoPaso2 / PuertoPaso1\n(compensaciones REST)" as PCOMP
-  participant "PuertoTicketsSoporte" as TICK
 end box
 
 == Consultar todas las sagas en ejecución ==
 OP -> REST ++ : ver sagas en ejecución
 REST -> SOP ++ : sagasEnEjecucion()
 SOP -> LECT ++ : sagasEnEjecucion()
-LECT -> LECT : SELECT sobre las tablas de sagas\nWHERE estado IN (INICIADA, EN_CURSO)
-return [SagaResumen(id, tipo, externalId,\nestado, iniciadaEn, actualizadaEn, ...)]
+LECT -> LECT : SELECT sobre las tablas de sagas\nWHERE estado IN (INICIADA, EN_CURSO)\n+ JOIN ordenes (REINTENTAR diferida)\npara proximoReintentoEn
+return [SagaResumen(id, tipo, externalId, estado,\ntienePasosBloqueados, estadoTicket,\nticketAbiertoEn, proximoReintentoEn, ...)]
 return
 return listado
+
+== Consultar sagas con ticket pendiente de abrir o ya abierto ==
+OP -> REST ++ : ver sagas con ticket (PENDIENTE o ABIERTO)
+REST -> SOP ++ : sagasConTicket(estadoTicket)
+SOP -> LECT ++ : sagasConTicket(estadoTicket)
+LECT -> LECT : WHERE estado_ticket = ?\n(ABIERTO incluye ticket_abierto_en)
+return [SagaResumen ...]
+return
+return listado
+note right of REST
+  El resumen distingue de un vistazo:
+  - ticket PENDIENTE (el próximo barrido avisará) o ABIERTO (con fecha)
+  - proximoReintentoEn: sigue reintentando y cuándo es el siguiente
+  - tienePasosBloqueados: NO se reintenta (fallo no reintentable o
+    compensación fallida) — lo tiene que resolver una persona
+end note
 
 == Filtrar por estado, fecha de inicio o fecha de última actualización ==
 OP -> REST ++ : aplicar filtros
@@ -80,9 +95,17 @@ return
 return 200 OK
 
 opt una compensación falla (ExcepcionServicioExterno)
-  SVC -> SAGA ++ : compensacionFallida(paso, motivo)
-  return [AbrirTicketSoporte] (inconsistencia real)
-  SVC -> TICK ++ : abrir(...) — ticket inmediato
-  return
+  group Transacción
+    SVC -> SAGA ++ : compensacionFallida(paso, motivo)
+    SAGA -> SAGA : paso -> BLOQUEADO_SOPORTE\nflag ticket = PENDIENTE\n(inconsistencia real: sin reintento)
+    return
+    SVC -> REPO ++ : guardar(saga)
+    return
+  end
+  note right of SVC
+    El planificador de tickets (ver 07) lo incluirá
+    en su próximo barrido. La saga sigue CANCELADA:
+    soporte lo resuelve a mano en el sistema destino.
+  end note
 end
 @enduml

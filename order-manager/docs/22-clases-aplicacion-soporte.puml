@@ -1,0 +1,93 @@
+@startuml 22-clases-aplicacion-soporte
+title Aplicación — soporte, tickets y limpieza
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+package "puerto.entrada" {
+  interface CasoUsoIntervenirSaga {
+    +cancelarPrincipal(id, quien, motivo)
+    +reintentarPaso(tipo, id, nombrePaso, quien)
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)
+  }
+  interface CasoUsoConsultarSagasSoporte {
+    +sagasBloqueadas() : List<SagaResumen>
+    +sagasEnEjecucion() : List<SagaResumen>
+    +sagasConTicket(estadoTicket) : List<SagaResumen>
+    +buscar(FiltroSagas) : List<SagaResumen>
+    +vistaTramitacion(externalId) : VistaTramitacion
+    +detalle(tipo, id) : SagaDetalle
+  }
+  note bottom of CasoUsoConsultarSagasSoporte
+    SagaResumen incluye estadoTicket,
+    ticketAbiertoEn, proximoReintentoEn y
+    tienePasosBloqueados (paso sin reintento
+    automático: lo resuelve una persona).
+  end note
+  interface CasoUsoAbrirTicketsPendientes {
+    +abrirTicketsPendientes() : int
+  }
+  interface CasoUsoLimpiarDatosAntiguos {
+    +purgarAnterioresA(corte) : ResultadoLimpieza
+  }
+}
+
+package "servicio" {
+  class ServicioSoporteSagas <<@Service>> {
+    -principal + 3 secundarias
+    resuelve nombrePaso -> enum por TipoSaga
+    y rutea la intervención al servicio correcto
+  }
+  class ServicioTicketsSoporte <<@Service>> {
+    +abrirTicketsPendientes():
+    1. buscar sagas con flag PENDIENTE
+    2. abrir UN ticket para todas (log, sin id)
+    3. marcarTicketAbierto(saga, ahora) x N
+  }
+  class ServicioLimpiezaDatos <<@Service>> {
+    -repoPrincipal + 3 repos secundarios
+    +purgarAnterioresA(corte) : ResultadoLimpieza
+  }
+  class FabricaResultadoManual <<@Factory, package-private>> {
+    {static} paraPaso(PasoSaga, Map datos) : ResultadoPaso
+  }
+}
+
+package "puerto.salida" {
+  interface PuertoConsultaSagasSoporte {
+    +sagasBloqueadas() / sagasEnEjecucion()
+    +sagasConTicket(estadoTicket)
+    +buscar(filtro) / vistaTramitacion(externalId)
+    +detalle(tipo, id)
+  }
+  interface PuertoSagasTicketPendiente {
+    +buscar() : List<SagaTicketPendiente>
+    «sagas con estado_ticket = PENDIENTE»
+  }
+  interface PuertoTicketsSoporte {
+    +abrir(List<SagaTicketPendiente>)
+    «UN ticket para todas: texto en el log,
+    sin id (no se conoce)»
+  }
+  interface "Repositorios de las 4 sagas,\nPuertoMensajesProcesados,\nPuertoColaTareas, UnidadDeTrabajo" as PuertosLimpieza
+}
+
+CasoUsoIntervenirSaga <|.. ServicioSoporteSagas
+CasoUsoConsultarSagasSoporte <|.. ServicioSoporteSagas
+CasoUsoAbrirTicketsPendientes <|.. ServicioTicketsSoporte
+CasoUsoLimpiarDatosAntiguos <|.. ServicioLimpiezaDatos
+
+ServicioSoporteSagas --> PuertoConsultaSagasSoporte
+ServicioSoporteSagas ..> FabricaResultadoManual
+ServicioTicketsSoporte --> PuertoSagasTicketPendiente
+ServicioTicketsSoporte --> PuertoTicketsSoporte
+ServicioLimpiezaDatos --> PuertosLimpieza
+
+note as NRuteo
+  ServicioSoporteSagas y ServicioTicketsSoporte delegan en los
+  4 orquestadores (ServicioSagaPrincipal/Secundaria1/2/3 — ver 17-21)
+  para intervenir sagas o marcar el ticket como ABIERTO.
+end note
+ServicioSoporteSagas .. NRuteo
+ServicioTicketsSoporte .. NRuteo
+@enduml

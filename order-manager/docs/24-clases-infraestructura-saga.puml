@@ -1,0 +1,97 @@
+@startuml 24-clases-infraestructura-saga
+title Infraestructura — el puente sagas <-> gestor (infraestructure.ordermanager.saga)
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+' --- adaptadores de ENTRADA (invocan la capa de aplicación) ---
+class ProcesadorOrdenSaga <<@Component>> {
+  +procesar(Orden)
+}
+class ConsumidorRespuestaSecundaria2 <<@Component>> {
+  +onRespuesta(mensaje, ...)  «@KafkaListener\ntopic respuesta.secundaria2»
+}
+class PlanificadorLimpieza <<@Component>> {
+  +ejecutar()  «@Scheduled cron 3:00»
+}
+class PlanificadorTicketsSoporte <<@Component>> {
+  +ejecutar()  «@Scheduled cron\n0 0 8-17/3 * * * (8,11,14,17h)»
+}
+
+' --- capa de aplicación (ver 17-22) ---
+class "ManejadorTareasSaga" as ManejadorTareasSaga
+interface CasoUsoRegistrarRespuestaSecundaria2
+interface CasoUsoLimpiarDatosAntiguos
+interface CasoUsoAbrirTicketsPendientes
+interface PuertoColaTareas
+interface PuertoTicketsSoporte
+interface UnidadDeTrabajo
+
+' --- adaptadores de SALIDA (implementan puertos de salida) ---
+class AdaptadorColaTareas <<@Component>> {
+  +encolar(tarea) / encolar(tarea, noAntesDe)
+  +purgarTerminadasAntesDe(corte)
+}
+class AdaptadorTicketsLog <<@Component>> {
+  +abrir(sagas): log.error("TICKET-SOPORTE-...")
+  «un texto en el log = el ticket; sin id»
+}
+class UnidadDeTrabajoSpring <<@Component>> {
+  -template : TransactionTemplate
+  +enTransaccion(Supplier<T>) : T
+}
+
+' --- piezas comunes ---
+class CodecTareaSaga <<@Component>> {
+  +tipoDe(TareaSaga) : String
+  +codificar(TareaSaga) : String
+  +decodificar(String) : TareaSaga
+}
+note right of CodecTareaSaga
+  Discriminadores: INICIAR, ARRANCAR_SAGA (tipoSaga),
+  REINTENTAR (paso por nombre -> PasoSaga.de),
+  TIMEOUT_SECUNDARIA2, RESULTADO_SECUNDARIA2_OK/_ERROR.
+end note
+class "ServicioOrdenes\n(cola — ver 23)" as ServicioOrdenes
+interface "ProcesadorOrden\n(cola — ver 23)" as ProcesadorOrden
+class ConfiguracionAplicacion <<@Configuration>> {
+  +@Bean de los servicios de aplicación\n(POJOs sin anotaciones Spring)
+}
+
+' Entrada -> aplicación
+ProcesadorOrden <|.up. ProcesadorOrdenSaga
+ProcesadorOrdenSaga --> CodecTareaSaga : decodificar\ncontenido
+ProcesadorOrdenSaga --> ManejadorTareasSaga : procesar(TareaSaga)
+ConsumidorRespuestaSecundaria2 --> CasoUsoRegistrarRespuestaSecundaria2
+PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
+PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
+
+' Puertos de salida <- adaptadores
+PuertoColaTareas <|.. AdaptadorColaTareas
+PuertoTicketsSoporte <|.. AdaptadorTicketsLog
+UnidadDeTrabajo <|.. UnidadDeTrabajoSpring
+AdaptadorColaTareas --> ServicioOrdenes : encolar(JSON,\nsagaId, tipo)
+AdaptadorColaTareas --> CodecTareaSaga : codificar
+
+' Layout: entrada arriba, aplicación en medio, salida abajo
+ConsumidorRespuestaSecundaria2 -[hidden]right- ProcesadorOrdenSaga
+PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
+ProcesadorOrdenSaga -[hidden]right- PlanificadorLimpieza
+CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- ManejadorTareasSaga
+CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
+PuertoColaTareas -[hidden]down- AdaptadorColaTareas
+PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
+UnidadDeTrabajo -[hidden]down- UnidadDeTrabajoSpring
+ManejadorTareasSaga -[hidden]down- PuertoColaTareas
+CasoUsoAbrirTicketsPendientes -[hidden]down- PuertoTicketsSoporte
+AdaptadorTicketsLog -[hidden]right- UnidadDeTrabajoSpring
+AdaptadorColaTareas -[hidden]right- AdaptadorTicketsLog
+UnidadDeTrabajoSpring -[hidden]right- ConfiguracionAplicacion
+
+note as NRegla
+  Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA (fila superior:
+  ProcesadorOrdenSaga, ConsumidorRespuestaSecundaria2 y los dos planificadores)
+  solo invocan la capa de aplicación (casos de uso, fila central); los adaptadores
+  de SALIDA (fila inferior) implementan los puertos de salida.
+end note
+@enduml

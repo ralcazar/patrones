@@ -66,6 +66,7 @@ return
 
 note over SSEC, PSEC
   Ante ExcepcionServicioExterno en cualquiera de los dos pasos:
-  backoff exponencial y, si se agota, ticket a soporte — ver 07.
+  backoff 1..180 min con reintento indefinido (o saga FALLIDA si el
+  fallo no es reintentable) y ticket vía planificador — ver 07.
 end note
 @enduml

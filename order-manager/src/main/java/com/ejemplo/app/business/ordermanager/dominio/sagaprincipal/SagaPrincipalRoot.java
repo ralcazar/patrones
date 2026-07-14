@@ -1,5 +1,6 @@
 package com.ejemplo.app.business.ordermanager.dominio.sagaprincipal;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -13,6 +14,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Decision;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EjecucionPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PuntoNoRetornoSuperadoException;
@@ -31,7 +33,8 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * - Cancelación (solo pre-PASO7): compensa únicamente PASO2 y PASO1, en orden
  *   inverso. La cancelación queda reflejada en el estado y la auditoría; no
  *   se publica ningún evento.
- * - Fallos: backoff exponencial hasta 10 intentos; después, ticket a soporte.
+ * - Fallos: backoff exponencial hasta 10 intentos; después la saga queda
+ *   FALLIDA y el planificador de tickets abre el ticket a soporte.
  * - Al completar PASO8: la saga queda COMPLETADA y decide arrancar las 3 sagas
  *   secundarias (SECUNDARIA1, SECUNDARIA2, SECUNDARIA3), independientes entre
  *   sí y sin join.
@@ -57,8 +60,10 @@ public final class SagaPrincipalRoot extends Saga<PasoSagaPrincipal> {
 
     private SagaPrincipalRoot(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
                               EnumMap<PasoSagaPrincipal, EjecucionPaso<PasoSagaPrincipal>> pasos,
-                              List<AuditoriaIntervencion> auditoria, EstadoSaga estado, long version) {
-        super(id, externalId, PasoSagaPrincipal.class, pasos, auditoria, estado, version);
+                              List<AuditoriaIntervencion> auditoria, EstadoSaga estado,
+                              EstadoTicket estadoTicket, Instant ticketAbiertoEn, long version) {
+        super(id, externalId, PasoSagaPrincipal.class, pasos, auditoria, estado,
+                estadoTicket, ticketAbiertoEn, version);
         this.ctx = ctx;
     }
 
@@ -71,8 +76,10 @@ public final class SagaPrincipalRoot extends Saga<PasoSagaPrincipal> {
     /** Para el adaptador de persistencia. */
     public static SagaPrincipalRoot rehidratar(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
             EnumMap<PasoSagaPrincipal, EjecucionPaso<PasoSagaPrincipal>> pasos, EstadoSaga estado,
+            EstadoTicket estadoTicket, Instant ticketAbiertoEn,
             List<AuditoriaIntervencion> auditoria, long version) {
-        return new SagaPrincipalRoot(id, externalId, ctx, pasos, auditoria, estado, version);
+        return new SagaPrincipalRoot(id, externalId, ctx, pasos, auditoria, estado,
+                estadoTicket, ticketAbiertoEn, version);
     }
 
     // ------------------------------------------------------------------
@@ -192,10 +199,14 @@ public final class SagaPrincipalRoot extends Saga<PasoSagaPrincipal> {
         marcarCompensado(paso);
     }
 
-    public List<Decision<PasoSagaPrincipal>> compensacionFallida(PasoSagaPrincipal paso, MotivoFallo motivo) {
-        // Una compensación que falla deja inconsistencia real: ticket inmediato.
-        return List.of(new Decision.AbrirTicketSoporte<>(
-                id, TipoSaga.PRINCIPAL, paso, motivo, pasoDe(paso).intentos(), false));
+    /**
+     * Una compensación que falla deja inconsistencia real: el paso queda
+     * BLOQUEADO_SOPORTE (la saga sigue CANCELADA) y el planificador de tickets
+     * lo detectará en su siguiente pasada. Al estar la saga cancelada, soporte
+     * lo resuelve a mano en el sistema destino (no hay reanudación automática).
+     */
+    public void compensacionFallida(PasoSagaPrincipal paso, MotivoFallo motivo) {
+        bloquearPorFallo(paso, motivo);
     }
 
     // ------------------------------------------------------------------

@@ -5,7 +5,6 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
@@ -28,9 +27,9 @@ public class ServicioSagaSecundaria1 extends ServicioSagaBase<PasoSagaSecundaria
     private final PuertoSagaSecundaria1 puerto;
 
     public ServicioSagaSecundaria1(RepositorioSagaSecundaria1 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola, PuertoTicketsSoporte tickets,
+            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
             PuertoSagaSecundaria1 puerto) {
-        super(tx, dedup, cola, tickets);
+        super(tx, dedup, cola);
         this.repo = repo;
         this.puerto = puerto;
     }

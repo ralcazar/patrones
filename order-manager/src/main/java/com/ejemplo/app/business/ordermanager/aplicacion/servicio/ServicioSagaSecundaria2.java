@@ -6,20 +6,22 @@ import java.time.Instant;
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.aplicacion.tarea.TareaSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Decision;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ComandoPasoSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.PasoSagaSecundaria2;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ResultadoPasoSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
 
 /**
@@ -29,30 +31,66 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecunda
  *
  * Detalle importante: el TimeoutSagaSecundaria2 (24h) se encola DENTRO de la
  * misma transacción que deja el paso SOLICITADO. Si el proceso muere tras el
- * commit pero antes de la llamada REST, el timeout vence, se convierte en
- * fallo reintentable y el reintento vuelve a llamar: autocurativo. Si la
- * respuesta llegó antes, el guard del agregado convierte el timeout en no-op.
+ * commit pero antes de la llamada REST, el timeout vence y la conciliación
+ * (SinResultado) abre otra ventana de 24h; la reanudación por lease reemite la
+ * solicitud: autocurativo. Si la respuesta llegó antes, el timeout es un no-op.
+ *
+ * Al vencer el timeout NO se da la respuesta por perdida: se pregunta al
+ * servicio REST de conciliación si el resultado ya existe. Si existe se
+ * procesa (ok o error) como si hubiera llegado por Kafka; si no, se programa
+ * otra ventana de espera de 24h y se seguirá esperando.
  */
 @Service
 public class ServicioSagaSecundaria2 extends ServicioSagaBase<PasoSagaSecundaria2, SagaSecundaria2Root> {
 
-    /** La respuesta puede tardar horas: se le da un día antes de darla por perdida. */
+    /** La respuesta puede tardar horas: ventana de espera entre conciliaciones. */
     static final Duration TIMEOUT_RESPUESTA = Duration.ofHours(24);
 
     private final RepositorioSagaSecundaria2 repo;
     private final PuertoSagaSecundaria2 puerto;
+    private final PuertoConciliacionSecundaria2 conciliacion;
 
     public ServicioSagaSecundaria2(RepositorioSagaSecundaria2 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola, PuertoTicketsSoporte tickets,
-            PuertoSagaSecundaria2 puerto) {
-        super(tx, dedup, cola, tickets);
+            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
+            PuertoSagaSecundaria2 puerto, PuertoConciliacionSecundaria2 conciliacion) {
+        super(tx, dedup, cola);
         this.repo = repo;
         this.puerto = puerto;
+        this.conciliacion = conciliacion;
     }
 
-    /** Maneja TimeoutSagaSecundaria2: si la respuesta llegó entre medias, el guard del agregado lo ignora. */
+    /**
+     * Maneja TimeoutSagaSecundaria2: concilia con el servicio destino antes de
+     * decidir. La lectura inicial es solo un guard barato (fuera de tx); las
+     * escrituras reales pasan por pasoCompletado/pasoFallido, que revalidan el
+     * estado dentro de su transacción, así que la carrera con una respuesta
+     * Kafka que llegue entre medias es inofensiva (guards + dedup).
+     */
     public void timeoutVencido(SagaId id) {
-        pasoFallido(id, PasoSagaSecundaria2.SOLICITUD, MotivoFallo.timeout(), MensajeId.interno());
+        var saga = repo.cargar(id);
+        if (saga.estado() != EstadoSaga.EN_CURSO
+                || saga.pasos().get(PasoSagaSecundaria2.SOLICITUD).estado() != EstadoPaso.SOLICITADO) {
+            return; // la respuesta llegó (o el paso falló/se intervino) entre medias: timeout obsoleto
+        }
+
+        PuertoConciliacionSecundaria2.Resultado resultado;
+        try {
+            resultado = conciliacion.consultar(id, saga.externalId());
+        } catch (ExcepcionServicioExterno e) {
+            // No se pudo saber: se sigue esperando, la próxima conciliación decidirá.
+            resultado = new PuertoConciliacionSecundaria2.Resultado.SinResultado();
+        }
+
+        switch (resultado) {
+            case PuertoConciliacionSecundaria2.Resultado.Disponible(var ref) ->
+                    pasoCompletado(id, PasoSagaSecundaria2.SOLICITUD,
+                            new ResultadoPasoSecundaria2.Respuesta(ref), MensajeId.interno());
+            case PuertoConciliacionSecundaria2.Resultado.FalloRegistrado(var motivo) ->
+                    pasoFallido(id, PasoSagaSecundaria2.SOLICITUD, motivo, MensajeId.interno());
+            case PuertoConciliacionSecundaria2.Resultado.SinResultado() ->
+                    tx.enTransaccion(() -> cola.encolar(new TareaSaga.TimeoutSagaSecundaria2(id),
+                            Instant.now().plus(TIMEOUT_RESPUESTA)));
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoIntervenirSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
@@ -97,6 +98,11 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     @Override
     public List<SagaResumen> sagasEnEjecucion() {
         return consultas.sagasEnEjecucion();
+    }
+
+    @Override
+    public List<SagaResumen> sagasConTicket(EstadoTicket estadoTicket) {
+        return consultas.sagasConTicket(estadoTicket);
     }
 
     @Override

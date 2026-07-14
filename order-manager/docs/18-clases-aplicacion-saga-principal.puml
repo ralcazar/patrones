@@ -1,0 +1,41 @@
+@startuml 18-clases-aplicacion-saga-principal
+title Aplicación — saga principal: ServicioSagaPrincipal y sus puertos
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+abstract class "ServicioSagaBase<PasoSagaPrincipal,\nSagaPrincipalRoot> (ver 17)" as Base <<@Service>>
+
+class ServicioSagaPrincipal <<@Service>> {
+  +iniciarOContinuar(id, externalId, datos, datoNegocio2)
+  +cancelar(id, quien, motivo)
+  #ejecutar: PASO1..PASO8 síncronos,\nreentran con el resultado (checkpoint por paso)
+  #arrancarSaga: crea la secundaria y encola\nArrancarSaga(id, tipo) en la MISMA tx
+  #compensar: PASO2 y PASO1 en orden inverso;\nsi falla, compensacionFallida (ticket vía planificador)
+}
+note right of ServicioSagaPrincipal
+  iniciarOContinuar es idempotente: si la saga
+  existe, continúa desde el último checkpoint.
+  La cadena de 8 pasos corre dentro del
+  procesar() de UNA orden (lease > peor caso).
+end note
+
+package "puerto.salida" {
+  interface RepositorioSagaPrincipal <<@Repository>> {
+    +crear / existe / cargar / guardar
+    +purgarFinalizadasAntesDe(corte)
+  }
+  interface "RepositorioSagaSecundaria1/2/3" as ReposSecundarias <<@Repository>> {
+    +crear / cargar / guardar
+  }
+  interface "PuertoPaso1 .. PuertoPaso8" as PuertosPaso {
+    +ejecutar(cmd) : ResultadoPasoN
+    +compensar(cmd)  «solo 1 y 2»
+  }
+}
+
+Base <|-down- ServicioSagaPrincipal
+ServicioSagaPrincipal --> RepositorioSagaPrincipal
+ServicioSagaPrincipal --> ReposSecundarias : crea las 3 secundarias\nal completar PASO8 (misma tx)
+ServicioSagaPrincipal --> PuertosPaso : REST síncrono\n(fuera de la tx)
+@enduml

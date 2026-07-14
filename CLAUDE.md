@@ -19,6 +19,18 @@ Guía para trabajar en este repositorio.
   para poder seguir el flujo.
 - Mantener también al día el índice `order-manager/docs/README.md`.
 
+## Restricción de arquitectura: entrada → aplicación → salida
+
+- **Un adaptador de entrada nunca habla directamente con un adaptador de
+  salida** (ni con sus puertos de salida). Debe pasar como mínimo por la capa
+  de aplicación (un caso de uso / servicio de aplicación) y, si la operación
+  lo requiere, por la capa de dominio.
+- Ejemplo: el consumer de Kafka (`ConsumidorRespuestaSecundaria2`, adaptador
+  de entrada) no encola en `PuertoColaTareas` directamente; invoca el caso de
+  uso `CasoUsoRegistrarRespuestaSecundaria2` y es su servicio de aplicación
+  quien encola. Lo mismo aplica a los `@Scheduled` (invocan casos de uso) y a
+  cualquier adaptador REST futuro.
+
 ## order-manager: pureza de las capas business
 
 - Todo lo que cuelga de `order-manager/src/main/java/com/ejemplo/app/business/**`

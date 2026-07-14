@@ -1,17 +1,16 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TicketId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import java.util.List;
+
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente.SagaTicketPendiente;
 
 /**
- * Apertura de tickets al equipo de soporte. El adaptador puede consolidar:
- * si ya existe ticket abierto para la misma saga/tramitación, añadir comentario
- * en lugar de abrir otro.
+ * Apertura del ticket al equipo de soporte: UN único ticket que cubre todas
+ * las sagas pendientes del barrido. Abrir un ticket es escribir un cierto
+ * texto en el log: no devuelve ningún id porque no se conoce (las sagas solo
+ * guardan que su ticket está ABIERTO y desde cuándo).
  */
 public interface PuertoTicketsSoporte {
-    TicketId abrir(SagaId sagaId, TipoSaga tipo, PasoSaga paso, MotivoFallo motivo,
-                   int intentos, boolean sagaCancelable);
+
+    void abrir(List<SagaTicketPendiente> sagas);
 }
