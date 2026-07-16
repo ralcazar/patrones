@@ -102,19 +102,17 @@ end note
 PLAN -> CONT ++ : continuarCandidatas(limite)
 CONT -> CONT : continuar(sagaId, PRINCIPAL) (reclamo de token: ver 02)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden
-ORQ -> SAGA ++ : (orden.saga()).estado()
+ORQ -> SAGA ++ : saga.estado()
 return COMPENSAR_PASO2 (p. ej.)
-ORQ -> ORQ : ejecutarCompensacion(sagaId, estado)
-ORQ -> SAGA ++ : (orden.saga()).contexto()
+ORQ -> ORQ : ejecutarCompensacion(orden, saga)
+ORQ -> SAGA ++ : saga.contexto()
 return ctx (refPaso1, refPaso2, ...)
 ORQ -> PCOMP ++ : puertoPaso2.compensar(CompensarPaso2(ctx.refPaso2()))\n-- REST fuera de tx
 return ok
 group Transacción única
-  ORQ -> REPO ++ : cargar(sagaId)
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).compensacionCompletada()
+  ORQ -> SAGA ++ : saga.compensacionCompletada()
   SAGA -> SAGA : COMPENSAR_PASO2 -> COMPENSAR_PASO1
   return
   ORQ -> ORDEN ++ : resetearIntentos()
@@ -123,6 +121,11 @@ group Transacción única
   return
   ORQ -> REPO ++ : guardar(orden)
   return
+  note right of REPO
+    Sin recarga dentro de la tx: si otro actor escribió con el
+    REST en vuelo, guardar falla por version
+    (ConcurrenciaOptimistaException) y el pod se retira.
+  end note
 end
 return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue\n(siguiente vuelta compensa PASO1, luego CANCELADA)

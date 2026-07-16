@@ -51,11 +51,13 @@ package "servicio" {
     +ejecutarPaso(SagaId) : SenalPaso
   }
   note right of OrquestadorSaga
-    Una implementación por TipoSaga (ver 18-21): carga el
-    agregado, hace el REST del paso FUERA de tx (puede lanzar), y
-    en UNA sola tx recarga, aplica el resultado a la saga y la
-    parte operativa de la señal (resetearIntentos()+renovarLease()
-    | aparcar() | finalizar()), y guarda una única vez.
+    Una implementación por TipoSaga (ver 18-21): carga el agregado
+    UNA sola vez, hace el REST del paso FUERA de tx (puede lanzar),
+    y en UNA sola tx aplica el resultado a esa MISMA instancia
+    (sin recargar) y la parte operativa de la señal
+    (resetearIntentos()+renovarLease() | aparcar() | finalizar()),
+    y guarda una única vez: si otro actor escribió con el REST en
+    vuelo, guardar falla por version (takeover seguro).
   end note
 
   class "SenalPaso" as SenalPaso <<sealed>> {

@@ -16,10 +16,11 @@ class ServicioSagaSecundaria1 <<@Service>> {
   -ejecutarComando(ComandoPaso) : ResultadoPasoSecundaria1  «switch: Iniciar->puerto.iniciar,\nConfirmar->puerto.confirmar»
 }
 note right of ServicioSagaSecundaria1
-  ejecutarPaso: 1 cargar (comandoActual) + REST fuera de tx + 1
-  cargar dentro de la tx (aplicarYAvanzar; si terminada() ->
-  finalizar(FINALIZADA_OK), si no -> resetearIntentos()+
-  renovarLease()). Sin comprobación de estado de compensación (a
+  ejecutarPaso: UNA única carga (comandoActual) + REST fuera de tx;
+  la tx guarda esa misma instancia sin recargar (aplicarYAvanzar; si
+  terminada() -> finalizar(FINALIZADA_OK), si no -> resetearIntentos()+
+  renovarLease()); si otro actor escribió entre medias, guardar falla
+  por version. Sin comprobación de estado de compensación (a
   diferencia de la principal): nunca se cancela ni compensa.
 end note
 

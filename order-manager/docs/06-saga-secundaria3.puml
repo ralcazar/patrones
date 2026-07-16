@@ -26,24 +26,27 @@ end note
 PLAN -> CONT ++ : continuarCandidatas(limite)
 CONT -> CONT : continuar(sagaId, SECUNDARIA3)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden
-ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria3.Ejecutar(externalId, refPaso7)
 ORQ -> PSIM ++ : ejecutar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria3.Ejecutada(refEjecucion)
 group Transacción única: checkpoint del paso
-  ORQ -> REPO ++ : cargar(sagaId)
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(Ejecutada(ref))
+  ORQ -> SAGA ++ : saga.aplicarYAvanzar(Ejecutada(ref))
   SAGA -> SAGA : refEjecucion = ref; estado = TERMINADA
   return
-  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  ORQ -> SAGA ++ : saga.resultadoFinal()
   return FINALIZADA_OK
   ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
   return
   ORQ -> REPO ++ : guardar(orden)
   return
+  note right of REPO
+    Sin recarga dentro de la tx: si otro actor escribió con el
+    REST en vuelo, guardar falla por version
+    (ConcurrenciaOptimistaException) y el pod se retira.
+  end note
 end
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)

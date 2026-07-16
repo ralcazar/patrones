@@ -26,15 +26,17 @@ class ServicioSagaSecundaria2 <<@Service>> {
   -conciliacion : PuertoConciliacionSecundaria2
   +tipo() : TipoSaga  «SECUNDARIA2»
   +ejecutarPaso(id) : SenalPaso  «switch(saga.estado()):\nINICIAL->solicitar, ESPERANDO_RESPUESTA->conciliar,\nTERMINADA->finalizarYa»
-  -solicitar(id, saga) : SenalPaso  «puerto.solicitar (REST) + tx:\nsolicitudEnviada()+orden.aparcar(3h) -> Aparcar(3h)»
-  -conciliar(id, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->tx respuestaRecibida()+finalizar();\nSinResultado->tx aparcar(3h);\nFalloRegistrado->throw ExcepcionServicioExterno»
-  -finalizarYa(id) : SenalPaso  «tx: orden.finalizar(saga.resultadoFinal())»
+  -solicitar(orden, saga) : SenalPaso  «puerto.solicitar (REST) + tx:\nsolicitudEnviada()+orden.aparcar(3h) -> Aparcar(3h)»
+  -conciliar(orden, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->tx respuestaRecibida()+finalizar();\nSinResultado->tx aparcar(3h);\nFalloRegistrado->throw ExcepcionServicioExterno»
+  -finalizarYa(orden, saga) : SenalPaso  «tx: orden.finalizar(saga.resultadoFinal())»
 }
 note right of ServicioSagaSecundaria2
   Nota de diseño: sin lease propio (no recibe Duration lease en el
   constructor) — HayMasTrabajo no se produce en esta saga: cada
   rama devuelve Aparcar o Finalizada, nunca continúa el bucle en la
-  misma pasada.
+  misma pasada. ejecutarPaso hace UNA única carga y la tx guarda
+  esa misma instancia sin recargar: si otro actor escribió entre
+  medias (consumer de Kafka, takeover), guardar falla por version.
 end note
 
 class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {

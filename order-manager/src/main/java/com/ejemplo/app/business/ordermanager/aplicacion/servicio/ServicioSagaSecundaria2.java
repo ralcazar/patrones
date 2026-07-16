@@ -10,6 +10,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSaga
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
+import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ComandoPasoSecundaria2;
@@ -49,44 +50,46 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
 
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA2; }
 
+    /**
+     * Una ÚNICA carga por paso, antes del REST: la tx guarda esa misma
+     * instancia (con su version) para que una escritura intermedia (takeover,
+     * consumer de Kafka, soporte) haga fallar el guardar. No recargar dentro
+     * de la tx.
+     */
     @Override
     public SenalPaso ejecutarPaso(SagaId id) {
-        var saga = (SagaSecundaria2Root) repo.cargar(id).saga();
+        var orden = repo.cargar(id);
+        var saga = (SagaSecundaria2Root) orden.saga();
         return switch (saga.estado()) {
-            case INICIAL -> solicitar(id, saga);
-            case ESPERANDO_RESPUESTA -> conciliar(id, saga);
-            case TERMINADA -> finalizarYa(id);
+            case INICIAL -> solicitar(orden, saga);
+            case ESPERANDO_RESPUESTA -> conciliar(orden, saga);
+            case TERMINADA -> finalizarYa(orden, saga);
         };
     }
 
-    private SenalPaso solicitar(SagaId id, SagaSecundaria2Root saga) {
+    private SenalPaso solicitar(OrdenRoot orden, SagaSecundaria2Root saga) {
         var cmd = (ComandoPasoSecundaria2.Solicitar) saga.comandoActual();
-        puerto.solicitar(id, cmd); // REST fuera de tx
+        puerto.solicitar(saga.id(), cmd); // REST fuera de tx
 
         return tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            var sagaActual = (SagaSecundaria2Root) orden.saga();
-            sagaActual.solicitudEnviada();
+            saga.solicitudEnviada();
             orden.aparcar(VENTANA_ESPERA, Instant.now());
             repo.guardar(orden);
             return new SenalPaso.Aparcar(VENTANA_ESPERA);
         });
     }
 
-    private SenalPaso conciliar(SagaId id, SagaSecundaria2Root saga) {
-        var resultado = conciliacion.consultar(id, saga.externalId()); // REST fuera de tx
+    private SenalPaso conciliar(OrdenRoot orden, SagaSecundaria2Root saga) {
+        var resultado = conciliacion.consultar(saga.id(), saga.externalId()); // REST fuera de tx
 
         return switch (resultado) {
             case PuertoConciliacionSecundaria2.Resultado.Disponible(var ref) -> tx.enTransaccion(() -> {
-                var orden = repo.cargar(id);
-                var sagaActual = (SagaSecundaria2Root) orden.saga();
-                sagaActual.respuestaRecibida(ref);
-                orden.finalizar(sagaActual.resultadoFinal());
+                saga.respuestaRecibida(ref);
+                orden.finalizar(saga.resultadoFinal());
                 repo.guardar(orden);
-                return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
+                return new SenalPaso.Finalizada(saga.resultadoFinal());
             });
             case PuertoConciliacionSecundaria2.Resultado.SinResultado() -> tx.enTransaccion(() -> {
-                var orden = repo.cargar(id);
                 orden.aparcar(VENTANA_ESPERA, Instant.now());
                 repo.guardar(orden);
                 return new SenalPaso.Aparcar(VENTANA_ESPERA);
@@ -97,13 +100,11 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
     }
 
     /** El consumer de Kafka ya dejó la saga en TERMINADA; solo falta el cierre operativo de la orden. */
-    private SenalPaso finalizarYa(SagaId id) {
+    private SenalPaso finalizarYa(OrdenRoot orden, SagaSecundaria2Root saga) {
         return tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            var sagaActual = (SagaSecundaria2Root) orden.saga();
-            orden.finalizar(sagaActual.resultadoFinal());
+            orden.finalizar(saga.resultadoFinal());
             repo.guardar(orden);
-            return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
+            return new SenalPaso.Finalizada(saga.resultadoFinal());
         });
     }
 }

@@ -42,14 +42,12 @@ end
 loop while (true) hasta Aparcar / Finalizada / excepción
   CONT -> ORQ ++ : ejecutarPaso(sagaId)
 
-  ORQ -> REPO ++ : cargar(sagaId)  [#1: leer estado para decidir\nnormal vs. compensación]
+  ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
   return orden
-  ORQ -> SAGA ++ : orden.saga().estado()
+  ORQ -> SAGA ++ : saga.estado()
   return PASOn_HECHO (no está en COMPENSAR_*/CANCELADA)
-  ORQ -> ORQ : ejecutarPasoNormal(sagaId)
-  ORQ -> REPO ++ : cargar(sagaId)  [#2: releer para comandoActual()]
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+  ORQ -> ORQ : ejecutarPasoNormal(orden, saga)
+  ORQ -> SAGA ++ : saga.comandoActual()
   return ComandoPasoPrincipal.EjecutarPasoN(...)
 
   == REST fuera de tx ==
@@ -66,12 +64,10 @@ loop while (true) hasta Aparcar / Finalizada / excepción
   end
 
   group Transacción única: checkpoint del paso (negocio + ejecución, un solo guardar)
-    ORQ -> REPO ++ : cargar(sagaId)  [#3: dentro de la tx]
-    return orden
-    ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(resultado)
+    ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
     SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
     return
-    ORQ -> SAGA ++ : (orden.saga()).terminada()
+    ORQ -> SAGA ++ : saga.terminada()
     return false (PASO1_HECHO .. PASO7_HECHO)
     ORQ -> ORDEN ++ : resetearIntentos()
     return intentos=0, ticketAbiertoEn=null
@@ -79,6 +75,12 @@ loop while (true) hasta Aparcar / Finalizada / excepción
     return tokenExpiraEn = ahora + lease
     ORQ -> REPO ++ : guardar(orden)
     return
+    note right of REPO
+      Sin recarga dentro de la tx: guardar lleva la version
+      de la carga inicial. Si otro actor escribió mientras el
+      REST estaba en vuelo (takeover de un pod zombi, soporte),
+      falla con ConcurrenciaOptimistaException y el pod se retira.
+    end note
   end
   return HayMasTrabajo()
   CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle

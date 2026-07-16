@@ -31,19 +31,17 @@ end note
 PLAN -> CONT ++ : continuarCandidatas(limite)
 CONT -> CONT : continuar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden
-ORQ -> SAGA ++ : (orden.saga()).estado()
+ORQ -> SAGA ++ : saga.estado()
 return INICIAL
-ORQ -> ORQ : solicitar(sagaId, saga)
-ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+ORQ -> ORQ : solicitar(orden, saga)
+ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria2.Solicitar(externalId, refPaso5)
-ORQ -> PSOL ++ : solicitar(sagaId, cmd) -- REST fuera de tx\n(sagaId viaja como clave de correlación)
+ORQ -> PSOL ++ : solicitar(saga.id(), cmd) -- REST fuera de tx\n(el sagaId viaja como clave de correlación)
 return
 group Transacción única
-  ORQ -> REPO ++ : cargar(sagaId)
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).solicitudEnviada()
+  ORQ -> SAGA ++ : saga.solicitudEnviada()
   SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
   return
   ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
@@ -51,6 +49,12 @@ group Transacción única
   return
   ORQ -> REPO ++ : guardar(orden)
   return
+  note right of REPO
+    Sin recarga dentro de la tx (aquí y en el resto de
+    transacciones de este orquestador): si otro actor escribió
+    con el REST en vuelo (takeover, consumer de Kafka, soporte),
+    guardar falla por version y el pod se retira.
+  end note
 end
 return Aparcar(3h)
 CONT -> CONT : switch(señal): Aparcar -> return (fin del bucle)
@@ -91,15 +95,13 @@ end note
 PLAN -> CONT ++ : continuarCandidatas(limite)
 CONT -> CONT : continuar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
 return orden
-ORQ -> SAGA ++ : (orden.saga()).estado()
+ORQ -> SAGA ++ : saga.estado()
 return TERMINADA
-ORQ -> ORQ : finalizarYa(sagaId)
+ORQ -> ORQ : finalizarYa(orden, saga)
 group Transacción única
-  ORQ -> REPO ++ : cargar(sagaId)
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  ORQ -> SAGA ++ : saga.resultadoFinal()
   return FINALIZADA_OK
   ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
   return
@@ -113,20 +115,18 @@ CONT -> CONT : switch(señal): Finalizada -> return
 PLAN -> CONT ++ : continuarCandidatas(limite)
 CONT -> CONT : continuar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
 return orden
-ORQ -> SAGA ++ : (orden.saga()).estado()
+ORQ -> SAGA ++ : saga.estado()
 return ESPERANDO_RESPUESTA
-ORQ -> ORQ : conciliar(sagaId, saga)
-ORQ -> PCON ++ : consultar(sagaId, externalId) -- REST fuera de tx
+ORQ -> ORQ : conciliar(orden, saga)
+ORQ -> PCON ++ : consultar(saga.id(), externalId) -- REST fuera de tx
 return Disponible(ref) | SinResultado() | FalloRegistrado(motivo)
 alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   group Transacción
-    ORQ -> REPO ++ : cargar(sagaId)
-    return orden
-    ORQ -> SAGA ++ : (orden.saga()).respuestaRecibida(ref)
+    ORQ -> SAGA ++ : saga.respuestaRecibida(ref)
     return estado = TERMINADA
-    ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+    ORQ -> SAGA ++ : saga.resultadoFinal()
     return FINALIZADA_OK
     ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
     return
@@ -136,8 +136,6 @@ alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   return Finalizada(FINALIZADA_OK)
 else SinResultado(): sigue sin respuesta
   group Transacción
-    ORQ -> REPO ++ : cargar(sagaId)
-    return orden
     ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
     return
     ORQ -> REPO ++ : guardar(orden)

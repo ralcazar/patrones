@@ -16,22 +16,21 @@ end box
 note over ORQ
   Continuación de 02: PuertoPaso8.ejecutar(...) ya devolvió su
   ResultadoPaso8 fuera de tx. Entramos en la MISMA tx única de
-  checkpoint que 02, pero aquí terminada() da true.
+  checkpoint que 02, pero aquí terminada() da true. La orden es
+  la instancia de la ÚNICA carga del paso (ver 02): no se recarga.
 end note
 
 [-> ORQ : ejecutarPaso(sagaId) reentra tras el REST de PASO8 (ver 02)
 activate ORQ
 
 group Transacción única: checkpoint del paso (crea agregados hijos + finaliza el propio)
-  ORQ -> REPO ++ : cargar(sagaId)
-  return orden
-  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(ResultadoPaso8(ref))
+  ORQ -> SAGA ++ : saga.aplicarYAvanzar(ResultadoPaso8(ref))
   SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar():\nPASO7_HECHO -> TERMINADA
   return
-  ORQ -> SAGA ++ : (orden.saga()).terminada()
+  ORQ -> SAGA ++ : saga.terminada()
   return true
 
-  ORQ -> SAGA ++ : (orden.saga()).contextosArranque()
+  ORQ -> SAGA ++ : saga.contextosArranque()
   return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
 
   loop por cada ContextoArranque (x3)
@@ -45,7 +44,7 @@ group Transacción única: checkpoint del paso (crea agregados hijos + finaliza 
     return
   end
 
-  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  ORQ -> SAGA ++ : saga.resultadoFinal()
   return FINALIZADA_OK
   ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
   ORDEN -> ORDEN : resultado = FINALIZADA_OK; liberarToken()

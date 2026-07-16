@@ -15,11 +15,12 @@ class ServicioSagaSecundaria3 <<@Service>> {
   +ejecutarPaso(id) : SenalPaso
 }
 note right of ServicioSagaSecundaria3
-  Un único paso: 1 cargar (comandoActual) + puerto.ejecutar (REST
-  fuera de tx) + 1 cargar dentro de la tx: aplicarYAvanzar +
-  orden.finalizar(FINALIZADA_OK) directo, sin comprobar
-  terminada() (el único paso siempre termina la saga). Siempre
-  devuelve Finalizada: nunca HayMasTrabajo ni Aparcar.
+  Un único paso: UNA única carga (comandoActual) + puerto.ejecutar
+  (REST fuera de tx); la tx guarda esa misma instancia sin recargar:
+  aplicarYAvanzar + orden.finalizar(FINALIZADA_OK) directo, sin
+  comprobar terminada() (el único paso siempre termina la saga); si
+  otro actor escribió entre medias, guardar falla por version.
+  Siempre devuelve Finalizada: nunca HayMasTrabajo ni Aparcar.
 end note
 
 package "puerto.salida" {

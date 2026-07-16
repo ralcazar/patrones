@@ -73,25 +73,30 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
 
     @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
 
+    /**
+     * Una ÚNICA carga por paso, antes del REST: la transacción guarda esa misma
+     * instancia (con su version), de modo que si otro actor escribió entre
+     * medias (takeover tras lease vencido, soporte, ...) el guardar falla por
+     * version y este pod se retira. No recargar dentro de la tx: anularía esa
+     * protección.
+     */
     @Override
     public SenalPaso ejecutarPaso(SagaId id) {
-        var estado = ((SagaPrincipalRoot) repo.cargar(id).saga()).estado();
-        return esCompensacion(estado) ? ejecutarCompensacion(id, estado) : ejecutarPasoNormal(id);
+        var orden = repo.cargar(id);
+        var saga = (SagaPrincipalRoot) orden.saga();
+        return esCompensacion(saga.estado()) ? ejecutarCompensacion(orden, saga) : ejecutarPasoNormal(orden, saga);
     }
 
-    private SenalPaso ejecutarPasoNormal(SagaId id) {
-        var saga = (SagaPrincipalRoot) repo.cargar(id).saga();
+    private SenalPaso ejecutarPasoNormal(OrdenRoot orden, SagaPrincipalRoot saga) {
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
 
         return tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            var sagaActual = (SagaPrincipalRoot) orden.saga();
-            sagaActual.aplicarYAvanzar(resultado);
-            if (sagaActual.terminada()) {
-                crearHijas(sagaActual.contextosArranque(), Instant.now());
-                orden.finalizar(sagaActual.resultadoFinal());
+            saga.aplicarYAvanzar(resultado);
+            if (saga.terminada()) {
+                crearHijas(saga.contextosArranque(), Instant.now());
+                orden.finalizar(saga.resultadoFinal());
                 repo.guardar(orden);
-                return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
+                return new SenalPaso.Finalizada(saga.resultadoFinal());
             }
             orden.resetearIntentos();
             orden.renovarLease(lease, Instant.now());
@@ -100,29 +105,24 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
         });
     }
 
-    private SenalPaso ejecutarCompensacion(SagaId id, EstadoSagaPrincipal estado) {
-        if (estado == EstadoSagaPrincipal.CANCELADA) {
+    private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipalRoot saga) {
+        if (saga.estado() == EstadoSagaPrincipal.CANCELADA) {
             return tx.enTransaccion(() -> {
-                var orden = repo.cargar(id);
-                var saga = (SagaPrincipalRoot) orden.saga();
                 orden.finalizar(saga.resultadoFinal());
                 repo.guardar(orden);
                 return new SenalPaso.Finalizada(saga.resultadoFinal());
             });
         }
 
-        var saga = (SagaPrincipalRoot) repo.cargar(id).saga();
         var ctx = saga.contexto();
-        if (estado == EstadoSagaPrincipal.COMPENSAR_PASO2) {
+        if (saga.estado() == EstadoSagaPrincipal.COMPENSAR_PASO2) {
             puertoPaso2.compensar(new ComandoPasoPrincipal.CompensarPaso2(ctx.refPaso2())); // REST fuera de tx
         } else {
             puertoPaso1.compensar(new ComandoPasoPrincipal.CompensarPaso1(ctx.refPaso1())); // REST fuera de tx
         }
 
         return tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            var sagaActual = (SagaPrincipalRoot) orden.saga();
-            sagaActual.compensacionCompletada();
+            saga.compensacionCompletada();
             orden.resetearIntentos();
             orden.renovarLease(lease, Instant.now());
             repo.guardar(orden);

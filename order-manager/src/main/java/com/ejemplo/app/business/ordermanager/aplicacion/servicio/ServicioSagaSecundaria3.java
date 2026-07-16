@@ -32,18 +32,22 @@ public class ServicioSagaSecundaria3 implements OrquestadorSaga {
 
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA3; }
 
+    /**
+     * Una ÚNICA carga por paso, antes del REST: la tx guarda esa misma
+     * instancia (con su version) para que un takeover intermedio haga fallar
+     * el guardar. No recargar dentro de la tx.
+     */
     @Override
     public SenalPaso ejecutarPaso(SagaId id) {
-        var saga = (SagaSecundaria3Root) repo.cargar(id).saga();
+        var orden = repo.cargar(id);
+        var saga = (SagaSecundaria3Root) orden.saga();
         var resultado = puerto.ejecutar((ComandoPasoSecundaria3.Ejecutar) saga.comandoActual()); // REST fuera de tx
 
         return tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            var sagaActual = (SagaSecundaria3Root) orden.saga();
-            sagaActual.aplicarYAvanzar(resultado);
-            orden.finalizar(sagaActual.resultadoFinal());
+            saga.aplicarYAvanzar(resultado);
+            orden.finalizar(saga.resultadoFinal());
             repo.guardar(orden);
-            return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
+            return new SenalPaso.Finalizada(saga.resultadoFinal());
         });
     }
 }

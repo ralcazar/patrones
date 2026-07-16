@@ -24,8 +24,13 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 
 Regla de oro en todos los flujos: **dentro de la transacción solo BBDD**
 (el agregado `OrdenRoot` completo: negocio + ejecución, un único `guardar`);
-**fuera de ella solo I/O externo** (REST del paso, tickets). Las flechas
-fluyen de izquierda a derecha y se muestran las líneas de activación.
+**fuera de ella solo I/O externo** (REST del paso, tickets). Y en los
+orquestadores, **una única carga por paso**: la transacción guarda la misma
+instancia cargada antes del REST (con su `version`), de modo que si otro
+actor escribió entre medias el `guardar` falla por `version` y el pod se
+retira (takeover seguro, sin recargas que anulen el optimistic locking).
+Las flechas fluyen de izquierda a derecha y se muestran las líneas de
+activación.
 
 ## Diagramas de secuencia
 

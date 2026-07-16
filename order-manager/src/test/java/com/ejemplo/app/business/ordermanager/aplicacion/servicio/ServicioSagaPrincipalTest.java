@@ -149,6 +149,33 @@ class ServicioSagaPrincipalTest {
         verify(puertoPaso3, org.mockito.Mockito.never()).ejecutar(any());
     }
 
+    @Test
+    void podZombi_conRestColgadoMasQueElLease_fallaPorVersionYNoPisaNiSaltaPasos() {
+        var id = crearOrdenPrincipal();
+        avanzarUnPaso(id); // PASO1
+        avanzarUnPaso(id); // PASO2
+
+        // El REST de PASO3 del pod zombi "se cuelga": mientras está en vuelo, otro
+        // pod hace takeover y ejecuta PASO3 de verdad (escribe y sube la version).
+        when(puertoPaso3.ejecutar(any())).thenAnswer(invocacion -> {
+            var ordenOtroPod = repo.cargar(id);
+            ((SagaPrincipalRoot) ordenOtroPod.saga())
+                    .aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod")));
+            repo.guardar(ordenOtroPod);
+            return new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-zombi"));
+        });
+
+        // El zombi despierta con su instantánea obsoleta: su guardar falla por version.
+        org.assertj.core.api.Assertions
+                .assertThatThrownBy(() -> orquestador.ejecutarPaso(id))
+                .isInstanceOf(com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException.class);
+
+        // Gana el otro pod: estado en PASO3_HECHO (sin saltar a PASO4_HECHO) y su ref intacta.
+        var saga = (SagaPrincipalRoot) repo.estadoActual(id).saga();
+        assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
+        assertThat(saga.contexto().refPaso3()).isEqualTo(new RefPaso3("ref3-otro-pod"));
+    }
+
     /** Ejecuta exactamente un paso invocando al orquestador directamente (no toca el token). */
     private void avanzarUnPaso(SagaId id) {
         var antes = repo.estadoActual(id).version();
