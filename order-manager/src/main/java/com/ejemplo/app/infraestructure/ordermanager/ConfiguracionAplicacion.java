@@ -1,14 +1,15 @@
 package com.ejemplo.app.infraestructure.ordermanager;
 
+import java.time.Duration;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoRecepcionTareas;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso3;
@@ -20,15 +21,13 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria3;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaPrincipal;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria3;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ManejadorTareasSaga;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioDespachoTareas;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioEncolarTramitacion;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.OrquestadorSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaPrincipal;
@@ -37,93 +36,94 @@ import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaSec
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteSagas;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 
 /**
  * Wiring de los servicios de aplicación (POJOs sin anotaciones Spring: la capa
  * business no depende de ningún framework). Los adaptadores de los puertos
- * REST, repositorios y tickets no están implementados en este esqueleto:
- * Spring los inyectará cuando existan.
+ * REST de paso (PuertoPasoN, PuertoSagaSecundariaN, PuertoConciliacionSecundaria2)
+ * y de deduplicación (PuertoMensajesProcesados) no están implementados en este
+ * esqueleto: Spring los inyectará cuando existan.
  */
 @Configuration
 public class ConfiguracionAplicacion {
 
     @Bean
-    ServicioSagaPrincipal servicioSagaPrincipal(RepositorioSagaPrincipal repo,
-            RepositorioSagaSecundaria1 repoSecundaria1, RepositorioSagaSecundaria2 repoSecundaria2,
-            RepositorioSagaSecundaria3 repoSecundaria3, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
+    PoliticaReintentos politicaReintentos() {
+        return new PoliticaReintentos();
+    }
+
+    @Bean
+    ServicioSagaPrincipal servicioSagaPrincipal(RepositorioOrden repo, UnidadDeTrabajo tx,
+            @Value("${orden.lease}") Duration lease,
             PuertoPaso1 p1, PuertoPaso2 p2, PuertoPaso3 p3, PuertoPaso4 p4,
             PuertoPaso5 p5, PuertoPaso6 p6, PuertoPaso7 p7, PuertoPaso8 p8) {
-        return new ServicioSagaPrincipal(repo, repoSecundaria1, repoSecundaria2, repoSecundaria3,
-                tx, dedup, cola, p1, p2, p3, p4, p5, p6, p7, p8);
+        return new ServicioSagaPrincipal(repo, tx, lease, p1, p2, p3, p4, p5, p6, p7, p8);
     }
 
     @Bean
-    ServicioSagaSecundaria1 servicioSagaSecundaria1(RepositorioSagaSecundaria1 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
-            PuertoSagaSecundaria1 puerto) {
-        return new ServicioSagaSecundaria1(repo, tx, dedup, cola, puerto);
+    ServicioSagaSecundaria1 servicioSagaSecundaria1(RepositorioOrden repo, UnidadDeTrabajo tx,
+            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria1 puerto) {
+        return new ServicioSagaSecundaria1(repo, tx, lease, puerto);
     }
 
     @Bean
-    ServicioSagaSecundaria2 servicioSagaSecundaria2(RepositorioSagaSecundaria2 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
+    ServicioSagaSecundaria2 servicioSagaSecundaria2(RepositorioOrden repo, UnidadDeTrabajo tx,
             PuertoSagaSecundaria2 puerto, PuertoConciliacionSecundaria2 conciliacion) {
-        return new ServicioSagaSecundaria2(repo, tx, dedup, cola, puerto, conciliacion);
+        return new ServicioSagaSecundaria2(repo, tx, puerto, conciliacion);
     }
 
     @Bean
-    ServicioSagaSecundaria3 servicioSagaSecundaria3(RepositorioSagaSecundaria3 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
-            PuertoSagaSecundaria3 puerto) {
-        return new ServicioSagaSecundaria3(repo, tx, dedup, cola, puerto);
+    ServicioSagaSecundaria3 servicioSagaSecundaria3(RepositorioOrden repo, UnidadDeTrabajo tx,
+            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria3 puerto) {
+        return new ServicioSagaSecundaria3(repo, tx, lease, puerto);
+    }
+
+    @Bean
+    Map<TipoSaga, OrquestadorSaga> orquestadoresPorTipo(ServicioSagaPrincipal principal,
+            ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
+            ServicioSagaSecundaria3 secundaria3) {
+        return Map.of(
+                TipoSaga.PRINCIPAL, principal,
+                TipoSaga.SECUNDARIA1, secundaria1,
+                TipoSaga.SECUNDARIA2, secundaria2,
+                TipoSaga.SECUNDARIA3, secundaria3);
+    }
+
+    @Bean
+    ServicioContinuarSaga servicioContinuarSaga(Map<TipoSaga, OrquestadorSaga> orquestadores,
+            RepositorioOrden repo, UnidadDeTrabajo tx, PoliticaReintentos politica,
+            @Value("${orden.lease}") Duration lease) {
+        return new ServicioContinuarSaga(orquestadores, repo, tx, politica, lease);
+    }
+
+    @Bean
+    ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo, UnidadDeTrabajo tx) {
+        return new ServicioIniciarTramitacion(repo, tx);
+    }
+
+    @Bean
+    ServicioSoporteSagas servicioSoporteSagas(RepositorioOrden repo, UnidadDeTrabajo tx,
+            PuertoConsultaSagasSoporte consultas) {
+        return new ServicioSoporteSagas(repo, tx, consultas);
     }
 
     @Bean
     ServicioTicketsSoporte servicioTicketsSoporte(PuertoSagasTicketPendiente pendientes,
-            PuertoTicketsSoporte tickets, ServicioSagaPrincipal principal,
-            ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
-            ServicioSagaSecundaria3 secundaria3) {
-        return new ServicioTicketsSoporte(pendientes, tickets, principal,
-                secundaria1, secundaria2, secundaria3);
+            PuertoTicketsSoporte tickets, RepositorioOrden repo, UnidadDeTrabajo tx) {
+        return new ServicioTicketsSoporte(pendientes, tickets, repo, tx);
     }
 
     @Bean
-    ServicioRegistrarRespuestaSecundaria2 servicioRegistrarRespuestaSecundaria2(PuertoColaTareas cola) {
-        return new ServicioRegistrarRespuestaSecundaria2(cola);
+    ServicioRegistrarRespuestaSecundaria2 servicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
+            UnidadDeTrabajo tx, PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
+        return new ServicioRegistrarRespuestaSecundaria2(repo, tx, dedup, politica);
     }
 
     @Bean
-    ManejadorTareasSaga manejadorTareasSaga(ServicioSagaPrincipal principal,
-            ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
-            ServicioSagaSecundaria3 secundaria3) {
-        return new ManejadorTareasSaga(principal, secundaria1, secundaria2, secundaria3);
-    }
-
-    @Bean
-    ServicioDespachoTareas servicioDespachoTareas(PuertoRecepcionTareas recepcion,
-            ManejadorTareasSaga manejador) {
-        return new ServicioDespachoTareas(recepcion, manejador);
-    }
-
-    @Bean
-    ServicioSoporteSagas servicioSoporteSagas(ServicioSagaPrincipal principal,
-            ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
-            ServicioSagaSecundaria3 secundaria3, PuertoConsultaSagasSoporte consultas) {
-        return new ServicioSoporteSagas(principal, secundaria1, secundaria2, secundaria3, consultas);
-    }
-
-    @Bean
-    ServicioEncolarTramitacion servicioEncolarTramitacion(PuertoColaTareas cola) {
-        return new ServicioEncolarTramitacion(cola);
-    }
-
-    @Bean
-    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioSagaPrincipal repoPrincipal,
-            RepositorioSagaSecundaria1 repoSecundaria1, RepositorioSagaSecundaria2 repoSecundaria2,
-            RepositorioSagaSecundaria3 repoSecundaria3, PuertoMensajesProcesados dedup,
-            PuertoColaTareas cola, UnidadDeTrabajo tx) {
-        return new ServicioLimpiezaDatos(repoPrincipal, repoSecundaria1, repoSecundaria2,
-                repoSecundaria3, dedup, cola, tx);
+    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup,
+            UnidadDeTrabajo tx) {
+        return new ServicioLimpiezaDatos(repo, dedup, tx);
     }
 }

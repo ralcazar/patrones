@@ -1,60 +1,67 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
+import java.time.Duration;
+import java.time.Instant;
+
 import org.jmolecules.ddd.annotation.Service;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria1;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ComandoPasoSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.PasoSagaSecundaria1;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
 
 /**
  * Orquestador de la saga secundaria 1: dos llamadas REST síncronas encadenadas
- * (INICIO -> CONFIRMACION). Cada llamada reentra con su resultado; la cadena
- * completa corre dentro del procesar() de una Orden, con checkpoint por paso.
+ * (INICIO -> CONFIRMACION). Nunca se cancela ni compensa.
  */
 @Service
-public class ServicioSagaSecundaria1 extends ServicioSagaBase<PasoSagaSecundaria1, SagaSecundaria1Root> {
+public class ServicioSagaSecundaria1 implements OrquestadorSaga {
 
-    private final RepositorioSagaSecundaria1 repo;
+    private final RepositorioOrden repo;
+    private final UnidadDeTrabajo tx;
+    private final Duration lease;
     private final PuertoSagaSecundaria1 puerto;
 
-    public ServicioSagaSecundaria1(RepositorioSagaSecundaria1 repo, UnidadDeTrabajo tx,
-            PuertoMensajesProcesados dedup, PuertoColaTareas cola,
+    public ServicioSagaSecundaria1(RepositorioOrden repo, UnidadDeTrabajo tx, Duration lease,
             PuertoSagaSecundaria1 puerto) {
-        super(tx, dedup, cola);
         this.repo = repo;
+        this.tx = tx;
+        this.lease = lease;
         this.puerto = puerto;
     }
 
-    @Override
-    protected SagaSecundaria1Root cargar(SagaId id) {
-        return repo.cargar(id);
-    }
+    @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA1; }
 
     @Override
-    protected void guardar(SagaSecundaria1Root saga) {
-        repo.guardar(saga);
-    }
+    public SenalPaso ejecutarPaso(SagaId id) {
+        var saga = (SagaSecundaria1Root) repo.cargar(id).saga();
+        var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
 
-    @Override
-    protected void ejecutar(SagaId id, PasoSagaSecundaria1 paso, ComandoPaso cmd) {
-        try {
-            switch ((ComandoPasoSecundaria1) cmd) {
-                case ComandoPasoSecundaria1.Iniciar c ->
-                        pasoCompletado(id, PasoSagaSecundaria1.INICIO, puerto.iniciar(c), MensajeId.interno());
-                case ComandoPasoSecundaria1.Confirmar c ->
-                        pasoCompletado(id, PasoSagaSecundaria1.CONFIRMACION, puerto.confirmar(c), MensajeId.interno());
+        return tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            var sagaActual = (SagaSecundaria1Root) orden.saga();
+            sagaActual.aplicarYAvanzar(resultado);
+            if (sagaActual.terminada()) {
+                orden.finalizar(sagaActual.resultadoFinal());
+                repo.guardar(orden);
+                return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
             }
-        } catch (ExcepcionServicioExterno e) {
-            pasoFallido(id, paso, e.motivo(), MensajeId.interno());
-        }
+            orden.resetearIntentos();
+            orden.renovarLease(lease, Instant.now());
+            repo.guardar(orden);
+            return new SenalPaso.HayMasTrabajo();
+        });
+    }
+
+    private ResultadoPasoSecundaria1 ejecutarComando(ComandoPaso cmd) {
+        return switch ((ComandoPasoSecundaria1) cmd) {
+            case ComandoPasoSecundaria1.Iniciar c -> puerto.iniciar(c);
+            case ComandoPasoSecundaria1.Confirmar c -> puerto.confirmar(c);
+        };
     }
 }

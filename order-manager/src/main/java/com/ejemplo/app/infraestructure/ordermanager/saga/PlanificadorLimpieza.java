@@ -13,8 +13,8 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoLi
 
 /**
  * Disparador periódico de la limpieza de datos: cada cierto tiempo purga las
- * sagas que acabaron bien y ya son antiguas (y sus tareas y dedup). El QUÉ se
- * borra vive en la aplicación (ServicioLimpiezaDatos); aquí solo el CUÁNDO.
+ * órdenes que acabaron bien y ya son antiguas (y los registros de dedup). El
+ * QUÉ se borra vive en la aplicación (ServicioLimpiezaDatos); aquí solo el CUÁNDO.
  */
 @Component
 public class PlanificadorLimpieza {
@@ -34,9 +34,7 @@ public class PlanificadorLimpieza {
     public void ejecutar() {
         Instant corte = Instant.now().minus(retencion);
         var resultado = limpieza.purgarAnterioresA(corte);
-        log.info("Limpieza de datos (corte {}): {} sagas principales, {} secundarias, "
-                        + "{} registros dedup y {} tareas terminadas borradas",
-                corte, resultado.sagasPrincipales(), resultado.sagasSecundarias(),
-                resultado.mensajesDedup(), resultado.tareasTerminadas());
+        log.info("Limpieza de datos (corte {}): {} órdenes y {} registros dedup borrados",
+                corte, resultado.ordenes(), resultado.mensajesDedup());
     }
 }

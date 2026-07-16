@@ -1,38 +1,72 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
+import java.time.Instant;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
-import com.ejemplo.app.business.ordermanager.aplicacion.tarea.TareaSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
+import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
 
 /**
- * Intake de la respuesta diferida de la saga secundaria 2: traduce lo que trae
- * el consumer de Kafka a una tarea durable y la encola. El procesamiento real
- * (cargar la saga, dedup por mensajeId) lo hará el pool del GestorOrdenes.
- * Es la pieza de aplicación que evita que el adaptador de entrada (consumer)
- * hable directamente con el adaptador de salida (cola).
+ * Aplica directamente la respuesta diferida de la saga secundaria 2 que trae
+ * el consumer de Kafka: una única transacción, deduplicada por mensajeId (la
+ * mensajería entrega at-least-once). El agregado se carga, muta y guarda
+ * aquí mismo; el cierre operativo final de la orden lo deja al orquestador
+ * (ver ServicioSagaSecundaria2), que la recoge en su siguiente pasada.
  */
 @Service
 public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRespuestaSecundaria2 {
 
-    private final PuertoColaTareas cola;
+    private final RepositorioOrden repo;
+    private final UnidadDeTrabajo tx;
+    private final PuertoMensajesProcesados dedup;
+    private final PoliticaReintentos politica;
 
-    public ServicioRegistrarRespuestaSecundaria2(PuertoColaTareas cola) {
-        this.cola = cola;
+    public ServicioRegistrarRespuestaSecundaria2(RepositorioOrden repo, UnidadDeTrabajo tx,
+            PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
+        this.repo = repo;
+        this.tx = tx;
+        this.dedup = dedup;
+        this.politica = politica;
     }
 
     @Override
     public void respuestaOk(SagaId sagaId, RefRespuesta ref, String mensajeId) {
-        cola.encolar(new TareaSaga.ResultadoSagaSecundaria2Ok(sagaId, ref, mensajeId));
+        var msgId = MensajeId.externo(mensajeId);
+        if (dedup.yaProcesado(msgId)) {
+            return;
+        }
+        tx.enTransaccion(() -> {
+            dedup.registrar(msgId);
+            var orden = repo.cargar(sagaId);
+            var saga = (SagaSecundaria2Root) orden.saga();
+            saga.respuestaRecibida(ref);
+            orden.despertar(Instant.now());
+            repo.guardar(orden);
+        });
     }
 
     @Override
     public void respuestaError(SagaId sagaId, String codigo, String detalle,
                                boolean reintentable, String mensajeId) {
-        cola.encolar(new TareaSaga.ResultadoSagaSecundaria2Error(
-                sagaId, codigo, detalle, reintentable, mensajeId));
+        var msgId = MensajeId.externo(mensajeId);
+        if (dedup.yaProcesado(msgId)) {
+            return;
+        }
+        tx.enTransaccion(() -> {
+            dedup.registrar(msgId);
+            var orden = repo.cargar(sagaId);
+            var saga = (SagaSecundaria2Root) orden.saga();
+            saga.volverASolicitar();
+            orden.programarReintento(politica, Instant.now());
+            repo.guardar(orden);
+        });
     }
 }

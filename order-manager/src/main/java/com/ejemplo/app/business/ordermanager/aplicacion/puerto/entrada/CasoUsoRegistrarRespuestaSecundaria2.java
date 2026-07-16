@@ -4,10 +4,11 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
 
 /**
- * Entrada del consumer de Kafka de la saga secundaria 2: registra la respuesta
- * diferida como tarea durable (intake fino: encolar y ack). El adaptador de
- * entrada no toca la cola directamente — pasa por este caso de uso, que es
- * quien conoce el modelo de tareas.
+ * Entrada del consumer de Kafka de la saga secundaria 2: aplica la respuesta
+ * diferida directamente sobre el agregado (una transacción, deduplicada por
+ * mensajeId). El adaptador de entrada no toca el agregado ni sus puertos de
+ * salida directamente — pasa por este caso de uso, que es quien conoce cómo
+ * mutarlo.
  */
 public interface CasoUsoRegistrarRespuestaSecundaria2 {
 

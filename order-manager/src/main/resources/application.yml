@@ -1,13 +1,13 @@
-# --- Parámetros del GestorOrdenes (fusionado con las sagas) ---
-gestor-ordenes:
-  tamano-pool: 10          # nº de trabajadores = tareas de saga procesadas en paralelo
-  intervalo-sondeo-ms: 500 # cada cuánto el dispatcher revisa/rellena el pool
-  # ¡IMPORTANTE tras la fusión!: la tarea INICIAR ejecuta la cadena completa
-  # PASO1->...->PASO8 dentro de un solo procesar().
-  # El lease DEBE superar la duración del peor caso de esa cadena (suma de
-  # timeouts HTTP de los 8 servicios), o otro trabajador "robará" la orden en curso.
-  lease-segundos: 300
-  ventana-reclamo: 20
+# --- Parámetros de la orden (agregado OrdenRoot: ejecución + saga) ---
+orden:
+  # Lease del token de ejecución: holgadamente mayor que el timeout REST más
+  # largo de UN paso (se renueva en la tx de cada paso completado, no
+  # necesita cubrir la saga entera).
+  lease: PT10M
+  planificador:
+    intervalo-ms: 500   # cada cuánto el planificador de este pod busca candidatas
+    limite: 50           # nº máximo de órdenes candidatas por pasada
+    tamano-pool: 4        # pool de hilos compartido por los @Scheduled del módulo
 
 ordermanager:
   topics:
@@ -16,14 +16,16 @@ ordermanager:
   limpieza:
     cron: "0 0 3 * * *"   # cada noche a las 03:00
     retencion-dias: 30    # solo se purga lo finalizado-bien más viejo que esto
+  tickets:
+    cron: "0 0 8-17/3 * * *"   # cada 3h en horario de soporte
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/tu_bbdd   # AJUSTA
-    username: tu_usuario                            # AJUSTA
-    password: tu_password                           # AJUSTA
+    url: jdbc:oracle:thin:@//localhost:1521/tu_servicio   # AJUSTA
+    username: tu_usuario                                  # AJUSTA
+    password: tu_password                                 # AJUSTA
     hikari:
-      maximum-pool-size: 15   # >= tamano-pool + margen
+      maximum-pool-size: 15   # >= orden.planificador.tamano-pool + margen
 
   jpa:
     hibernate:

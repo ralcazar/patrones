@@ -1,5 +1,6 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -8,37 +9,30 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoIntervenirSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
-import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.PasoSagaPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.PasoSagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.PasoSagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.PasoSagaSecundaria3;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
 
 /**
- * Fachada para la pantalla de soporte: resuelve el paso (que llega por nombre
- * desde el REST del backoffice) al enum de la saga indicada y enruta cada
- * intervención al orquestador correcto; las consultas van al modelo de lectura.
+ * Fachada de la pantalla de soporte: cada intervención actúa directamente
+ * sobre el agregado a través de RepositorioOrden (siempre un único agregado,
+ * un único guardado), sin pasar por los orquestadores de ejecución; las
+ * consultas van al modelo de lectura.
  */
 @Service
 public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsultarSagasSoporte {
 
-    private final ServicioSagaPrincipal principal;
-    private final ServicioSagaSecundaria1 secundaria1;
-    private final ServicioSagaSecundaria2 secundaria2;
-    private final ServicioSagaSecundaria3 secundaria3;
+    private final RepositorioOrden repo;
+    private final UnidadDeTrabajo tx;
     private final PuertoConsultaSagasSoporte consultas;
 
-    public ServicioSoporteSagas(ServicioSagaPrincipal principal, ServicioSagaSecundaria1 secundaria1,
-                                ServicioSagaSecundaria2 secundaria2, ServicioSagaSecundaria3 secundaria3,
-                                PuertoConsultaSagasSoporte consultas) {
-        this.principal = principal;
-        this.secundaria1 = secundaria1;
-        this.secundaria2 = secundaria2;
-        this.secundaria3 = secundaria3;
+    public ServicioSoporteSagas(RepositorioOrden repo, UnidadDeTrabajo tx, PuertoConsultaSagasSoporte consultas) {
+        this.repo = repo;
+        this.tx = tx;
         this.consultas = consultas;
     }
 
@@ -48,44 +42,34 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     public void cancelarPrincipal(SagaId id, UsuarioSoporte quien, String motivo) {
         // El agregado valida el punto de no retorno; las excepciones
         // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
-        principal.cancelar(id, quien, motivo);
+        tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            var saga = (SagaPrincipalRoot) orden.saga();
+            saga.cancelar(quien, motivo);
+            orden.despertar(Instant.now());
+            repo.guardar(orden);
+        });
     }
 
     @Override
     public void reintentarPaso(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien) {
-        switch (tipo) {
-            case PRINCIPAL -> principal.reanudarPaso(id, PasoSagaPrincipal.valueOf(nombrePaso), quien);
-            case SECUNDARIA1 -> secundaria1.reanudarPaso(id, PasoSagaSecundaria1.valueOf(nombrePaso), quien);
-            case SECUNDARIA2 -> secundaria2.reanudarPaso(id, PasoSagaSecundaria2.valueOf(nombrePaso), quien);
-            case SECUNDARIA3 -> secundaria3.reanudarPaso(id, PasoSagaSecundaria3.valueOf(nombrePaso), quien);
-        }
+        tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            orden.resetearIntentos();
+            orden.despertar(Instant.now());
+            repo.guardar(orden);
+        });
     }
 
     @Override
     public void marcarPasoOk(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien,
                              String justificacion, Map<String, String> datosManuales) {
-        switch (tipo) {
-            case PRINCIPAL -> {
-                var paso = PasoSagaPrincipal.valueOf(nombrePaso);
-                principal.marcarPasoOk(id, paso, quien, justificacion,
-                        FabricaResultadoManual.paraPaso(paso, datosManuales));
-            }
-            case SECUNDARIA1 -> {
-                var paso = PasoSagaSecundaria1.valueOf(nombrePaso);
-                secundaria1.marcarPasoOk(id, paso, quien, justificacion,
-                        FabricaResultadoManual.paraPaso(paso, datosManuales));
-            }
-            case SECUNDARIA2 -> {
-                var paso = PasoSagaSecundaria2.valueOf(nombrePaso);
-                secundaria2.marcarPasoOk(id, paso, quien, justificacion,
-                        FabricaResultadoManual.paraPaso(paso, datosManuales));
-            }
-            case SECUNDARIA3 -> {
-                var paso = PasoSagaSecundaria3.valueOf(nombrePaso);
-                secundaria3.marcarPasoOk(id, paso, quien, justificacion,
-                        FabricaResultadoManual.paraPaso(paso, datosManuales));
-            }
-        }
+        tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            orden.saga().marcarPasoActualOkManual(quien, justificacion, datosManuales);
+            orden.despertar(Instant.now());
+            repo.guardar(orden);
+        });
     }
 
     // --- consultas (modelo de lectura) ---
@@ -101,8 +85,8 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     }
 
     @Override
-    public List<SagaResumen> sagasConTicket(EstadoTicket estadoTicket) {
-        return consultas.sagasConTicket(estadoTicket);
+    public List<SagaResumen> sagasConTicketPendiente() {
+        return consultas.sagasConTicketPendiente();
     }
 
     @Override

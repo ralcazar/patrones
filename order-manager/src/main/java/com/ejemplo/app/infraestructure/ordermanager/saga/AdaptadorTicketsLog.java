@@ -23,11 +23,8 @@ public class AdaptadorTicketsLog implements PuertoTicketsSoporte {
     @Override
     public void abrir(List<SagaTicketPendiente> sagas) {
         String detalle = sagas.stream()
-                .map(s -> "%s %s (externalId %s) paso %s: %s [%s tras %d intentos]".formatted(
-                        s.tipo(), s.sagaId().valor(), s.externalId().valor(),
-                        s.nombrePaso(), s.ultimoFallo().detalle(),
-                        s.sigueReintentando() ? "sigue reintentando cada 180 min" : "sin reintento automático",
-                        s.intentos()))
+                .map(s -> "%s %s (externalId %s): sigue reintentando cada 180 min tras %d intentos".formatted(
+                        s.tipo(), s.sagaId().valor(), s.externalId().valor(), s.intentos()))
                 .collect(Collectors.joining("; "));
         log.error("TICKET-SOPORTE-ORDERMANAGER: {} sagas requieren atención: {}", sagas.size(), detalle);
     }

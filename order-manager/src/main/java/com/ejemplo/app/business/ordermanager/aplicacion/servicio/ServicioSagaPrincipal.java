@@ -1,9 +1,11 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
 import org.jmolecules.ddd.annotation.Service;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoColaTareas;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso3;
@@ -12,45 +14,37 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso8;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaPrincipal;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioSagaSecundaria3;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
-import com.ejemplo.app.business.ordermanager.aplicacion.tarea.TareaSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Decision;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ComandoPasoPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.PasoSagaPrincipal;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.EstadoSagaPrincipal;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ResultadoPasoPrincipal;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
 
 /**
- * Orquestador de la saga principal.
+ * Orquestador de la saga principal: PASO1 -> ... -> PASO8 síncronos y, si
+ * soporte cancela antes del punto de no retorno, la compensación
+ * COMPENSAR_PASO2 -> COMPENSAR_PASO1 -> CANCELADA.
  *
- * Especialidades respecto a la base:
- *  - iniciarOContinuar: crea la saga si no existe (idempotente ante reentregas).
- *  - Al completar PASO8: crea las 3 sagas secundarias y encola sus tareas
- *    ArrancarSaga en la MISMA transacción (un solo commit).
- *  - Cancelación por soporte con compensación de PASO2 y PASO1.
+ * Al alcanzar TERMINADA (tras PASO8), en la MISMA transacción que finaliza la
+ * orden crea los 3 agregados hijos (uno por saga secundaria): es la excepción
+ * aceptada a la regla de un solo agregado por transacción, porque solo
+ * MODIFICA el agregado de la principal y CREA los otros tres.
  */
 @Service
-public class ServicioSagaPrincipal extends ServicioSagaBase<PasoSagaPrincipal, SagaPrincipalRoot> {
+public class ServicioSagaPrincipal implements OrquestadorSaga {
 
-    private final RepositorioSagaPrincipal repo;
-    private final RepositorioSagaSecundaria1 repoSecundaria1;
-    private final RepositorioSagaSecundaria2 repoSecundaria2;
-    private final RepositorioSagaSecundaria3 repoSecundaria3;
+    private final RepositorioOrden repo;
+    private final UnidadDeTrabajo tx;
+    private final Duration lease;
     private final PuertoPaso1 puertoPaso1;
     private final PuertoPaso2 puertoPaso2;
     private final PuertoPaso3 puertoPaso3;
@@ -60,18 +54,13 @@ public class ServicioSagaPrincipal extends ServicioSagaBase<PasoSagaPrincipal, S
     private final PuertoPaso7 puertoPaso7;
     private final PuertoPaso8 puertoPaso8;
 
-    public ServicioSagaPrincipal(RepositorioSagaPrincipal repo,
-            RepositorioSagaSecundaria1 repoSecundaria1, RepositorioSagaSecundaria2 repoSecundaria2,
-            RepositorioSagaSecundaria3 repoSecundaria3,
-            UnidadDeTrabajo tx, PuertoMensajesProcesados dedup, PuertoColaTareas cola,
+    public ServicioSagaPrincipal(RepositorioOrden repo, UnidadDeTrabajo tx, Duration lease,
             PuertoPaso1 puertoPaso1, PuertoPaso2 puertoPaso2, PuertoPaso3 puertoPaso3,
             PuertoPaso4 puertoPaso4, PuertoPaso5 puertoPaso5, PuertoPaso6 puertoPaso6,
             PuertoPaso7 puertoPaso7, PuertoPaso8 puertoPaso8) {
-        super(tx, dedup, cola);
         this.repo = repo;
-        this.repoSecundaria1 = repoSecundaria1;
-        this.repoSecundaria2 = repoSecundaria2;
-        this.repoSecundaria3 = repoSecundaria3;
+        this.tx = tx;
+        this.lease = lease;
         this.puertoPaso1 = puertoPaso1;
         this.puertoPaso2 = puertoPaso2;
         this.puertoPaso3 = puertoPaso3;
@@ -82,139 +71,99 @@ public class ServicioSagaPrincipal extends ServicioSagaBase<PasoSagaPrincipal, S
         this.puertoPaso8 = puertoPaso8;
     }
 
-    // ------------------------------------------------------------------
-    // Entrada desde el ManejadorTareasSaga (tareas del GestorOrdenes)
-    // ------------------------------------------------------------------
-
-    /**
-     * Maneja la tarea IniciarTramitacion. Idempotente ante reentregas del lease:
-     * si la saga ya existe (el proceso murió a mitad de la cadena), continúa
-     * desde el último paso confirmado en lugar de crearla de nuevo.
-     */
-    public void iniciarOContinuar(SagaId id, ExternalId externalId,
-                                  DatoNegocio3 datos, DatoNegocio2 datoNegocio2) {
-        var decisiones = ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
-            if (!repo.existe(id)) {
-                var saga = SagaPrincipalRoot.crear(id, externalId, datos, datoNegocio2);
-                var ds = saga.iniciar();
-                repo.crear(saga);
-                return ds;
-            }
-            var saga = repo.cargar(id);
-            var ds = saga.continuar(); // reanuda el paso SOLICITADO que quedó colgado
-            repo.guardar(saga);
-            return ds;
-        }));
-        despachar(id, decisiones);
-    }
-
-    // --- intervenciones de soporte (las enruta ServicioSoporteSagas) ---
-
-    public void cancelar(SagaId id, UsuarioSoporte quien, String motivo) {
-        procesar(MensajeId.interno(), id, saga -> saga.cancelarPorSoporte(quien, motivo));
-    }
-
-    // ------------------------------------------------------------------
-    // Especialización de la base
-    // ------------------------------------------------------------------
+    @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
 
     @Override
-    protected SagaPrincipalRoot cargar(SagaId id) {
-        return repo.cargar(id);
+    public SenalPaso ejecutarPaso(SagaId id) {
+        var estado = ((SagaPrincipalRoot) repo.cargar(id).saga()).estado();
+        return esCompensacion(estado) ? ejecutarCompensacion(id, estado) : ejecutarPasoNormal(id);
     }
 
-    @Override
-    protected void guardar(SagaPrincipalRoot saga) {
-        repo.guardar(saga);
+    private SenalPaso ejecutarPasoNormal(SagaId id) {
+        var saga = (SagaPrincipalRoot) repo.cargar(id).saga();
+        var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
+
+        return tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            var sagaActual = (SagaPrincipalRoot) orden.saga();
+            sagaActual.aplicarYAvanzar(resultado);
+            if (sagaActual.terminada()) {
+                crearHijas(sagaActual.contextosArranque(), Instant.now());
+                orden.finalizar(sagaActual.resultadoFinal());
+                repo.guardar(orden);
+                return new SenalPaso.Finalizada(sagaActual.resultadoFinal());
+            }
+            orden.resetearIntentos();
+            orden.renovarLease(lease, Instant.now());
+            repo.guardar(orden);
+            return new SenalPaso.HayMasTrabajo();
+        });
     }
 
-    /**
-     * Parte transaccional de ArrancarSaga: crea la saga secundaria y encola su
-     * tarea de arranque. Sagas nuevas + tareas + COMPLETADA de la principal:
-     * un solo commit.
-     */
-    @Override
-    protected void arrancarSaga(SagaPrincipalRoot saga, Decision.ArrancarSaga<PasoSagaPrincipal> d) {
-        var nueva = switch (d.contexto()) {
-            case ContextoArranque.ArranqueSecundaria1 c -> {
-                var s = SagaSecundaria1Root.crear(SagaId.nuevo(), c);
-                repoSecundaria1.crear(s);
-                yield s;
-            }
-            case ContextoArranque.ArranqueSecundaria2 c -> {
-                var s = SagaSecundaria2Root.crear(SagaId.nuevo(), c);
-                repoSecundaria2.crear(s);
-                yield s;
-            }
-            case ContextoArranque.ArranqueSecundaria3 c -> {
-                var s = SagaSecundaria3Root.crear(SagaId.nuevo(), c);
-                repoSecundaria3.crear(s);
-                yield s;
-            }
+    private SenalPaso ejecutarCompensacion(SagaId id, EstadoSagaPrincipal estado) {
+        if (estado == EstadoSagaPrincipal.CANCELADA) {
+            return tx.enTransaccion(() -> {
+                var orden = repo.cargar(id);
+                var saga = (SagaPrincipalRoot) orden.saga();
+                orden.finalizar(saga.resultadoFinal());
+                repo.guardar(orden);
+                return new SenalPaso.Finalizada(saga.resultadoFinal());
+            });
+        }
+
+        var saga = (SagaPrincipalRoot) repo.cargar(id).saga();
+        var ctx = saga.contexto();
+        if (estado == EstadoSagaPrincipal.COMPENSAR_PASO2) {
+            puertoPaso2.compensar(new ComandoPasoPrincipal.CompensarPaso2(ctx.refPaso2())); // REST fuera de tx
+        } else {
+            puertoPaso1.compensar(new ComandoPasoPrincipal.CompensarPaso1(ctx.refPaso1())); // REST fuera de tx
+        }
+
+        return tx.enTransaccion(() -> {
+            var orden = repo.cargar(id);
+            var sagaActual = (SagaPrincipalRoot) orden.saga();
+            sagaActual.compensacionCompletada();
+            orden.resetearIntentos();
+            orden.renovarLease(lease, Instant.now());
+            repo.guardar(orden);
+            return new SenalPaso.HayMasTrabajo();
+        });
+    }
+
+    private void crearHijas(List<ContextoArranque> contextos, Instant ahora) {
+        for (var contexto : contextos) {
+            OrdenRoot hija = switch (contexto) {
+                case ContextoArranque.ArranqueSecundaria1 c ->
+                        OrdenRoot.nueva(SagaSecundaria1Root.crear(SagaId.nuevo(), c), ahora);
+                case ContextoArranque.ArranqueSecundaria2 c ->
+                        OrdenRoot.nueva(SagaSecundaria2Root.crear(SagaId.nuevo(), c), ahora);
+                case ContextoArranque.ArranqueSecundaria3 c ->
+                        OrdenRoot.nueva(SagaSecundaria3Root.crear(SagaId.nuevo(), c), ahora);
+            };
+            repo.crear(hija);
+        }
+    }
+
+    private ResultadoPasoPrincipal ejecutarComando(ComandoPaso cmd) {
+        return switch ((ComandoPasoPrincipal) cmd) {
+            case ComandoPasoPrincipal.EjecutarPaso1 c -> puertoPaso1.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso2 c -> puertoPaso2.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso3 c -> puertoPaso3.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso4 c -> puertoPaso4.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso5 c -> puertoPaso5.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso6 c -> puertoPaso6.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso7 c -> puertoPaso7.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso8 c -> puertoPaso8.ejecutar(c);
+            case ComandoPasoPrincipal.CompensarPaso1 c -> throw new IllegalStateException(
+                    "Las compensaciones no se ejecutan por esta vía: " + c);
+            case ComandoPasoPrincipal.CompensarPaso2 c -> throw new IllegalStateException(
+                    "Las compensaciones no se ejecutan por esta vía: " + c);
         };
-        cola.encolar(new TareaSaga.ArrancarSaga(nueva.id(), nueva.tipo()));
     }
 
-    /**
-     * Ejecuta un paso síncrono y reentra con el resultado o el fallo.
-     * La cadena PASO1->...->PASO8 corre entera dentro del procesar() de UNA
-     * Orden, con checkpoint en BBDD por paso. IMPORTANTE: el lease del
-     * GestorOrdenes debe superar la duración del peor caso de la cadena
-     * (ver application.yml).
-     */
-    @Override
-    protected void ejecutar(SagaId id, PasoSagaPrincipal paso, ComandoPaso cmd) {
-        try {
-            switch ((ComandoPasoPrincipal) cmd) {
-                case ComandoPasoPrincipal.EjecutarPaso1 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO1, puertoPaso1.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso2 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO2, puertoPaso2.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso3 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO3, puertoPaso3.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso4 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO4, puertoPaso4.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso5 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO5, puertoPaso5.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso6 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO6, puertoPaso6.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso7 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO7, puertoPaso7.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.EjecutarPaso8 c ->
-                        pasoCompletado(id, PasoSagaPrincipal.PASO8, puertoPaso8.ejecutar(c), MensajeId.interno());
-                case ComandoPasoPrincipal.CompensarPaso1 c -> throw new IllegalStateException(
-                        "Las compensaciones no se ejecutan por esta vía: " + c);
-                case ComandoPasoPrincipal.CompensarPaso2 c -> throw new IllegalStateException(
-                        "Las compensaciones no se ejecutan por esta vía: " + c);
-            }
-        } catch (ExcepcionServicioExterno e) {
-            pasoFallido(id, paso, e.motivo(), MensajeId.interno());
-        }
-    }
-
-    @Override
-    protected void compensar(SagaId id, PasoSagaPrincipal paso, ComandoPaso cmd) {
-        try {
-            switch (cmd) {
-                case ComandoPasoPrincipal.CompensarPaso2 c -> puertoPaso2.compensar(c);
-                case ComandoPasoPrincipal.CompensarPaso1 c -> puertoPaso1.compensar(c);
-                default -> throw new IllegalStateException("Comando de compensación desconocido: " + cmd);
-            }
-            ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
-                var saga = repo.cargar(id);
-                saga.compensacionCompletada(paso);
-                repo.guardar(saga);
-                return null;
-            }));
-        } catch (ExcepcionServicioExterno e) {
-            // Inconsistencia real: el paso queda BLOQUEADO_SOPORTE y el
-            // planificador de tickets lo detectará en su siguiente pasada.
-            ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
-                var saga = repo.cargar(id);
-                saga.compensacionFallida(paso, e.motivo());
-                repo.guardar(saga);
-                return null;
-            }));
-        }
+    private static boolean esCompensacion(EstadoSagaPrincipal estado) {
+        return estado == EstadoSagaPrincipal.COMPENSAR_PASO2
+                || estado == EstadoSagaPrincipal.COMPENSAR_PASO1
+                || estado == EstadoSagaPrincipal.CANCELADA;
     }
 }

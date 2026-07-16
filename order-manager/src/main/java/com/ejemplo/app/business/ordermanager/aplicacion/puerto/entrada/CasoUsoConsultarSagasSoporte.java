@@ -4,29 +4,27 @@ import java.time.Instant;
 import java.util.List;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.EstadoTicket;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 
 /**
- * Consultas para la pantalla de soporte. Es un modelo de lectura: el adaptador
- * lo resuelve con queries sobre las tablas de las sagas, sin pasar por los agregados.
+ * Consultas para la pantalla de soporte. Es un modelo de lectura puro CQRS:
+ * el adaptador lo resuelve con queries SQL sobre las tablas {@code orden} y
+ * {@code saga}, sin cargar agregados. Por eso el estado de la FSM viaja como
+ * {@code String} (el nombre del enum tal cual está en la columna) en vez del
+ * enum de dominio: esta interfaz no depende de las 4 FSM concretas.
  */
 public interface CasoUsoConsultarSagasSoporte {
 
-    /** Bandeja de trabajo: todas las sagas con algún paso bloqueado. */
+    /** Bandeja de trabajo: órdenes con la escalera de reintentos consumida (intentos >= 8). */
     List<SagaResumen> sagasBloqueadas();
 
-    /** Todas las sagas en ejecución (INICIADA o EN_CURSO). */
+    /** Órdenes con token de ejecución vigente (en curso ahora mismo, en algún pod). */
     List<SagaResumen> sagasEnEjecucion();
 
-    /** Sagas por marcador de ticket: PENDIENTE (aún sin abrir) o ABIERTO (con su fecha). */
-    List<SagaResumen> sagasConTicket(EstadoTicket estadoTicket);
+    /** Órdenes con la escalera consumida y sin ticket abierto todavía. */
+    List<SagaResumen> sagasConTicketPendiente();
 
     /** Búsqueda con filtros combinables; los criterios a null no aplican. */
     List<SagaResumen> buscar(FiltroSagas filtro);
@@ -36,12 +34,12 @@ public interface CasoUsoConsultarSagasSoporte {
 
     SagaDetalle detalle(TipoSaga tipo, SagaId id);
 
-    /** Criterios de la pantalla de soporte: estado, fecha de inicio y fecha de última actualización. */
-    record FiltroSagas(EstadoSaga estado,
+    /** Criterios de la pantalla de soporte: estado (nombre del enum), fecha de inicio y de última actualización. */
+    record FiltroSagas(String estado,
                        Instant iniciadaDesde, Instant iniciadaHasta,
                        Instant actualizadaDesde, Instant actualizadaHasta) {
 
-        public static FiltroSagas porEstado(EstadoSaga estado) {
+        public static FiltroSagas porEstado(String estado) {
             return new FiltroSagas(estado, null, null, null, null);
         }
 
@@ -56,21 +54,18 @@ public interface CasoUsoConsultarSagasSoporte {
 
     /**
      * Lo que soporte necesita ver de un vistazo:
-     * - estadoTicket / ticketAbiertoEn: ticket pendiente de abrir o ya abierto
-     *   (y desde cuándo).
-     * - proximoReintentoEn: si la saga sigue reintentando, el ejecutar_desde de
-     *   su orden REINTENTAR diferida; null si no hay reintento programado.
-     * - tienePasosBloqueados: aviso de que NO se está reintentando (fallo no
-     *   reintentable o compensación fallida): lo tiene que resolver una persona.
+     * - estado: nombre del estado de la FSM de negocio (p. ej. "PASO3_HECHO").
+     * - intentos: reintentos de ejecución consumidos; &gt;= 8 marca la orden como bloqueada.
+     * - ticketAbiertoEn: null si no hay ticket abierto.
+     * - proximoReintentoEn: próxima vez que el planificador la recogerá.
      */
     record SagaResumen(SagaId id, TipoSaga tipo, ExternalId externalId,
-                       EstadoSaga estado, boolean tienePasosBloqueados,
-                       EstadoTicket estadoTicket, Instant ticketAbiertoEn,
-                       Instant proximoReintentoEn,
+                       String estado, int intentos,
+                       Instant ticketAbiertoEn, Instant proximoReintentoEn,
                        Instant iniciadaEn, Instant actualizadaEn) {}
 
-    record PasoDetalle(PasoSaga paso, EstadoPaso estado, int intentos, MotivoFallo ultimoFallo,
-                       boolean datosManualesObligatorios) {}
+    /** El paso pendiente actual (derivado de la FSM), si la orden sigue viva. */
+    record PasoDetalle(String nombrePaso, boolean datosManualesObligatorios) {}
 
     record SagaDetalle(SagaResumen resumen, boolean cancelable,
                        List<PasoDetalle> pasos, List<AuditoriaIntervencion> auditoria) {}

@@ -26,11 +26,11 @@ public final class PoliticaReintentos {
     }
 
     /**
-     * La escalera entera ya se consumió y el paso sigue fallando (el fallo
-     * llega DESPUÉS de una espera de 180 min): hay que pedir ticket a soporte,
-     * aunque el reintento automático continúe.
+     * La escalera entera ya se consumió (8 intentos fallidos): el planificador
+     * de tickets debe avisar a soporte, aunque el reintento automático continúe
+     * indefinidamente cada 180 min.
      */
-    public boolean escaleraConsumida(int intentosFallidos) {
-        return intentosFallidos > ESCALERA.size();
+    public boolean debeAbrirTicket(int intentos) {
+        return intentos >= ESCALERA.size();
     }
 }
