@@ -1,0 +1,16 @@
+# Perfil SOLO para el test de integración Spring de la frontera transaccional
+# (FronteraTransaccionalIntegrationTest): H2 en memoria con el esquema creado
+# por Hibernate a partir de las entidades JPA. La app real sigue en Oracle con
+# esquema manual (ver order-manager/db/); esto no la afecta.
+spring:
+  datasource:
+    url: jdbc:h2:mem:ordermanager-test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC

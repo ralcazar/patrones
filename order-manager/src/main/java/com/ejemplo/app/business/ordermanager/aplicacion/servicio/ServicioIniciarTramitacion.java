@@ -2,11 +2,12 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import java.time.Instant;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
@@ -21,20 +22,17 @@ import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal
 public class ServicioIniciarTramitacion implements CasoUsoIniciarTramitacion {
 
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
 
-    public ServicioIniciarTramitacion(RepositorioOrden repo, UnidadDeTrabajo tx) {
+    public ServicioIniciarTramitacion(RepositorioOrden repo) {
         this.repo = repo;
-        this.tx = tx;
     }
 
     @Override
+    @Transactional
     public SagaId iniciar(ComandoIniciarTramitacion cmd) {
         var sagaId = SagaId.nuevo();
-        tx.enTransaccion(() -> {
-            var saga = SagaPrincipal.crear(sagaId, cmd.externalId(), cmd.datoNegocio3(), cmd.datoNegocio2());
-            repo.crear(OrdenRoot.nueva(saga, Instant.now()));
-        });
+        var saga = SagaPrincipal.crear(sagaId, cmd.externalId(), cmd.datoNegocio3(), cmd.datoNegocio2());
+        repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         return sagaId;
     }
 }

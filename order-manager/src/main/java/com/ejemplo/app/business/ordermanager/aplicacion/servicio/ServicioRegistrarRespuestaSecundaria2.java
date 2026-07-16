@@ -2,12 +2,13 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import java.time.Instant;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
@@ -25,48 +26,44 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecunda
 public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRespuestaSecundaria2 {
 
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
     private final PuertoMensajesProcesados dedup;
     private final PoliticaReintentos politica;
 
-    public ServicioRegistrarRespuestaSecundaria2(RepositorioOrden repo, UnidadDeTrabajo tx,
+    public ServicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
             PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
         this.repo = repo;
-        this.tx = tx;
         this.dedup = dedup;
         this.politica = politica;
     }
 
     @Override
+    @Transactional
     public void respuestaOk(SagaId sagaId, RefRespuesta ref, String mensajeId) {
         var msgId = MensajeId.externo(mensajeId);
         if (dedup.yaProcesado(msgId)) {
             return;
         }
-        tx.enTransaccion(() -> {
-            dedup.registrar(msgId);
-            var orden = repo.cargar(sagaId);
-            var saga = (SagaSecundaria2) orden.saga();
-            saga.respuestaRecibida(ref);
-            orden.despertar(Instant.now());
-            repo.guardar(orden);
-        });
+        dedup.registrar(msgId);
+        var orden = repo.cargar(sagaId);
+        var saga = (SagaSecundaria2) orden.saga();
+        saga.respuestaRecibida(ref);
+        orden.despertar(Instant.now());
+        repo.guardar(orden);
     }
 
     @Override
+    @Transactional
     public void respuestaError(SagaId sagaId, String codigo, String detalle,
                                boolean reintentable, String mensajeId) {
         var msgId = MensajeId.externo(mensajeId);
         if (dedup.yaProcesado(msgId)) {
             return;
         }
-        tx.enTransaccion(() -> {
-            dedup.registrar(msgId);
-            var orden = repo.cargar(sagaId);
-            var saga = (SagaSecundaria2) orden.saga();
-            saga.volverASolicitar();
-            orden.programarReintento(politica, Instant.now());
-            repo.guardar(orden);
-        });
+        dedup.registrar(msgId);
+        var orden = repo.cargar(sagaId);
+        var saga = (SagaSecundaria2) orden.saga();
+        saga.volverASolicitar();
+        orden.programarReintento(politica, Instant.now());
+        repo.guardar(orden);
     }
 }

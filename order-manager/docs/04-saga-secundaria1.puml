@@ -57,7 +57,8 @@ ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Iniciar(externalId, refPaso1)
 ORQ -> PSEC ++ : iniciar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria1.Iniciada(refInicio)
-group Transacción única: checkpoint del paso
+ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
+group Transacción: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Iniciada(refInicio))
   SAGA -> SAGA : refInicio = ref; avanzar():\nINICIAL -> INICIO_HECHO
   return
@@ -71,6 +72,7 @@ group Transacción única: checkpoint del paso
   return
 end
 return HayMasTrabajo()
+return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue
 
 == Paso CONFIRMACION (segundo método REST) y finalización ==
@@ -81,6 +83,7 @@ ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Confirmar(refInicio)
 ORQ -> PSEC ++ : confirmar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria1.Confirmada(refConfirmacion)
+ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional)
 group Transacción única: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Confirmada(ref))
   SAGA -> SAGA : refConfirmacion = ref; avanzar():\nINICIO_HECHO -> TERMINADA
@@ -100,6 +103,7 @@ group Transacción única: checkpoint del paso
     retira.
   end note
 end
+return Finalizada(FINALIZADA_OK)
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
 return true (una procesada; el worker vuelve a llamar a\ncontinuarSiguiente() hasta que devuelva false)

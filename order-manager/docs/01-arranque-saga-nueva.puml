@@ -24,7 +24,7 @@ activate ENTRADA
 ENTRADA -> INICIAR ++ : iniciar(ComandoIniciarTramitacion(\nexternalId, datoNegocio3, datoNegocio2))
 INICIAR -> INICIAR : sagaId = SagaId.nuevo()
 
-group Transacción (UnidadDeTrabajo.enTransaccion)
+group Transacción (@Transactional)
   INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId,\nexternalId, datoNegocio3, datoNegocio2)
   return saga (estado = INICIAL)
   INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())

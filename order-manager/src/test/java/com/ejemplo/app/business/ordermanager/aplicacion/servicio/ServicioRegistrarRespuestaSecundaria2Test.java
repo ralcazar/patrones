@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
@@ -35,16 +34,14 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecunda
 class ServicioRegistrarRespuestaSecundaria2Test {
 
     private RepositorioOrdenEnMemoria repo;
-    private UnidadDeTrabajoInmediata tx;
     private PuertoMensajesProcesados dedup;
     private ServicioRegistrarRespuestaSecundaria2 servicio;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
-        tx = new UnidadDeTrabajoInmediata();
         dedup = mock(PuertoMensajesProcesados.class);
-        servicio = new ServicioRegistrarRespuestaSecundaria2(repo, tx, dedup, new PoliticaReintentos());
+        servicio = new ServicioRegistrarRespuestaSecundaria2(repo, dedup, new PoliticaReintentos());
     }
 
     private SagaId crearOrdenEsperandoRespuesta() {

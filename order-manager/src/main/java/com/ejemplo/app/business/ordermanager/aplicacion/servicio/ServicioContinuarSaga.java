@@ -5,12 +5,14 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
@@ -23,25 +25,37 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  * y hay que programar un reintento: así el guardado del reintento conserva
  * la protección por version frente a un takeover concurrente (otro pod que
  * reclamó tras vencer el lease).
+ *
+ * El reclamo del token y el guardado del reintento son transacciones propias
+ * ({@code @Transactional}); entre medias corre el REST del paso (a través de
+ * {@code servicioSaga.ejecutarPaso}, otro bean). Como este servicio es un
+ * POJO creado por {@code @Bean}, esas dos transacciones se invocan a través
+ * de {@code self} (el propio proxy, inyectado por ConfiguracionAplicacion)
+ * para que la anotación no se ignore por auto-invocación.
  */
 @Service
 public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
 
     private final Map<TipoSaga, ServicioSaga> serviciosSaga;
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
     private final PoliticaReintentos politica;
     private final Duration lease;
     private final int lote;
+    private ServicioContinuarSaga self;
 
     public ServicioContinuarSaga(Map<TipoSaga, ServicioSaga> serviciosSaga, RepositorioOrden repo,
-            UnidadDeTrabajo tx, PoliticaReintentos politica, Duration lease, int lote) {
+            PoliticaReintentos politica, Duration lease, int lote) {
         this.serviciosSaga = serviciosSaga;
         this.repo = repo;
-        this.tx = tx;
         this.politica = politica;
         this.lease = lease;
         this.lote = lote;
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+    }
+
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    public void establecerSelf(ServicioContinuarSaga self) {
+        this.self = self;
     }
 
     /** Reclama el token y, si gana, encadena los pasos; devuelve si llegó a reclamar. */
@@ -50,16 +64,7 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
         // conflicto contra el guardado), nos retiramos en silencio.
         boolean reclamada;
         try {
-            reclamada = tx.enTransaccion(() -> {
-                var orden = repo.cargar(id);
-                var ahora = Instant.now();
-                if (!orden.estaViva() || orden.tieneTokenVigente(ahora)) {
-                    return false;
-                }
-                orden.asignarToken(UUID.randomUUID(), lease, ahora);
-                repo.guardar(orden);
-                return true;
-            });
+            reclamada = self.reclamarToken(id);
         } catch (ConcurrenciaOptimistaException e) {
             reclamada = false;
         }
@@ -79,10 +84,7 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
                 // Reintento sobre la MISMA orden cargada arriba (fix del takeover
                 // seguro): si otro actor escribió entre medias, este guardado falla
                 // por version igual que el de cualquier otro paso.
-                tx.enTransaccion(() -> {
-                    orden.programarReintento(politica, Instant.now());
-                    repo.guardar(orden);
-                });
+                self.programarReintento(orden);
                 return true;
             }
             switch (senal) {
@@ -91,6 +93,24 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
                 case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el servicio de la saga
             }
         }
+    }
+
+    @Transactional
+    public boolean reclamarToken(SagaId id) {
+        var orden = repo.cargar(id);
+        var ahora = Instant.now();
+        if (!orden.estaViva() || orden.tieneTokenVigente(ahora)) {
+            return false;
+        }
+        orden.asignarToken(UUID.randomUUID(), lease, ahora);
+        repo.guardar(orden);
+        return true;
+    }
+
+    @Transactional
+    public void programarReintento(OrdenRoot orden) {
+        orden.programarReintento(politica, Instant.now());
+        repo.guardar(orden);
     }
 
     @Override

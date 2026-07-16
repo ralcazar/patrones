@@ -46,6 +46,7 @@ ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria2.Solicitar(externalId, refPaso5)
 ORQ -> PSOL ++ : solicitar(saga.id(), cmd) -- REST fuera de tx\n(el sagaId viaja como clave de correlación)
 return
+ORQ -> ORQ ++ : self.aplicarSolicitud(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
 group Transacción única
   ORQ -> SAGA ++ : saga.solicitudEnviada()
   SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
@@ -64,6 +65,7 @@ group Transacción única
   end note
 end
 return Aparcar(3h)
+return Aparcar(3h)
 CONT -> CONT : switch(señal): Aparcar -> return (fin del bucle)
 return true (el worker sigue con la siguiente candidata\nhasta que continuarSiguiente() devuelva false)
 deactivate TRAB
@@ -75,7 +77,7 @@ CONS -> CONS : parsear sagaId, mensajeId, ref
 CONS -> SREG ++ : respuestaOk(sagaId, RefRespuesta(ref), mensajeId)
 SREG -> DEDUP ++ : yaProcesado(MensajeId.externo(mensajeId))
 return no
-group Transacción
+group Transacción (@Transactional en respuestaOk: método público,\nse invoca cross-bean desde el consumer, el proxy aplica sin self)
   SREG -> DEDUP ++ : registrar(msgId)
   return
   SREG -> REPO ++ : cargar(sagaId)
@@ -112,7 +114,7 @@ return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.estado()
 return TERMINADA
-ORQ -> ORQ : finalizarYa(orden, saga)
+ORQ -> ORQ ++ : self.aplicarFinalizacionYaResuelta(orden, saga)  -- vía proxy (@Transactional;\nsin REST, pero igualmente vía self: la llama\nejecutarPaso, un método no transaccional)
 group Transacción única
   ORQ -> SAGA ++ : saga.resultadoFinal()
   return FINALIZADA_OK
@@ -121,6 +123,7 @@ group Transacción única
   ORQ -> REPO ++ : guardar(orden)
   return
 end
+return Finalizada(FINALIZADA_OK)
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return
 return true
@@ -142,6 +145,7 @@ ORQ -> ORQ : conciliar(orden, saga)
 ORQ -> PCON ++ : consultar(saga.id(), externalId) -- REST fuera de tx
 return Disponible(ref) | SinResultado() | FalloRegistrado(motivo)
 alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
+  ORQ -> ORQ ++ : self.aplicarConciliacionDisponible(orden, saga, ref)  -- vía proxy (@Transactional)
   group Transacción
     ORQ -> SAGA ++ : saga.respuestaRecibida(ref)
     return estado = TERMINADA
@@ -153,13 +157,16 @@ alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
     return
   end
   return Finalizada(FINALIZADA_OK)
+  return Finalizada(FINALIZADA_OK)
 else SinResultado(): sigue sin respuesta
+  ORQ -> ORQ ++ : self.aplicarConciliacionSinResultado(orden, saga)  -- vía proxy (@Transactional)
   group Transacción
     ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
     return
     ORQ -> REPO ++ : guardar(orden)
     return
   end
+  return Aparcar(3h) (nueva ventana de 3h)
   return Aparcar(3h) (nueva ventana de 3h)
 else FalloRegistrado(motivo): el destino terminó con error
   ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
@@ -177,7 +184,7 @@ activate CONS
 CONS -> SREG ++ : respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)
 SREG -> DEDUP ++ : yaProcesado(msgId)
 return no
-group Transacción
+group Transacción (@Transactional en respuestaError, cross-bean, sin self)
   SREG -> DEDUP ++ : registrar(msgId)
   return
   SREG -> REPO ++ : cargar(sagaId)

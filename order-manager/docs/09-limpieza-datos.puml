@@ -23,7 +23,7 @@ activate PLAN
 PLAN -> PLAN : corte = Instant.now().minus(retencion)\n(ordermanager.limpieza.retencion-dias, por defecto 30)
 PLAN -> LIMP ++ : purgarAnterioresA(corte)
 
-group Transacción única (UnidadDeTrabajo)
+group Transacción única (@Transactional)
   LIMP -> REPO ++ : purgarFinalizadasAntesDe(corte)
   REPO -> REPO : ids = idsFinalizadasAntesDe(corte)\n(SELECT saga_id WHERE resultado IS NOT NULL\nAND actualizada_en < corte)
   alt ids.isEmpty()

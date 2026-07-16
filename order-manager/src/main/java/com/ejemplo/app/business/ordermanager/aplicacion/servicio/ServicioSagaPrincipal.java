@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso1;
@@ -15,7 +17,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso8;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
@@ -38,12 +39,18 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecunda
  * orden crea los 3 agregados hijos (uno por saga secundaria): es la excepción
  * aceptada a la regla de un solo agregado por transacción, porque solo
  * MODIFICA el agregado de la principal y CREA los otros tres.
+ *
+ * El REST de cada paso ocurre fuera de transacción; solo aplicar el
+ * resultado y guardar van en {@code @Transactional}. Como este servicio es un
+ * POJO creado por {@code @Bean}, una llamada interna (this.aplicarX(...)) NO
+ * pasaría por el proxy transaccional de Spring, así que se invoca a través de
+ * {@code self}: la referencia al propio proxy, inyectada por
+ * ConfiguracionAplicacion (ver {@link #establecerSelf}).
  */
 @Service
 public class ServicioSagaPrincipal implements ServicioSaga {
 
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
     private final Duration lease;
     private final PuertoPaso1 puertoPaso1;
     private final PuertoPaso2 puertoPaso2;
@@ -53,13 +60,13 @@ public class ServicioSagaPrincipal implements ServicioSaga {
     private final PuertoPaso6 puertoPaso6;
     private final PuertoPaso7 puertoPaso7;
     private final PuertoPaso8 puertoPaso8;
+    private ServicioSagaPrincipal self;
 
-    public ServicioSagaPrincipal(RepositorioOrden repo, UnidadDeTrabajo tx, Duration lease,
+    public ServicioSagaPrincipal(RepositorioOrden repo, Duration lease,
             PuertoPaso1 puertoPaso1, PuertoPaso2 puertoPaso2, PuertoPaso3 puertoPaso3,
             PuertoPaso4 puertoPaso4, PuertoPaso5 puertoPaso5, PuertoPaso6 puertoPaso6,
             PuertoPaso7 puertoPaso7, PuertoPaso8 puertoPaso8) {
         this.repo = repo;
-        this.tx = tx;
         this.lease = lease;
         this.puertoPaso1 = puertoPaso1;
         this.puertoPaso2 = puertoPaso2;
@@ -69,6 +76,12 @@ public class ServicioSagaPrincipal implements ServicioSaga {
         this.puertoPaso6 = puertoPaso6;
         this.puertoPaso7 = puertoPaso7;
         this.puertoPaso8 = puertoPaso8;
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+    }
+
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    public void establecerSelf(ServicioSagaPrincipal self) {
+        this.self = self;
     }
 
     @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
@@ -88,29 +101,27 @@ public class ServicioSagaPrincipal implements ServicioSaga {
 
     private SenalPaso ejecutarPasoNormal(OrdenRoot orden, SagaPrincipal saga) {
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
+        return self.aplicarPasoNormal(orden, saga, resultado); // via proxy -> @Transactional
+    }
 
-        return tx.enTransaccion(() -> {
-            saga.aplicarYAvanzar(resultado);
-            if (saga.terminada()) {
-                crearHijas(saga.contextosArranque(), Instant.now());
-                orden.finalizar(saga.resultadoFinal());
-                repo.guardar(orden);
-                return new SenalPaso.Finalizada(saga.resultadoFinal());
-            }
-            orden.resetearIntentos();
-            orden.renovarLease(lease, Instant.now());
+    @Transactional
+    public SenalPaso aplicarPasoNormal(OrdenRoot orden, SagaPrincipal saga, ResultadoPasoPrincipal resultado) {
+        saga.aplicarYAvanzar(resultado);
+        if (saga.terminada()) {
+            crearHijas(saga.contextosArranque(), Instant.now());
+            orden.finalizar(saga.resultadoFinal());
             repo.guardar(orden);
-            return new SenalPaso.HayMasTrabajo();
-        });
+            return new SenalPaso.Finalizada(saga.resultadoFinal());
+        }
+        orden.resetearIntentos();
+        orden.renovarLease(lease, Instant.now());
+        repo.guardar(orden);
+        return new SenalPaso.HayMasTrabajo();
     }
 
     private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
         if (saga.estado() == EstadoSagaPrincipal.CANCELADA) {
-            return tx.enTransaccion(() -> {
-                orden.finalizar(saga.resultadoFinal());
-                repo.guardar(orden);
-                return new SenalPaso.Finalizada(saga.resultadoFinal());
-            });
+            return self.aplicarCancelacion(orden, saga); // via proxy -> @Transactional (sin REST)
         }
 
         var ctx = saga.contexto();
@@ -120,13 +131,23 @@ public class ServicioSagaPrincipal implements ServicioSaga {
             puertoPaso1.compensar(new ComandoPasoPrincipal.CompensarPaso1(ctx.refPaso1())); // REST fuera de tx
         }
 
-        return tx.enTransaccion(() -> {
-            saga.compensacionCompletada();
-            orden.resetearIntentos();
-            orden.renovarLease(lease, Instant.now());
-            repo.guardar(orden);
-            return new SenalPaso.HayMasTrabajo();
-        });
+        return self.aplicarCompensacion(orden, saga); // via proxy -> @Transactional
+    }
+
+    @Transactional
+    public SenalPaso aplicarCancelacion(OrdenRoot orden, SagaPrincipal saga) {
+        orden.finalizar(saga.resultadoFinal());
+        repo.guardar(orden);
+        return new SenalPaso.Finalizada(saga.resultadoFinal());
+    }
+
+    @Transactional
+    public SenalPaso aplicarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
+        saga.compensacionCompletada();
+        orden.resetearIntentos();
+        orden.renovarLease(lease, Instant.now());
+        repo.guardar(orden);
+        return new SenalPaso.HayMasTrabajo();
     }
 
     private void crearHijas(List<ContextoArranque> contextos, Instant ahora) {

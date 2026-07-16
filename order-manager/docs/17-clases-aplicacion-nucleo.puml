@@ -17,33 +17,40 @@ package "puerto.entrada" {
 
 package "servicio" {
   class ServicioIniciarTramitacion <<@Service>> {
-    +iniciar(cmd) : SagaId
+    -repo : RepositorioOrden
+    +iniciar(cmd) : SagaId  «@Transactional»
   }
   note bottom of ServicioIniciarTramitacion
-    sagaId = SagaId.nuevo(); tx { saga =
+    @Transactional en iniciar() (invocado cross-bean desde el
+    adaptador de entrada, sin self): sagaId = SagaId.nuevo(); saga =
     SagaPrincipal.crear(...); repo.crear(OrdenRoot.nueva(saga,
-    Instant.now())) }. Una sola llamada persiste saga + orden.
+    Instant.now())). Una sola llamada persiste saga + orden.
   end note
 
   class ServicioContinuarSaga <<@Service>> {
     -serviciosSaga : Map<TipoSaga, ServicioSaga>
     -repo : RepositorioOrden
-    -tx : UnidadDeTrabajo
     -politica : PoliticaReintentos
     -lease : Duration
     -lote : int  «orden.planificador.lote, 16»
+    -self : ServicioContinuarSaga  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
     +continuarSiguiente() : boolean
     +hayTrabajoPendiente() : boolean
+    +reclamarToken(id) : boolean  «@Transactional»
+    +programarReintento(orden)  «@Transactional»
     -reclamarYEjecutar(id, tipo) : boolean
   }
   note right of ServicioContinuarSaga
-    reclamarYEjecutar(): tx { estaViva()+tieneTokenVigente()+
-    asignarToken() }; catch ConcurrenciaOptimistaException -> false
-    (otro worker/pod la tiene). Si reclama, bucle while(true): carga
-    la orden (ÚNICA carga del paso, antes del REST) y llama a
-    servicioSaga.ejecutarPaso(orden); catch
+    reclamarYEjecutar() llama a self.reclamarToken(id) -- vía el
+    proxy, para que @Transactional no se ignore por auto-invocación
+    --: estaViva()+tieneTokenVigente()+asignarToken(); catch
+    ConcurrenciaOptimistaException -> false (otro worker/pod la
+    tiene). Si reclama, bucle while(true): carga la orden (ÚNICA
+    carga del paso, antes del REST) y llama a
+    servicioSaga.ejecutarPaso(orden) (otro bean: cross-bean, el
+    proxy de ESE bean aplica sin truco); catch
     ConcurrenciaOptimistaException -> return; catch RuntimeException
-    -> tx { orden.programarReintento(politica, ahora) } sobre esa
+    -> self.programarReintento(orden) -- vía proxy -- sobre esa
     MISMA orden + return; según la señal: HayMasTrabajo -> continue,
     Aparcar/Finalizada -> return (ya persistido por el servicio de la saga).
     continuarSiguiente() (pull de cada worker): recorre
@@ -60,7 +67,8 @@ package "servicio" {
     Una implementación por TipoSaga (ver 18-21): recibe el agregado
     YA CARGADO por ServicioContinuarSaga (una única carga por paso,
     antes del REST), hace el REST del paso FUERA de tx (puede
-    lanzar) y, en UNA sola tx, aplica el resultado a esa MISMA
+    lanzar) y llama a self.aplicarX(...) -- vía el proxy auto-
+    inyectado, @Transactional -- que aplica el resultado a esa MISMA
     instancia (sin recargar) y la parte operativa de la señal
     (resetearIntentos()+renovarLease() | aparcar() | finalizar()),
     y guarda una única vez: si otro actor escribió con el REST en
@@ -93,18 +101,25 @@ package "puerto.salida (transversales)" {
     hayEjecutables: MISMO predicado, sin cargar filas (EXISTS
     barato para que el planificador decida si despierta workers).
   end note
-  interface UnidadDeTrabajo {
-    +enTransaccion(Supplier<T>) : T
-    +enTransaccion(Runnable)  «default»
-  }
 }
+
+note as NTx
+  Frontera transaccional: @Transactional (jakarta.transaction),
+  directamente en los métodos de estos POJOs — ya no hay un puerto
+  UnidadDeTrabajo. Spring envuelve en un proxy transaccional también
+  los beans devueltos por métodos @Bean (ver ConfiguracionAplicacion,
+  23-24). Una auto-invocación (this.metodo() dentro del mismo bean)
+  NO pasa por ese proxy: los servicios con REST fuera de tx
+  (ServicioContinuarSaga y los ServicioSaga* — ver 18-21) se inyectan
+  a sí mismos ("self", el proxy, vía un parámetro @Lazy del método
+  @Bean) para invocar su parte @Transactional a través de él.
+end note
+NTx .. ServicioContinuarSaga
 
 CasoUsoIniciarTramitacion <|.. ServicioIniciarTramitacion
 CasoUsoContinuarSaga <|.. ServicioContinuarSaga
 ServicioIniciarTramitacion --> RepositorioOrden
-ServicioIniciarTramitacion --> UnidadDeTrabajo
 ServicioContinuarSaga --> RepositorioOrden
-ServicioContinuarSaga --> UnidadDeTrabajo
 ServicioContinuarSaga --> ServicioSaga : Map<TipoSaga, ->\n(una por tipo de saga)
 ServicioContinuarSaga ..> SenalPaso : interpreta la señal
 ServicioSaga ..> SenalPaso : devuelve
@@ -123,5 +138,4 @@ end note
 NLease .. RepositorioOrden
 NLease .. ServicioContinuarSaga
 
-RepositorioOrden -[hidden]down- UnidadDeTrabajo
 @enduml

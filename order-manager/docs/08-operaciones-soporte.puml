@@ -34,7 +34,7 @@ return listado
 == Reintento manual: resetea la escalera y despierta la orden ==
 OP -> REST ++ : reintentar paso (tipo, id, nombrePaso)
 REST -> SOP ++ : reintentarPaso(tipo, id, nombrePaso, quien)
-group Transacción
+group Transacción (@Transactional en el propio método: invocado\ncross-bean desde el adaptador REST, el proxy aplica sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
   SOP -> ORDEN ++ : resetearIntentos()
@@ -52,7 +52,7 @@ return 200 OK
 == Marcar OK a mano el paso pendiente (datos manuales) ==
 OP -> REST ++ : marcarPasoOk (tipo, id, nombrePaso,\njustificacion, datosManuales)
 REST -> SOP ++ : marcarPasoOk(tipo, id, nombrePaso, quien,\njustificacion, datosManuales)
-group Transacción
+group Transacción (@Transactional en el propio método, sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
   SOP -> SAGA ++ : (orden.saga()).marcarPasoActualOkManual(\nquien, justificacion, datosManuales)
@@ -69,7 +69,7 @@ return 200 OK
 == Cancelar la saga principal: dispara la compensación ==
 OP -> REST ++ : cancelar tramitación (id, motivo)
 REST -> SOP ++ : cancelarPrincipal(id, quien, motivo)
-group Transacción
+group Transacción (@Transactional en el propio método, sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
   SOP -> SAGA ++ : (orden.saga()).cancelar(quien, motivo)
@@ -120,6 +120,7 @@ ORQ -> SAGA ++ : saga.contexto()
 return ctx (refPaso1, refPaso2, ...)
 ORQ -> PCOMP ++ : puertoPaso2.compensar(CompensarPaso2(ctx.refPaso2()))\n-- REST fuera de tx
 return ok
+ORQ -> ORQ ++ : self.aplicarCompensacion(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
 group Transacción única
   ORQ -> SAGA ++ : saga.compensacionCompletada()
   SAGA -> SAGA : COMPENSAR_PASO2 -> COMPENSAR_PASO1
@@ -138,11 +139,14 @@ group Transacción única
   end note
 end
 return HayMasTrabajo()
+return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue\n(siguiente vuelta compensa PASO1, luego CANCELADA)
 
 note over ORQ, SAGA
-  Última vuelta: estado == CANCELADA -> ejecutarCompensacion no
-  llama a ningún puerto, solo orden.finalizar(saga.resultadoFinal())\n(FINALIZADA_COMPENSADA) y guarda. Si un puerto de compensación
+  Última vuelta: estado == CANCELADA -> ejecutarCompensacion llama
+  a self.aplicarCancelacion(orden, saga) vía proxy (@Transactional,
+  sin REST): solo orden.finalizar(saga.resultadoFinal())
+  (FINALIZADA_COMPENSADA) y guarda. Si un puerto de compensación
   lanza ExcepcionServicioExterno, se propaga igual que un paso
   normal: ServicioContinuarSaga programa reintento (ver 07); ya
   no existe el estado BLOQUEADO_SOPORTE de la versión anterior.

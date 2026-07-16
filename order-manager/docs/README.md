@@ -34,6 +34,18 @@ REST falla, la que programa el reintento guardan esa MISMA instancia (con su
 `version`), de modo que si otro actor escribió entre medias el `guardar`
 falla por `version` y el pod se retira (takeover seguro, sin recargas que
 anulen el optimistic locking).
+
+La frontera transaccional es `@Transactional` (`jakarta.transaction`)
+directamente en los métodos de los servicios de aplicación: no hay puerto
+`UnidadDeTrabajo`. Los servicios con REST fuera de tx (los `ServicioSaga*`,
+`ServicioContinuarSaga`, `ServicioTicketsSoporte`) se inyectan a sí mismos el
+proxy transaccional de Spring (`self`, cableado con un parámetro `@Lazy` en
+`ConfiguracionAplicacion`) e invocan su parte `@Transactional` a través de él
+(`self.aplicarX(...)`), porque una auto-invocación normal saltaría el proxy.
+Los servicios donde toda la operación pública es una única transacción sin
+REST intercalado (`ServicioIniciarTramitacion`, `ServicioLimpiezaDatos`,
+`ServicioSoporteSagas`, `ServicioRegistrarRespuestaSecundaria2`) anotan el
+método público directamente, sin necesidad de `self`.
 Las flechas fluyen de izquierda a derecha y se muestran las líneas de
 activación.
 
@@ -63,7 +75,7 @@ saga, más el núcleo común, soporte e infraestructura.
 | [14-clases-dominio-comun](14-clases-dominio-comun.png) | Dominio, shared kernel: el agregado único `OrdenRoot` ⊃ `Saga<E>` (entidad interna, una sola `version` la controla el agregado), `PoliticaReintentos`, excepciones y VOs comunes |
 | [15-clases-dominio-saga-principal](15-clases-dominio-saga-principal.png) | Dominio de la saga principal: `SagaPrincipal` (entidad), comandos/resultados por paso, `ContextoTramitacion` |
 | [16-clases-dominio-sagas-secundarias](16-clases-dominio-sagas-secundarias.png) | Dominio de las 3 sagas secundarias: entidades, comandos/resultados, sin `version` propia |
-| [17-clases-aplicacion-nucleo](17-clases-aplicacion-nucleo.png) | Aplicación, núcleo: `CasoUsoContinuarSaga`/`ServicioContinuarSaga`/`ServicioSaga`/`SenalPaso`/`RepositorioOrden`/`UnidadDeTrabajo` y el lease del token (reclamo, renovación por paso, reclamo de token caducado) |
+| [17-clases-aplicacion-nucleo](17-clases-aplicacion-nucleo.png) | Aplicación, núcleo: `CasoUsoContinuarSaga`/`ServicioContinuarSaga`/`ServicioSaga`/`SenalPaso`/`RepositorioOrden` y el lease del token (reclamo, renovación por paso, reclamo de token caducado); frontera transaccional `@Transactional` con proxy auto-inyectado |
 | [18-clases-aplicacion-saga-principal](18-clases-aplicacion-saga-principal.png) | Aplicación de la saga principal: `ServicioSagaPrincipal` (normal + compensación), `RepositorioOrden` y `PuertoPaso1..8` |
 | [19-clases-aplicacion-saga-secundaria1](19-clases-aplicacion-saga-secundaria1.png) | Aplicación de la saga secundaria 1: `ServicioSagaSecundaria1` y el puerto REST (dos métodos) |
 | [20-clases-aplicacion-saga-secundaria2](20-clases-aplicacion-saga-secundaria2.png) | Aplicación de la saga secundaria 2: aparcado de 3 h, `PuertoConciliacionSecundaria2` y `ServicioRegistrarRespuestaSecundaria2` (entrada del consumer Kafka) |

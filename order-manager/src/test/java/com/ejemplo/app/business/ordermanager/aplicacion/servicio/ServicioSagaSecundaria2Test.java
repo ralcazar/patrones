@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
@@ -38,7 +37,6 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecunda
 class ServicioSagaSecundaria2Test {
 
     private RepositorioOrdenEnMemoria repo;
-    private UnidadDeTrabajoInmediata tx;
     private PuertoSagaSecundaria2 puerto;
     private PuertoConciliacionSecundaria2 conciliacion;
     private ServicioSagaSecundaria2 servicioSaga;
@@ -46,10 +44,9 @@ class ServicioSagaSecundaria2Test {
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
-        tx = new UnidadDeTrabajoInmediata();
         puerto = mock(PuertoSagaSecundaria2.class);
         conciliacion = mock(PuertoConciliacionSecundaria2.class);
-        servicioSaga = new ServicioSagaSecundaria2(repo, tx, puerto, conciliacion);
+        servicioSaga = new ServicioSagaSecundaria2(repo, puerto, conciliacion);
     }
 
     private SagaId crearOrdenSecundaria2() {

@@ -21,39 +21,47 @@ interface "ServicioSaga (ver 17)" as Base
 class ServicioSagaSecundaria2 <<@Service>> {
   {static} VENTANA_ESPERA = Duration.ofHours(3)
   -repo : RepositorioOrden
-  -tx : UnidadDeTrabajo
   -puerto : PuertoSagaSecundaria2
   -conciliacion : PuertoConciliacionSecundaria2
+  -self : ServicioSagaSecundaria2  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
   +tipo() : TipoSaga  «SECUNDARIA2»
-  +ejecutarPaso(orden) : SenalPaso  «switch(saga.estado()):\nINICIAL->solicitar, ESPERANDO_RESPUESTA->conciliar,\nTERMINADA->finalizarYa»
-  -solicitar(orden, saga) : SenalPaso  «puerto.solicitar (REST) + tx:\nsolicitudEnviada()+orden.aparcar(3h) -> Aparcar(3h)»
-  -conciliar(orden, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->tx respuestaRecibida()+finalizar();\nSinResultado->tx aparcar(3h);\nFalloRegistrado->throw ExcepcionServicioExterno»
-  -finalizarYa(orden, saga) : SenalPaso  «tx: orden.finalizar(saga.resultadoFinal())»
+  +ejecutarPaso(orden) : SenalPaso  «switch(saga.estado()):\nINICIAL->solicitar, ESPERANDO_RESPUESTA->conciliar,\nTERMINADA->self.aplicarFinalizacionYaResuelta»
+  -solicitar(orden, saga) : SenalPaso  «puerto.solicitar (REST) +\nself.aplicarSolicitud(...) -> Aparcar(3h)»
+  -conciliar(orden, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->self.aplicarConciliacionDisponible;\nSinResultado->self.aplicarConciliacionSinResultado;\nFalloRegistrado->throw ExcepcionServicioExterno»
+  +aplicarSolicitud(orden, saga) : SenalPaso  «@Transactional»
+  +aplicarConciliacionDisponible(orden, saga, ref) : SenalPaso  «@Transactional»
+  +aplicarConciliacionSinResultado(orden, saga) : SenalPaso  «@Transactional»
+  +aplicarFinalizacionYaResuelta(orden, saga) : SenalPaso  «@Transactional»
 }
 note right of ServicioSagaSecundaria2
   Nota de diseño: sin lease propio (no recibe Duration lease en el
   constructor) — HayMasTrabajo no se produce en esta saga: cada
   rama devuelve Aparcar o Finalizada, nunca continúa el bucle en la
   misma pasada. ejecutarPaso recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17) y la tx guarda esa misma instancia
-  sin recargar: si otro actor escribió entre medias (consumer de
-  Kafka, takeover), guardar falla por version.
+  ServicioContinuarSaga (ver 17); cada rama llama a su self.aplicarX(...)
+  -- vía el proxy auto-inyectado, para que @Transactional no se
+  ignore por auto-invocación, incluida aplicarFinalizacionYaResuelta
+  que no tiene REST previo -- y guarda esa misma instancia sin
+  recargar: si otro actor escribió entre medias (consumer de Kafka,
+  takeover), guardar falla por version.
 end note
 
 class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
   -repo : RepositorioOrden
-  -tx : UnidadDeTrabajo
   -dedup : PuertoMensajesProcesados
   -politica : PoliticaReintentos
-  +respuestaOk(sagaId, ref, mensajeId)  «dedup + tx:\nsaga.respuestaRecibida(ref) + orden.despertar(ahora)»
-  +respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)  «dedup + tx:\nsaga.volverASolicitar() + orden.programarReintento(politica, ahora)»
+  +respuestaOk(sagaId, ref, mensajeId)  «@Transactional: dedup +\nsaga.respuestaRecibida(ref) + orden.despertar(ahora)»
+  +respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\nsaga.volverASolicitar() + orden.programarReintento(politica, ahora)»
 }
 note bottom of ServicioRegistrarRespuestaSecundaria2
-  Deja la saga en TERMINADA (o de vuelta en INICIAL) y solo
-  despierta/reprograma la orden: el cierre operativo final
-  (orden.finalizar) lo hace ServicioSagaSecundaria2.finalizarYa()
-  en la siguiente pasada del planificador — un único punto decide
-  cuándo la orden queda finalizada.
+  @Transactional directamente en respuestaOk/respuestaError: se
+  invocan cross-bean desde el consumer de Kafka, así que el proxy
+  aplica sin necesidad de self. Dejan la saga en TERMINADA (o de
+  vuelta en INICIAL) y solo despiertan/reprograman la orden: el
+  cierre operativo final (orden.finalizar) lo hace
+  ServicioSagaSecundaria2.aplicarFinalizacionYaResuelta() en la
+  siguiente pasada del planificador — un único punto decide cuándo
+  la orden queda finalizada.
 end note
 
 package "puerto.salida" {

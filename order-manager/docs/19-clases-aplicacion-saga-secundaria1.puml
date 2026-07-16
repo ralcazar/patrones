@@ -8,21 +8,24 @@ interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaSecundaria1 <<@Service>> {
   -repo : RepositorioOrden
-  -tx : UnidadDeTrabajo
   -lease : Duration
   -puerto : PuertoSagaSecundaria1
+  -self : ServicioSagaSecundaria1  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
   +tipo() : TipoSaga  «SECUNDARIA1»
   +ejecutarPaso(orden) : SenalPaso
+  +aplicar(orden, saga, resultado) : SenalPaso  «@Transactional»
   -ejecutarComando(ComandoPaso) : ResultadoPasoSecundaria1  «switch: Iniciar->puerto.iniciar,\nConfirmar->puerto.confirmar»
 }
 note right of ServicioSagaSecundaria1
   ejecutarPaso: recibe el agregado YA CARGADO por
   ServicioContinuarSaga (ver 17); comandoActual() + REST fuera de
-  tx; la tx guarda esa misma instancia sin recargar (aplicarYAvanzar; si
-  terminada() -> finalizar(FINALIZADA_OK), si no -> resetearIntentos()+
-  renovarLease()); si otro actor escribió entre medias, guardar falla
-  por version. Sin comprobación de estado de compensación (a
-  diferencia de la principal): nunca se cancela ni compensa.
+  tx, luego self.aplicar(...) -- vía proxy, para que @Transactional
+  no se ignore por auto-invocación -- guarda esa misma instancia sin
+  recargar (aplicarYAvanzar; si terminada() -> finalizar(FINALIZADA_OK),
+  si no -> resetearIntentos()+renovarLease()); si otro actor escribió
+  entre medias, guardar falla por version. Sin comprobación de
+  estado de compensación (a diferencia de la principal): nunca se
+  cancela ni compensa.
 end note
 
 package "puerto.salida" {

@@ -2,13 +2,14 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import java.time.Instant;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoAbrirTicketsPendientes;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 
 /**
@@ -21,6 +22,11 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
  * Orden deliberado (I/O fuera de tx): primero el ticket, después marcar las
  * órdenes. Si el proceso muere entre medias, el siguiente barrido repite el
  * aviso (at-least-once): mejor un ticket de más que un error invisible.
+ *
+ * El marcado de cada orden va en {@code @Transactional}. Como este servicio
+ * es un POJO creado por {@code @Bean}, se invoca a través de {@code self}
+ * (el propio proxy, inyectado por ConfiguracionAplicacion) para que la
+ * anotación no se ignore por auto-invocación.
  */
 @Service
 public class ServicioTicketsSoporte implements CasoUsoAbrirTicketsPendientes {
@@ -28,14 +34,19 @@ public class ServicioTicketsSoporte implements CasoUsoAbrirTicketsPendientes {
     private final PuertoSagasTicketPendiente pendientes;
     private final PuertoTicketsSoporte tickets;
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
+    private ServicioTicketsSoporte self;
 
     public ServicioTicketsSoporte(PuertoSagasTicketPendiente pendientes, PuertoTicketsSoporte tickets,
-            RepositorioOrden repo, UnidadDeTrabajo tx) {
+            RepositorioOrden repo) {
         this.pendientes = pendientes;
         this.tickets = tickets;
         this.repo = repo;
-        this.tx = tx;
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+    }
+
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    public void establecerSelf(ServicioTicketsSoporte self) {
+        this.self = self;
     }
 
     @Override
@@ -54,11 +65,16 @@ public class ServicioTicketsSoporte implements CasoUsoAbrirTicketsPendientes {
 
     /** Si conflicto optimista (poco probable: la orden estaba bloqueada, sin token), recarga y reintenta. */
     private void marcarAbierto(SagaId sagaId, Instant apertura) {
-        ReintentoOptimista.ejecutar(() -> tx.enTransaccion(() -> {
-            var orden = repo.cargar(sagaId);
-            orden.marcarTicketAbierto(apertura);
-            repo.guardar(orden);
+        ReintentoOptimista.ejecutar(() -> {
+            self.aplicarMarcarAbierto(sagaId, apertura); // via proxy -> @Transactional
             return null;
-        }));
+        });
+    }
+
+    @Transactional
+    public void aplicarMarcarAbierto(SagaId sagaId, Instant apertura) {
+        var orden = repo.cargar(sagaId);
+        orden.marcarTicketAbierto(apertura);
+        repo.guardar(orden);
     }
 }

@@ -46,11 +46,10 @@ package "puerto.entrada" {
 package "servicio" {
   class ServicioSoporteSagas <<@Service>> {
     -repo : RepositorioOrden
-    -tx : UnidadDeTrabajo
     -consultas : PuertoConsultaSagasSoporte
-    +cancelarPrincipal(id, quien, motivo)  «tx: saga.cancelar()+orden.despertar()»
-    +reintentarPaso(tipo, id, nombrePaso, quien)  «tx: orden.resetearIntentos()+despertar()»
-    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «tx: saga.marcarPasoActualOkManual()+orden.despertar()»
+    +cancelarPrincipal(id, quien, motivo)  «@Transactional: saga.cancelar()+orden.despertar()»
+    +reintentarPaso(tipo, id, nombrePaso, quien)  «@Transactional: orden.resetearIntentos()+despertar()»
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «@Transactional: saga.marcarPasoActualOkManual()+orden.despertar()»
     +sagasBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nvistaTramitacion/detalle  «delegan tal cual en consultas»
   }
   note bottom of ServicioSoporteSagas
@@ -58,31 +57,36 @@ package "servicio" {
     RepositorioOrden (un único agregado, un único guardar): no pasa
     por los servicios de saga de ejecución. despertar() la deja
     candidata inmediata para que el planificador la recoja (ver 08).
+    @Transactional directamente en cada método público: se invocan
+    cross-bean desde el adaptador de entrada, sin necesidad de self.
   end note
 
   class ServicioTicketsSoporte <<@Service>> {
     -pendientes : PuertoSagasTicketPendiente
     -tickets : PuertoTicketsSoporte
     -repo : RepositorioOrden
-    -tx : UnidadDeTrabajo
+    -self : ServicioTicketsSoporte  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
     +abrirTicketsPendientes() : int
-    -marcarAbierto(sagaId, apertura)  «ReintentoOptimista.ejecutar(tx:\norden.marcarTicketAbierto(apertura))»
+    -marcarAbierto(sagaId, apertura)  «ReintentoOptimista.ejecutar(\nself.aplicarMarcarAbierto(sagaId, apertura))»
+    +aplicarMarcarAbierto(sagaId, apertura)  «@Transactional»
   }
   note bottom of ServicioTicketsSoporte
     1. pendientes.buscar(); 2. si no vacío, tickets.abrir(sagas) — UN
     ticket para todas, fuera de tx; 3. marcarAbierto por cada una
-    (at-least-once: si el proceso muere entre 2 y 3, el siguiente
-    barrido repite el aviso).
+    llama a self.aplicarMarcarAbierto(...) -- vía proxy, para que
+    @Transactional no se ignore por auto-invocación -- (at-least-once:
+    si el proceso muere entre 2 y 3, el siguiente barrido repite el
+    aviso).
   end note
 
   class ServicioLimpiezaDatos <<@Service>> {
     -repo : RepositorioOrden
     -dedup : PuertoMensajesProcesados
-    -tx : UnidadDeTrabajo
-    +purgarAnterioresA(corte) : ResultadoLimpieza
+    +purgarAnterioresA(corte) : ResultadoLimpieza  «@Transactional»
   }
   note bottom of ServicioLimpiezaDatos
-    Una única tx: repo.purgarFinalizadasAntesDe(corte) +
+    @Transactional directo en el método (cross-bean, sin self):
+    repo.purgarFinalizadasAntesDe(corte) +
     dedup.purgarAnterioresA(corte). Solo borra resultado != null y
     antiguo; cualquier orden viva sobrevive.
   }
@@ -113,7 +117,7 @@ package "puerto.salida" {
     +abrir(List<SagaTicketPendiente>)
     «UN ticket para todas: texto en el log, sin id»
   }
-  interface "RepositorioOrden,\nPuertoMensajesProcesados,\nUnidadDeTrabajo (ver 17)" as PuertosNucleo
+  interface "RepositorioOrden,\nPuertoMensajesProcesados (ver 17)" as PuertosNucleo
 }
 
 CasoUsoIntervenirSaga <|.. ServicioSoporteSagas

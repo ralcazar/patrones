@@ -48,6 +48,15 @@ Guía para trabajar en este repositorio.
   (`@AggregateRoot`, `@Entity`, `@ValueObject`, `@Repository`, `@Service`,
   `@Factory`, `@Identity` de `org.jmolecules.ddd.annotation.*`) expresan los
   conceptos DDD del modelo.
+- Única excepción: `jakarta.transaction.Transactional` está permitido en
+  `aplicacion/**` para marcar la frontera transaccional (es un estándar
+  Jakarta, no un framework; Spring lo reconoce igual que su propio
+  `@Transactional` sin que la capa business dependa de Spring). Los servicios
+  de aplicación con REST fuera de transacción (los `ServicioSaga*`,
+  `ServicioContinuarSaga`, `ServicioTicketsSoporte`) se inyectan a sí mismos
+  (`self`, el proxy transaccional) para invocar su parte `@Transactional` sin
+  que la auto-invocación la ignore; ver `ConfiguracionAplicacion` (el `@Lazy`
+  vive ahí, en infraestructure, no en business).
 - Prohibido en `business/**`: Spring (`org.springframework.*`), JPA
   (`jakarta.persistence.*`), Jackson (`com.fasterxml.*`), Kafka y cualquier
   otra librería de infraestructura. Todo eso vive exclusivamente bajo

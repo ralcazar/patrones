@@ -29,7 +29,8 @@ CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, PRINCIPAL), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL)
 
-group Transacción: reclamo del token bajo optimistic lock (ConcurrenciaOptimistaException -> return, otro pod la tiene)
+CONT -> CONT ++ : self.reclamarToken(sagaId)  -- vía proxy (@Transactional; auto-invocación\nsaltaría el proxy, ver ConfiguracionAplicacion)
+group Transacción (ConcurrenciaOptimistaException -> false, otro pod la tiene)
   CONT -> REPO ++ : cargar(sagaId)
   return orden
   CONT -> ORDEN ++ : estaViva()
@@ -41,6 +42,7 @@ group Transacción: reclamo del token bajo optimistic lock (ConcurrenciaOptimist
   CONT -> REPO ++ : guardar(orden)
   return
 end
+return true
 
 loop while (true) hasta Aparcar / Finalizada / excepción
   CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
@@ -57,7 +59,8 @@ loop while (true) hasta Aparcar / Finalizada / excepción
   ORQ -> PASOS ++ : puertoPasoN.ejecutar(EjecutarPasoN(...))
   alt éxito
     return ResultadoPasoN(ref)
-    group Transacción única: checkpoint del paso (negocio + ejecución, un solo guardar)
+    ORQ -> ORQ ++ : self.aplicarPasoNormal(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
+    group Transacción: checkpoint del paso (negocio + ejecución, un solo guardar)
       ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
       SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
       return
@@ -77,6 +80,7 @@ loop while (true) hasta Aparcar / Finalizada / excepción
       end note
     end
     return HayMasTrabajo()
+    return HayMasTrabajo()
     CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle
   else falla
     PASOS --> ORQ : lanza ExcepcionServicioExterno(motivo)
@@ -88,12 +92,14 @@ loop while (true) hasta Aparcar / Finalizada / excepción
       el reintento sobre la MISMA orden cargada arriba (fix del
       takeover seguro) — ver 07-error-ticket-soporte.
     end note
+    CONT -> CONT ++ : self.programarReintento(orden)  -- vía proxy (@Transactional)
     group Transacción: reintento sobre la orden ya cargada (no se recarga)
       CONT -> ORDEN ++ : programarReintento(politica, Instant.now())
       return intentos++, proximoReintentoEn = ahora + esperaTras(intentos), token liberado
       CONT -> REPO ++ : guardar(orden)
       return
     end
+    return
   end
 end
 

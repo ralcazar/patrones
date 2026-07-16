@@ -8,20 +8,24 @@ interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaSecundaria3 <<@Service>> {
   -repo : RepositorioOrden
-  -tx : UnidadDeTrabajo
-  -lease : Duration
   -puerto : PuertoSagaSecundaria3
+  -self : ServicioSagaSecundaria3  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
   +tipo() : TipoSaga  «SECUNDARIA3»
   +ejecutarPaso(orden) : SenalPaso
+  +aplicar(orden, saga, resultado) : SenalPaso  «@Transactional»
 }
 note right of ServicioSagaSecundaria3
   Un único paso: recibe el agregado YA CARGADO por
   ServicioContinuarSaga (ver 17); comandoActual() + puerto.ejecutar
-  (REST fuera de tx); la tx guarda esa misma instancia sin recargar:
-  aplicarYAvanzar + orden.finalizar(FINALIZADA_OK) directo, sin
-  comprobar terminada() (el único paso siempre termina la saga); si
-  otro actor escribió entre medias, guardar falla por version.
-  Siempre devuelve Finalizada: nunca HayMasTrabajo ni Aparcar.
+  (REST fuera de tx), luego self.aplicar(...) -- vía proxy, para que
+  @Transactional no se ignore por auto-invocación -- guarda esa
+  misma instancia sin recargar: aplicarYAvanzar +
+  orden.finalizar(FINALIZADA_OK) directo, sin comprobar terminada()
+  (el único paso siempre termina la saga); si otro actor escribió
+  entre medias, guardar falla por version. Siempre devuelve
+  Finalizada: nunca HayMasTrabajo ni Aparcar. Sin lease propio: a
+  diferencia de principal/secundaria1, este servicio no lo necesita
+  (nunca reintenta dentro del mismo paso).
 end note
 
 package "puerto.salida" {

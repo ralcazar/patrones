@@ -38,6 +38,7 @@ ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria3.Ejecutar(externalId, refPaso7)
 ORQ -> PSIM ++ : ejecutar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria3.Ejecutada(refEjecucion)
+ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
 group Transacción única: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Ejecutada(ref))
   SAGA -> SAGA : refEjecucion = ref; estado = TERMINADA
@@ -55,6 +56,7 @@ group Transacción única: checkpoint del paso
     retira.
   end note
 end
+return Finalizada(FINALIZADA_OK)
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
 return true (el worker sigue con la siguiente candidata\nhasta que continuarSiguiente() devuelva false)

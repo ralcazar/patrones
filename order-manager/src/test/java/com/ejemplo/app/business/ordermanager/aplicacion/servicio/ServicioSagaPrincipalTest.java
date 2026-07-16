@@ -23,7 +23,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoPaso8;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso1;
@@ -54,7 +53,6 @@ class ServicioSagaPrincipalTest {
     private static final Duration LEASE = Duration.ofMinutes(10);
 
     private RepositorioOrdenEnMemoria repo;
-    private UnidadDeTrabajoInmediata tx;
     private PuertoPaso1 puertoPaso1;
     private PuertoPaso2 puertoPaso2;
     private PuertoPaso3 puertoPaso3;
@@ -69,7 +67,6 @@ class ServicioSagaPrincipalTest {
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
-        tx = new UnidadDeTrabajoInmediata();
         puertoPaso1 = mock(PuertoPaso1.class);
         puertoPaso2 = mock(PuertoPaso2.class);
         puertoPaso3 = mock(PuertoPaso3.class);
@@ -78,9 +75,9 @@ class ServicioSagaPrincipalTest {
         puertoPaso6 = mock(PuertoPaso6.class);
         puertoPaso7 = mock(PuertoPaso7.class);
         puertoPaso8 = mock(PuertoPaso8.class);
-        servicioSaga = new ServicioSagaPrincipal(repo, tx, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
+        servicioSaga = new ServicioSagaPrincipal(repo, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
-        servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repo, tx,
+        servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repo,
                 new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE, 16);
 
         when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));

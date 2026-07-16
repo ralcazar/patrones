@@ -3,16 +3,18 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 import java.time.Duration;
 import java.time.Instant;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ComandoPasoSecundaria2;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
 
 /**
@@ -27,6 +29,12 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecunda
  * en su siguiente pasada, quien deja el agregado en su estado operativo final
  * (finalizar u otra solicitud), manteniendo un único punto que decide cuándo
  * una orden queda finalizada.
+ *
+ * El REST (solicitud/conciliación) ocurre fuera de transacción; aplicar el
+ * resultado y guardar van en {@code @Transactional}. Como este servicio es un
+ * POJO creado por {@code @Bean}, se invoca a través de {@code self} (el
+ * propio proxy, inyectado por ConfiguracionAplicacion) para que la anotación
+ * no se ignore por auto-invocación.
  */
 @Service
 public class ServicioSagaSecundaria2 implements ServicioSaga {
@@ -35,16 +43,21 @@ public class ServicioSagaSecundaria2 implements ServicioSaga {
     static final Duration VENTANA_ESPERA = Duration.ofHours(3);
 
     private final RepositorioOrden repo;
-    private final UnidadDeTrabajo tx;
     private final PuertoSagaSecundaria2 puerto;
     private final PuertoConciliacionSecundaria2 conciliacion;
+    private ServicioSagaSecundaria2 self;
 
-    public ServicioSagaSecundaria2(RepositorioOrden repo, UnidadDeTrabajo tx,
-            PuertoSagaSecundaria2 puerto, PuertoConciliacionSecundaria2 conciliacion) {
+    public ServicioSagaSecundaria2(RepositorioOrden repo, PuertoSagaSecundaria2 puerto,
+            PuertoConciliacionSecundaria2 conciliacion) {
         this.repo = repo;
-        this.tx = tx;
         this.puerto = puerto;
         this.conciliacion = conciliacion;
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+    }
+
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    public void establecerSelf(ServicioSagaSecundaria2 self) {
+        this.self = self;
     }
 
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA2; }
@@ -61,48 +74,56 @@ public class ServicioSagaSecundaria2 implements ServicioSaga {
         return switch (saga.estado()) {
             case INICIAL -> solicitar(orden, saga);
             case ESPERANDO_RESPUESTA -> conciliar(orden, saga);
-            case TERMINADA -> finalizarYa(orden, saga);
+            case TERMINADA -> self.aplicarFinalizacionYaResuelta(orden, saga); // via proxy -> @Transactional
         };
     }
 
     private SenalPaso solicitar(OrdenRoot orden, SagaSecundaria2 saga) {
         var cmd = (ComandoPasoSecundaria2.Solicitar) saga.comandoActual();
         puerto.solicitar(saga.id(), cmd); // REST fuera de tx
+        return self.aplicarSolicitud(orden, saga); // via proxy -> @Transactional
+    }
 
-        return tx.enTransaccion(() -> {
-            saga.solicitudEnviada();
-            orden.aparcar(VENTANA_ESPERA, Instant.now());
-            repo.guardar(orden);
-            return new SenalPaso.Aparcar(VENTANA_ESPERA);
-        });
+    @Transactional
+    public SenalPaso aplicarSolicitud(OrdenRoot orden, SagaSecundaria2 saga) {
+        saga.solicitudEnviada();
+        orden.aparcar(VENTANA_ESPERA, Instant.now());
+        repo.guardar(orden);
+        return new SenalPaso.Aparcar(VENTANA_ESPERA);
     }
 
     private SenalPaso conciliar(OrdenRoot orden, SagaSecundaria2 saga) {
         var resultado = conciliacion.consultar(saga.id(), saga.externalId()); // REST fuera de tx
-
         return switch (resultado) {
-            case PuertoConciliacionSecundaria2.Resultado.Disponible(var ref) -> tx.enTransaccion(() -> {
-                saga.respuestaRecibida(ref);
-                orden.finalizar(saga.resultadoFinal());
-                repo.guardar(orden);
-                return new SenalPaso.Finalizada(saga.resultadoFinal());
-            });
-            case PuertoConciliacionSecundaria2.Resultado.SinResultado() -> tx.enTransaccion(() -> {
-                orden.aparcar(VENTANA_ESPERA, Instant.now());
-                repo.guardar(orden);
-                return new SenalPaso.Aparcar(VENTANA_ESPERA);
-            });
+            case PuertoConciliacionSecundaria2.Resultado.Disponible(var ref) ->
+                    self.aplicarConciliacionDisponible(orden, saga, ref); // via proxy -> @Transactional
+            case PuertoConciliacionSecundaria2.Resultado.SinResultado() ->
+                    self.aplicarConciliacionSinResultado(orden, saga); // via proxy -> @Transactional
             case PuertoConciliacionSecundaria2.Resultado.FalloRegistrado(var motivo) ->
                     throw new ExcepcionServicioExterno(motivo, null);
         };
     }
 
+    @Transactional
+    public SenalPaso aplicarConciliacionDisponible(OrdenRoot orden, SagaSecundaria2 saga, RefRespuesta ref) {
+        saga.respuestaRecibida(ref);
+        orden.finalizar(saga.resultadoFinal());
+        repo.guardar(orden);
+        return new SenalPaso.Finalizada(saga.resultadoFinal());
+    }
+
+    @Transactional
+    public SenalPaso aplicarConciliacionSinResultado(OrdenRoot orden, SagaSecundaria2 saga) {
+        orden.aparcar(VENTANA_ESPERA, Instant.now());
+        repo.guardar(orden);
+        return new SenalPaso.Aparcar(VENTANA_ESPERA);
+    }
+
     /** El consumer de Kafka ya dejó la saga en TERMINADA; solo falta el cierre operativo de la orden. */
-    private SenalPaso finalizarYa(OrdenRoot orden, SagaSecundaria2 saga) {
-        return tx.enTransaccion(() -> {
-            orden.finalizar(saga.resultadoFinal());
-            repo.guardar(orden);
-            return new SenalPaso.Finalizada(saga.resultadoFinal());
-        });
+    @Transactional
+    public SenalPaso aplicarFinalizacionYaResuelta(OrdenRoot orden, SagaSecundaria2 saga) {
+        orden.finalizar(saga.resultadoFinal());
+        repo.guardar(orden);
+        return new SenalPaso.Finalizada(saga.resultadoFinal());
     }
 }

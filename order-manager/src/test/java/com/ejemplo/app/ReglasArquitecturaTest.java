@@ -15,6 +15,13 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 @AnalyzeClasses(packages = "com.ejemplo.app")
 class ReglasArquitecturaTest {
 
+    /**
+     * {@code jakarta.transaction..} NO está en esta lista a propósito: es la
+     * única excepción de framework permitida en business (ver CLAUDE.md),
+     * para marcar la frontera transaccional con {@code @Transactional} en los
+     * servicios de aplicación. Sigue prohibido en el dominio (ver
+     * {@link #soloAplicacionUsaTransactional}).
+     */
     @ArchTest
     static final ArchRule businessSinFrameworks = noClasses()
             .that().resideInAPackage("com.ejemplo.app.business..")
@@ -23,7 +30,16 @@ class ReglasArquitecturaTest {
                     "jakarta.persistence..",
                     "com.fasterxml..",
                     "org.apache.kafka..")
-            .because("business (dominio + aplicación) se escribe solo con Java puro y jMolecules");
+            .because("business (dominio + aplicación) se escribe solo con Java puro y jMolecules"
+                    + " (única excepción: jakarta.transaction.Transactional en aplicacion/servicio)");
+
+    /** La frontera transaccional es cosa de la aplicación; el dominio no conoce jakarta.transaction. */
+    @ArchTest
+    static final ArchRule soloAplicacionUsaTransactional = noClasses()
+            .that().resideInAPackage("com.ejemplo.app.business.ordermanager.dominio..")
+            .should().dependOnClassesThat().resideInAPackage("jakarta.transaction..")
+            .because("jakarta.transaction.Transactional marca la frontera transaccional de los servicios"
+                    + " de aplicación; el dominio es Java puro + jMolecules sin excepciones");
 
     @ArchTest
     static final ArchRule businessNoDependeDeInfraestructura = noClasses()

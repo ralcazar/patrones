@@ -17,7 +17,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSaga
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente.SagaTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
@@ -36,13 +35,11 @@ import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal
 class ServicioTicketsSoporteTest {
 
     private RepositorioOrdenEnMemoria repo;
-    private UnidadDeTrabajoInmediata tx;
     private PuertoTicketsSoporte tickets;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
-        tx = new UnidadDeTrabajoInmediata();
         tickets = mock(PuertoTicketsSoporte.class);
     }
 
@@ -72,7 +69,7 @@ class ServicioTicketsSoporteTest {
     void abreUnTicketQueCubreTodasLasPendientesYLasMarca() {
         var id1 = crearOrdenAtascada(8);
         var id2 = crearOrdenAtascada(9);
-        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo, tx);
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo);
 
         var cantidad = servicio.abrirTicketsPendientes();
 
@@ -85,7 +82,7 @@ class ServicioTicketsSoporteTest {
     @Test
     void unaSegundaPasadaMientrasDuraElAtasco_noDuplicaElAviso() {
         var id = crearOrdenAtascada(8);
-        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo, tx);
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo);
         servicio.abrirTicketsPendientes();
 
         var cantidadSegundaPasada = servicio.abrirTicketsPendientes();
@@ -97,7 +94,7 @@ class ServicioTicketsSoporteTest {
     @Test
     void siLaOrdenSeRecuperaYVuelveAAtascarse_seAbreUnTicketNuevo() {
         var id = crearOrdenAtascada(8);
-        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo, tx);
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo);
         servicio.abrirTicketsPendientes();
         assertThat(repo.estadoActual(id).ticketAbiertoEn()).isNotNull();
 

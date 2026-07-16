@@ -49,7 +49,6 @@ interface CasoUsoAbrirTicketsPendientes
 interface PuertoConsultaSagasSoporte
 interface PuertoSagasTicketPendiente
 interface PuertoTicketsSoporte
-interface UnidadDeTrabajo
 
 ' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
 class AdaptadorConsultaSagasSoporte <<@Component>> {
@@ -66,16 +65,23 @@ class AdaptadorSagasTicketPendiente <<@Component>> {
 class AdaptadorTicketsLog <<@Component>> {
   +abrir(sagas)  «log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\nun texto en el log = el ticket; sin id»
 }
-class UnidadDeTrabajoSpring <<@Component>> {
-  -template : TransactionTemplate
-  +enTransaccion(Supplier<T>) : T
-}
 
 ' --- configuración y piezas comunes ---
 class ConfiguracionAplicacion <<@Configuration>> {
   +@Bean de PoliticaReintentos y de los 4\nServicioSaga + servicios de soporte/limpieza
   «POJOs sin anotaciones Spring: la capa business\nno depende de ningún framework»
 }
+note bottom of ConfiguracionAplicacion
+  La frontera transaccional es @Transactional (jakarta.transaction)
+  directo en los métodos de los POJOs de aplicación: ya no hay
+  puerto UnidadDeTrabajo ni adaptador UnidadDeTrabajoSpring. Para
+  ServicioSagaPrincipal/Secundaria1/2/3, ServicioContinuarSaga y
+  ServicioTicketsSoporte (REST fuera de tx, ver 17-22), el método
+  @Bean se inyecta a sí mismo el proxy con un parámetro @Lazy del
+  mismo tipo que devuelve, y llama a servicio.establecerSelf(self)
+  antes de devolver el bean — así su parte @Transactional se invoca
+  a través del proxy en vez de por auto-invocación.
+end note
 class ConfiguracionEjecucionAsincrona <<@Configuration, SchedulingConfigurer\n@EnableScheduling @EnableAsync>> {
   -tamanoPool : int  «orden.planificador.tamano-pool, 4»
   +configureTasks(ScheduledTaskRegistrar)
@@ -107,7 +113,6 @@ PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
 PuertoConsultaSagasSoporte <|.. AdaptadorConsultaSagasSoporte
 PuertoSagasTicketPendiente <|.. AdaptadorSagasTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
-UnidadDeTrabajo <|.. UnidadDeTrabajoSpring
 
 note as NRegla
   Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA
@@ -115,8 +120,10 @@ note as NRegla
   TrabajadorContinuacion y los dos planificadores) solo invocan
   casos de uso de la capa de aplicación; los adaptadores de SALIDA
   (AdaptadorConsultaSagasSoporte, AdaptadorSagasTicketPendiente,
-  AdaptadorTicketsLog, UnidadDeTrabajoSpring) implementan puertos
-  de salida. PlanificadorContinuacion y AdaptadorRepositorioOrden
+  AdaptadorTicketsLog) implementan puertos de salida. Ya no hay
+  UnidadDeTrabajoSpring: la frontera transaccional es @Transactional
+  directo en los servicios de aplicación (ver ConfiguracionAplicacion
+  y 17-22). PlanificadorContinuacion y AdaptadorRepositorioOrden
   (la persistencia del agregado) están en 23.
 end note
 
@@ -129,11 +136,9 @@ CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
 PuertoConsultaSagasSoporte -[hidden]down- AdaptadorConsultaSagasSoporte
 PuertoSagasTicketPendiente -[hidden]down- AdaptadorSagasTicketPendiente
 PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
-UnidadDeTrabajo -[hidden]down- UnidadDeTrabajoSpring
 AdaptadorConsultaSagasSoporte -[hidden]right- AdaptadorSagasTicketPendiente
 AdaptadorSagasTicketPendiente -[hidden]right- AdaptadorTicketsLog
-AdaptadorTicketsLog -[hidden]right- UnidadDeTrabajoSpring
-UnidadDeTrabajoSpring -[hidden]right- ConfiguracionAplicacion
+AdaptadorTicketsLog -[hidden]right- ConfiguracionAplicacion
 ConfiguracionAplicacion -[hidden]right- ConfiguracionEjecucionAsincrona
 ConfiguracionEjecucionAsincrona -[hidden]right- Codec
 @enduml

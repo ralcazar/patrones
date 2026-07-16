@@ -15,15 +15,17 @@ end box
 
 note over ORQ
   Continuación de 02: PuertoPaso8.ejecutar(...) ya devolvió su
-  ResultadoPaso8 fuera de tx. Entramos en la MISMA tx única de
-  checkpoint que 02, pero aquí terminada() da true. La orden es
-  la instancia de la ÚNICA carga del paso (ver 02): no se recarga.
+  ResultadoPaso8 fuera de tx y ejecutarPasoNormal ya llamó a
+  self.aplicarPasoNormal(orden, saga, resultado) vía proxy (mismo
+  método @Transactional que 02, aquí terminada() da true). La
+  orden es la instancia de la ÚNICA carga del paso (ver 02): no se
+  recarga.
 end note
 
-[-> ORQ : ejecutarPaso(orden) reentra tras el REST de PASO8 (ver 02)
+[-> ORQ : self.aplicarPasoNormal(orden, saga, resultado) reentra\ntras el REST de PASO8 (ver 02) -- vía proxy
 activate ORQ
 
-group Transacción única: checkpoint del paso (crea agregados hijos + finaliza el propio)
+group Transacción: checkpoint del paso (crea agregados hijos + finaliza el propio)
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(ResultadoPaso8(ref))
   SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar():\nPASO7_HECHO -> TERMINADA
   return

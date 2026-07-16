@@ -2,12 +2,13 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import java.time.Instant;
 
+import jakarta.transaction.Transactional;
+
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoLimpiarDatosAntiguos;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 
 /**
  * Limpieza de datos antiguos. Todo va en UNA transacción: o se purga el corte
@@ -21,18 +22,15 @@ public class ServicioLimpiezaDatos implements CasoUsoLimpiarDatosAntiguos {
 
     private final RepositorioOrden repo;
     private final PuertoMensajesProcesados dedup;
-    private final UnidadDeTrabajo tx;
 
-    public ServicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup, UnidadDeTrabajo tx) {
+    public ServicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup) {
         this.repo = repo;
         this.dedup = dedup;
-        this.tx = tx;
     }
 
     @Override
+    @Transactional
     public ResultadoLimpieza purgarAnterioresA(Instant corte) {
-        return tx.enTransaccion(() -> new ResultadoLimpieza(
-                repo.purgarFinalizadasAntesDe(corte),
-                dedup.purgarAnterioresA(corte)));
+        return new ResultadoLimpieza(repo.purgarFinalizadasAntesDe(corte), dedup.purgarAnterioresA(corte));
     }
 }

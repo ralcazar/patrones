@@ -8,13 +8,16 @@ interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaPrincipal <<@Service>> {
   -repo : RepositorioOrden
-  -tx : UnidadDeTrabajo
   -lease : Duration
   -puertoPaso1 .. puertoPaso8 : PuertoPasoN
+  -self : ServicioSagaPrincipal  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
   +tipo() : TipoSaga  «PRINCIPAL»
   +ejecutarPaso(orden) : SenalPaso
   -ejecutarPasoNormal(orden, saga) : SenalPaso
   -ejecutarCompensacion(orden, saga) : SenalPaso
+  +aplicarPasoNormal(orden, saga, resultado) : SenalPaso  «@Transactional»
+  +aplicarCancelacion(orden, saga) : SenalPaso  «@Transactional»
+  +aplicarCompensacion(orden, saga) : SenalPaso  «@Transactional»
   -crearHijas(contextos, ahora)  «OrdenRoot.nueva(SagaSecundariaN.crear(...))\n+ repo.crear(hija), una vez por ContextoArranque»
   -ejecutarComando(ComandoPaso) : ResultadoPasoPrincipal  «switch: rutea al PuertoPasoN;\nCompensarPaso1/2 -> IllegalStateException (van por ejecutarCompensacion)»
 }
@@ -22,13 +25,15 @@ note right of ServicioSagaPrincipal
   ejecutarPaso: recibe el agregado YA CARGADO por
   ServicioContinuarSaga (ver 17); decide compensación vs. normal y
   pasa orden+saga. ejecutarPasoNormal: comandoActual() + REST fuera
-  de tx; la tx guarda ESA misma instancia (sin recargar):
-  aplicarYAvanzar + si terminada() crea las 3 hijas y finaliza
-  (FINALIZADA_OK) — ver 03 —, si no resetearIntentos()+renovarLease().
-  Si otro actor escribió con el REST en vuelo, guardar falla por
-  version (takeover seguro). ejecutarCompensacion: si CANCELADA,
-  solo finaliza (FINALIZADA_COMPENSADA); si no, compensa el paso
-  (REST fuera de tx) y compensacionCompletada() en tx — ver 08.
+  de tx, luego self.aplicarPasoNormal(...) -- vía proxy, para que
+  @Transactional no se ignore por auto-invocación --: aplicarYAvanzar
+  + si terminada() crea las 3 hijas y finaliza (FINALIZADA_OK) — ver
+  03 —, si no resetearIntentos()+renovarLease(). Si otro actor
+  escribió con el REST en vuelo, guardar falla por version (takeover
+  seguro). ejecutarCompensacion: si CANCELADA, self.aplicarCancelacion
+  (sin REST) solo finaliza (FINALIZADA_COMPENSADA); si no, compensa
+  el paso (REST fuera de tx) y self.aplicarCompensacion
+  (compensacionCompletada() en tx) — ver 08.
 end note
 
 package "puerto.salida" {

@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
@@ -24,7 +25,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSaga
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
@@ -45,6 +45,15 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  * REST de paso (PuertoPasoN, PuertoSagaSecundariaN, PuertoConciliacionSecundaria2)
  * y de deduplicación (PuertoMensajesProcesados) no están implementados en este
  * esqueleto: Spring los inyectará cuando existan.
+ *
+ * La frontera transaccional es {@code @Transactional} (jakarta.transaction)
+ * directamente sobre métodos de estos POJOs: Spring envuelve en un proxy
+ * transaccional también los beans devueltos por métodos {@code @Bean}. Los
+ * servicios de saga (y otros con REST fuera de tx) necesitan invocar su parte
+ * transaccional A TRAVÉS de ese proxy (una auto-invocación normal lo
+ * saltaría), así que aquí se les inyecta la referencia a sí mismos con un
+ * parámetro {@code @Lazy} del mismo tipo que el bean que el método produce:
+ * Spring resuelve ese parámetro con un proxy perezoso del propio bean.
  */
 @Configuration
 public class ConfiguracionAplicacion {
@@ -55,29 +64,40 @@ public class ConfiguracionAplicacion {
     }
 
     @Bean
-    ServicioSagaPrincipal servicioSagaPrincipal(RepositorioOrden repo, UnidadDeTrabajo tx,
+    ServicioSagaPrincipal servicioSagaPrincipal(RepositorioOrden repo,
             @Value("${orden.lease}") Duration lease,
             PuertoPaso1 p1, PuertoPaso2 p2, PuertoPaso3 p3, PuertoPaso4 p4,
-            PuertoPaso5 p5, PuertoPaso6 p6, PuertoPaso7 p7, PuertoPaso8 p8) {
-        return new ServicioSagaPrincipal(repo, tx, lease, p1, p2, p3, p4, p5, p6, p7, p8);
+            PuertoPaso5 p5, PuertoPaso6 p6, PuertoPaso7 p7, PuertoPaso8 p8,
+            @Lazy ServicioSagaPrincipal self) {
+        var servicio = new ServicioSagaPrincipal(repo, lease, p1, p2, p3, p4, p5, p6, p7, p8);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
-    ServicioSagaSecundaria1 servicioSagaSecundaria1(RepositorioOrden repo, UnidadDeTrabajo tx,
-            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria1 puerto) {
-        return new ServicioSagaSecundaria1(repo, tx, lease, puerto);
+    ServicioSagaSecundaria1 servicioSagaSecundaria1(RepositorioOrden repo,
+            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria1 puerto,
+            @Lazy ServicioSagaSecundaria1 self) {
+        var servicio = new ServicioSagaSecundaria1(repo, lease, puerto);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
-    ServicioSagaSecundaria2 servicioSagaSecundaria2(RepositorioOrden repo, UnidadDeTrabajo tx,
-            PuertoSagaSecundaria2 puerto, PuertoConciliacionSecundaria2 conciliacion) {
-        return new ServicioSagaSecundaria2(repo, tx, puerto, conciliacion);
+    ServicioSagaSecundaria2 servicioSagaSecundaria2(RepositorioOrden repo,
+            PuertoSagaSecundaria2 puerto, PuertoConciliacionSecundaria2 conciliacion,
+            @Lazy ServicioSagaSecundaria2 self) {
+        var servicio = new ServicioSagaSecundaria2(repo, puerto, conciliacion);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
-    ServicioSagaSecundaria3 servicioSagaSecundaria3(RepositorioOrden repo, UnidadDeTrabajo tx,
-            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria3 puerto) {
-        return new ServicioSagaSecundaria3(repo, tx, lease, puerto);
+    ServicioSagaSecundaria3 servicioSagaSecundaria3(RepositorioOrden repo, PuertoSagaSecundaria3 puerto,
+            @Lazy ServicioSagaSecundaria3 self) {
+        var servicio = new ServicioSagaSecundaria3(repo, puerto);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
@@ -93,38 +113,41 @@ public class ConfiguracionAplicacion {
 
     @Bean
     ServicioContinuarSaga servicioContinuarSaga(Map<TipoSaga, ServicioSaga> serviciosSaga,
-            RepositorioOrden repo, UnidadDeTrabajo tx, PoliticaReintentos politica,
+            RepositorioOrden repo, PoliticaReintentos politica,
             @Value("${orden.lease}") Duration lease,
-            @Value("${orden.planificador.lote:16}") int lote) {
-        return new ServicioContinuarSaga(serviciosSaga, repo, tx, politica, lease, lote);
+            @Value("${orden.planificador.lote:16}") int lote,
+            @Lazy ServicioContinuarSaga self) {
+        var servicio = new ServicioContinuarSaga(serviciosSaga, repo, politica, lease, lote);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
-    ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo, UnidadDeTrabajo tx) {
-        return new ServicioIniciarTramitacion(repo, tx);
+    ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo) {
+        return new ServicioIniciarTramitacion(repo);
     }
 
     @Bean
-    ServicioSoporteSagas servicioSoporteSagas(RepositorioOrden repo, UnidadDeTrabajo tx,
-            PuertoConsultaSagasSoporte consultas) {
-        return new ServicioSoporteSagas(repo, tx, consultas);
+    ServicioSoporteSagas servicioSoporteSagas(RepositorioOrden repo, PuertoConsultaSagasSoporte consultas) {
+        return new ServicioSoporteSagas(repo, consultas);
     }
 
     @Bean
     ServicioTicketsSoporte servicioTicketsSoporte(PuertoSagasTicketPendiente pendientes,
-            PuertoTicketsSoporte tickets, RepositorioOrden repo, UnidadDeTrabajo tx) {
-        return new ServicioTicketsSoporte(pendientes, tickets, repo, tx);
+            PuertoTicketsSoporte tickets, RepositorioOrden repo, @Lazy ServicioTicketsSoporte self) {
+        var servicio = new ServicioTicketsSoporte(pendientes, tickets, repo);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean
     ServicioRegistrarRespuestaSecundaria2 servicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
-            UnidadDeTrabajo tx, PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
-        return new ServicioRegistrarRespuestaSecundaria2(repo, tx, dedup, politica);
+            PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
+        return new ServicioRegistrarRespuestaSecundaria2(repo, dedup, politica);
     }
 
     @Bean
-    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup,
-            UnidadDeTrabajo tx) {
-        return new ServicioLimpiezaDatos(repo, dedup, tx);
+    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup) {
+        return new ServicioLimpiezaDatos(repo, dedup);
     }
 }

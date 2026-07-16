@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.ServicioSagaFalso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
@@ -45,12 +44,10 @@ class ServicioContinuarSagaTest {
     private static final int LOTE = 16;
 
     private RepositorioOrdenEnMemoria repo;
-    private UnidadDeTrabajoInmediata tx;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
-        tx = new UnidadDeTrabajoInmediata();
     }
 
     private SagaId crearOrdenPrincipal() {
@@ -66,7 +63,7 @@ class ServicioContinuarSagaTest {
     }
 
     private ServicioContinuarSaga servicio(ServicioSaga servicioSaga, RepositorioOrden repositorio) {
-        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repositorio, tx, POLITICA,
+        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repositorio, POLITICA,
                 LEASE, LOTE);
     }
 
