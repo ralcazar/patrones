@@ -69,6 +69,13 @@ saga, más el núcleo común, soporte e infraestructura.
 | [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura: persistencia del agregado (`OrdenEntity`/`SagaEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`saga`) y `PlanificadorContinuacion` (despierta workers si hay trabajo) |
 | [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura: el resto de adaptadores — `ConsumidorRespuestaSecundaria2`, `TrabajadorContinuacion` (worker pull) + `ConfiguracionEjecucionAsincrona` (pool "ejecutorContinuacion"), `PlanificadorLimpieza`/`PlanificadorTicketsSoporte`, `AdaptadorTicketsLog`, `AdaptadorConsultaSagasSoporte`, `AdaptadorSagasTicketPendiente` |
 
+## Esquema de base de datos
+
+El esquema (tablas `saga`, `saga_auditoria`, `orden`) se aplica manualmente
+desde `order-manager/db/` (un `.sql` por objeto; orden de aplicación por FKs
+en su `README.md`). Ni JPA (`ddl-auto: none`) ni ninguna herramienta de
+migración crean nada automáticamente al arrancar la app.
+
 ## Regenerar los PNG
 
 ```bash
