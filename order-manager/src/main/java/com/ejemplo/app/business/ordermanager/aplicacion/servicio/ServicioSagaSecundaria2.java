@@ -11,7 +11,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.Repositori
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ComandoPasoSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
@@ -51,14 +50,13 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA2; }
 
     /**
-     * Una ÚNICA carga por paso, antes del REST: la tx guarda esa misma
-     * instancia (con su version) para que una escritura intermedia (takeover,
-     * consumer de Kafka, soporte) haga fallar el guardar. No recargar dentro
-     * de la tx.
+     * Recibe el agregado ya cargado por el llamante (una única carga por paso,
+     * antes del REST): la tx guarda esa misma instancia (con su version) para
+     * que una escritura intermedia (takeover, consumer de Kafka, soporte) haga
+     * fallar el guardar.
      */
     @Override
-    public SenalPaso ejecutarPaso(SagaId id) {
-        var orden = repo.cargar(id);
+    public SenalPaso ejecutarPaso(OrdenRoot orden) {
         var saga = (SagaSecundaria2Root) orden.saga();
         return switch (saga.estado()) {
             case INICIAL -> solicitar(orden, saga);

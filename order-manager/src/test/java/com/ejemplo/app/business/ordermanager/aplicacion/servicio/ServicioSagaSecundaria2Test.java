@@ -65,7 +65,7 @@ class ServicioSagaSecundaria2Test {
         var id = crearOrdenSecundaria2();
 
         var antes = Instant.now();
-        var senal = orquestador.ejecutarPaso(id);
+        var senal = orquestador.ejecutarPaso(repo.cargar(id));
         var despues = Instant.now();
 
         assertThat(senal).isInstanceOf(SenalPaso.Aparcar.class);
@@ -81,11 +81,11 @@ class ServicioSagaSecundaria2Test {
     @Test
     void esperandoRespuesta_siLaConciliacionEncuentraElResultado_finalizaLaOrden() {
         var id = crearOrdenSecundaria2();
-        orquestador.ejecutarPaso(id); // INICIAL -> ESPERANDO_RESPUESTA
+        orquestador.ejecutarPaso(repo.cargar(id)); // INICIAL -> ESPERANDO_RESPUESTA
         when(conciliacion.consultar(any(), any()))
                 .thenReturn(new PuertoConciliacionSecundaria2.Resultado.Disponible(new RefRespuesta("resp-1")));
 
-        var senal = orquestador.ejecutarPaso(id);
+        var senal = orquestador.ejecutarPaso(repo.cargar(id));
 
         assertThat(senal).isInstanceOf(SenalPaso.Finalizada.class);
         assertThat(((SenalPaso.Finalizada) senal).resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
@@ -98,10 +98,10 @@ class ServicioSagaSecundaria2Test {
     @Test
     void esperandoRespuesta_siLaConciliacionNoTieneResultado_vuelveAAparcarOtrasTresHoras() {
         var id = crearOrdenSecundaria2();
-        orquestador.ejecutarPaso(id);
+        orquestador.ejecutarPaso(repo.cargar(id));
         when(conciliacion.consultar(any(), any())).thenReturn(new PuertoConciliacionSecundaria2.Resultado.SinResultado());
 
-        var senal = orquestador.ejecutarPaso(id);
+        var senal = orquestador.ejecutarPaso(repo.cargar(id));
 
         assertThat(senal).isInstanceOf(SenalPaso.Aparcar.class);
         assertThat(((SenalPaso.Aparcar) senal).ventana()).isEqualTo(Duration.ofHours(3));
@@ -112,11 +112,11 @@ class ServicioSagaSecundaria2Test {
     @Test
     void esperandoRespuesta_siLaConciliacionRegistraUnFallo_lanzaParaQueSeReintente() {
         var id = crearOrdenSecundaria2();
-        orquestador.ejecutarPaso(id);
+        orquestador.ejecutarPaso(repo.cargar(id));
         when(conciliacion.consultar(any(), any()))
                 .thenReturn(new PuertoConciliacionSecundaria2.Resultado.FalloRegistrado(MotivoFallo.errorTecnico("boom")));
 
-        assertThatThrownBy(() -> orquestador.ejecutarPaso(id)).isInstanceOf(ExcepcionServicioExterno.class);
+        assertThatThrownBy(() -> orquestador.ejecutarPaso(repo.cargar(id))).isInstanceOf(ExcepcionServicioExterno.class);
         // No se persiste nada al lanzar: ServicioContinuarSaga es quien decide el reintento.
         var orden = repo.estadoActual(id);
         assertThat(((SagaSecundaria2Root) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
@@ -125,7 +125,7 @@ class ServicioSagaSecundaria2Test {
     @Test
     void kafkaDespiertaLaOrden_yLaSiguientePasadaDelOrquestadorCierraElOperativo() {
         var id = crearOrdenSecundaria2();
-        orquestador.ejecutarPaso(id); // INICIAL -> ESPERANDO_RESPUESTA (aparcada 3h)
+        orquestador.ejecutarPaso(repo.cargar(id)); // INICIAL -> ESPERANDO_RESPUESTA (aparcada 3h)
 
         // El consumer de Kafka resuelve la saga directamente y despierta la orden (ServicioRegistrarRespuestaSecundaria2).
         var orden = repo.cargar(id);
@@ -135,7 +135,7 @@ class ServicioSagaSecundaria2Test {
         repo.guardar(orden);
 
         // El orquestador, en su siguiente pasada, deja el cierre operativo (finalizar) de la orden.
-        var senal = orquestador.ejecutarPaso(id);
+        var senal = orquestador.ejecutarPaso(repo.cargar(id));
 
         assertThat(senal).isInstanceOf(SenalPaso.Finalizada.class);
         assertThat(repo.estadoActual(id).estaViva()).isFalse();

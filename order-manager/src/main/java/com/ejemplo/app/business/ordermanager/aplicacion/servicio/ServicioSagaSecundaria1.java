@@ -9,7 +9,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSaga
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ComandoPasoSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
@@ -38,13 +38,12 @@ public class ServicioSagaSecundaria1 implements OrquestadorSaga {
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA1; }
 
     /**
-     * Una ÚNICA carga por paso, antes del REST: la tx guarda esa misma
-     * instancia (con su version) para que un takeover intermedio haga fallar
-     * el guardar. No recargar dentro de la tx.
+     * Recibe el agregado ya cargado por el llamante (una única carga por paso,
+     * antes del REST): la tx guarda esa misma instancia (con su version) para
+     * que un takeover intermedio haga fallar el guardar.
      */
     @Override
-    public SenalPaso ejecutarPaso(SagaId id) {
-        var orden = repo.cargar(id);
+    public SenalPaso ejecutarPaso(OrdenRoot orden) {
         var saga = (SagaSecundaria1Root) orden.saga();
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
 

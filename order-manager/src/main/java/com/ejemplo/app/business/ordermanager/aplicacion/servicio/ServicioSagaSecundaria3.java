@@ -8,7 +8,7 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.ComandoPasoSecundaria3;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
@@ -33,13 +33,12 @@ public class ServicioSagaSecundaria3 implements OrquestadorSaga {
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA3; }
 
     /**
-     * Una ÚNICA carga por paso, antes del REST: la tx guarda esa misma
-     * instancia (con su version) para que un takeover intermedio haga fallar
-     * el guardar. No recargar dentro de la tx.
+     * Recibe el agregado ya cargado por el llamante (una única carga por paso,
+     * antes del REST): la tx guarda esa misma instancia (con su version) para
+     * que un takeover intermedio haga fallar el guardar.
      */
     @Override
-    public SenalPaso ejecutarPaso(SagaId id) {
-        var orden = repo.cargar(id);
+    public SenalPaso ejecutarPaso(OrdenRoot orden) {
         var saga = (SagaSecundaria3Root) orden.saga();
         var resultado = puerto.ejecutar((ComandoPasoSecundaria3.Ejecutar) saga.comandoActual()); // REST fuera de tx
 

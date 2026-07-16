@@ -20,7 +20,7 @@ note over ORQ
   la instancia de la ÚNICA carga del paso (ver 02): no se recarga.
 end note
 
-[-> ORQ : ejecutarPaso(sagaId) reentra tras el REST de PASO8 (ver 02)
+[-> ORQ : ejecutarPaso(orden) reentra tras el REST de PASO8 (ver 02)
 activate ORQ
 
 group Transacción única: checkpoint del paso (crea agregados hijos + finaliza el propio)

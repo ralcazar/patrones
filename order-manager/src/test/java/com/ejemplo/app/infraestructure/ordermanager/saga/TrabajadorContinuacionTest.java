@@ -8,8 +8,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 
 /**
  * Bucle del worker pull (sin Spring: aquí no hay @Async ni pool, solo el
@@ -32,9 +30,6 @@ class TrabajadorContinuacionTest {
         public boolean continuarSiguiente() {
             return respuestas[llamadas.getAndIncrement()];
         }
-
-        @Override
-        public void continuar(SagaId id, TipoSaga tipo) { }
 
         @Override
         public boolean hayTrabajoPendiente() { return false; }

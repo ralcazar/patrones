@@ -105,7 +105,7 @@ class ServicioSagaPrincipalTest {
     void flujoFeliz_recorreLosOchoPasosEnUnaSolaLlamadaYArrancaLasTresSecundarias() {
         var id = crearOrdenPrincipal();
 
-        servicioContinuar.continuar(id, TipoSaga.PRINCIPAL);
+        servicioContinuar.continuarSiguiente();
 
         var ordenFinal = repo.estadoActual(id);
         assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
@@ -137,7 +137,7 @@ class ServicioSagaPrincipalTest {
         ordenACancelar.despertar(Instant.now());
         repo.guardar(ordenACancelar);
 
-        servicioContinuar.continuar(id, TipoSaga.PRINCIPAL);
+        servicioContinuar.continuarSiguiente();
 
         var ordenFinal = repo.estadoActual(id);
         assertThat(((SagaPrincipalRoot) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
@@ -167,7 +167,7 @@ class ServicioSagaPrincipalTest {
 
         // El zombi despierta con su instantánea obsoleta: su guardar falla por version.
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> orquestador.ejecutarPaso(id))
+                .assertThatThrownBy(() -> orquestador.ejecutarPaso(repo.cargar(id)))
                 .isInstanceOf(com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException.class);
 
         // Gana el otro pod: estado en PASO3_HECHO (sin saltar a PASO4_HECHO) y su ref intacta.
@@ -179,7 +179,7 @@ class ServicioSagaPrincipalTest {
     /** Ejecuta exactamente un paso invocando al orquestador directamente (no toca el token). */
     private void avanzarUnPaso(SagaId id) {
         var antes = repo.estadoActual(id).version();
-        orquestador.ejecutarPaso(id);
+        orquestador.ejecutarPaso(repo.cargar(id));
         assertThat(repo.estadoActual(id).version()).isGreaterThan(antes);
     }
 }

@@ -19,19 +19,19 @@ box "Adaptadores de salida" #F3EFFB
   participant "PuertoTicketsSoporte\n(AdaptadorTicketsLog)" as TICK
 end box
 
-== Un paso falla: ServicioContinuarSaga programa el reintento ==
-[-> CONT : continuar(sagaId, tipo) / continuarSiguiente() (ver 02/04/05/06)
+== Un paso falla: ServicioContinuarSaga programa el reintento sobre la orden ya cargada ==
+[-> CONT : continuarSiguiente() (ver 02/04/05/06)
 activate CONT
 CONT -> CONT : reclamarYEjecutar(sagaId, tipo)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
+return orden (intentos = N)
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORQ : puertoPasoN.ejecutar(cmd) -- REST fuera de tx
 ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
 deactivate ORQ
-CONT -> CONT : catch (RuntimeException e): programarReintento(sagaId)
+CONT -> CONT : catch (RuntimeException e): programar el reintento\nsobre la MISMA orden cargada arriba (no se recarga:\nfix del takeover seguro)
 
-group Transacción
-  CONT -> REPO ++ : cargar(sagaId)
-  return orden (intentos = N)
+group Transacción: reintento sobre la orden ya cargada
   CONT -> ORDEN ++ : programarReintento(politica, Instant.now())
   ORDEN -> POL ++ : esperaTras(N + 1)
   POL -> POL : escalera 1, 3, 5, 10, 20, 45,\n90, 180 min (desde el 8º, 180)
@@ -40,6 +40,13 @@ group Transacción
   return
   CONT -> REPO ++ : guardar(orden)
   return
+  note right of REPO
+    Al reutilizar la MISMA instancia cargada antes del REST (en vez
+    de recargar), este guardado sigue protegido por su version: si
+    otro actor la tocó entre medias (takeover tras lease vencido,
+    soporte), falla con ConcurrenciaOptimistaException y el pod se
+    retira, igual que el guardado de cualquier otro paso.
+  end note
 end
 [<- CONT
 deactivate CONT

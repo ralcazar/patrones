@@ -26,11 +26,14 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 
 Regla de oro en todos los flujos: **dentro de la transacción solo BBDD**
 (el agregado `OrdenRoot` completo: negocio + ejecución, un único `guardar`);
-**fuera de ella solo I/O externo** (REST del paso, tickets). Y en los
-orquestadores, **una única carga por paso**: la transacción guarda la misma
-instancia cargada antes del REST (con su `version`), de modo que si otro
-actor escribió entre medias el `guardar` falla por `version` y el pod se
-retira (takeover seguro, sin recargas que anulen el optimistic locking).
+**fuera de ella solo I/O externo** (REST del paso, tickets). Y en el bucle de
+`ServicioContinuarSaga`, **una única carga por paso**: carga el agregado
+antes del REST y se lo pasa ya cargado al `OrquestadorSaga`
+(`ejecutarPaso(orden)`); tanto la transacción que cierra el paso como, si el
+REST falla, la que programa el reintento guardan esa MISMA instancia (con su
+`version`), de modo que si otro actor escribió entre medias el `guardar`
+falla por `version` y el pod se retira (takeover seguro, sin recargas que
+anulen el optimistic locking).
 Las flechas fluyen de izquierda a derecha y se muestran las líneas de
 activación.
 

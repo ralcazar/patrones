@@ -110,9 +110,9 @@ TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, PRINCIPAL), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL) (reclamo de token: ver 02)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.estado()
 return COMPENSAR_PASO2 (p. ej.)
 ORQ -> ORQ : ejecutarCompensacion(orden, saga)
@@ -131,9 +131,10 @@ group Transacción única
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Sin recarga dentro de la tx: si otro actor escribió con el
-    REST en vuelo, guardar falla por version
-    (ConcurrenciaOptimistaException) y el pod se retira.
+    Guardar lleva la version de la carga hecha por CONT antes del
+    REST: si otro actor escribió con el REST en vuelo, guardar
+    falla por version (ConcurrenciaOptimistaException) y el pod se
+    retira.
   end note
 end
 return HayMasTrabajo()

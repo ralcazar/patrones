@@ -29,7 +29,7 @@ CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, PRINCIPAL), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL)
 
-group Transacción: reclamarToken (ConcurrenciaOptimistaException -> return, otro pod la tiene)
+group Transacción: reclamo del token bajo optimistic lock (ConcurrenciaOptimistaException -> return, otro pod la tiene)
   CONT -> REPO ++ : cargar(sagaId)
   return orden
   CONT -> ORDEN ++ : estaViva()
@@ -43,10 +43,10 @@ group Transacción: reclamarToken (ConcurrenciaOptimistaException -> return, otr
 end
 
 loop while (true) hasta Aparcar / Finalizada / excepción
-  CONT -> ORQ ++ : ejecutarPaso(sagaId)
-
-  ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
+  CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
   return orden
+
+  CONT -> ORQ ++ : ejecutarPaso(orden)
   ORQ -> SAGA ++ : saga.estado()
   return PASOn_HECHO (no está en COMPENSAR_*/CANCELADA)
   ORQ -> ORQ : ejecutarPasoNormal(orden, saga)
@@ -57,36 +57,44 @@ loop while (true) hasta Aparcar / Finalizada / excepción
   ORQ -> PASOS ++ : puertoPasoN.ejecutar(EjecutarPasoN(...))
   alt éxito
     return ResultadoPasoN(ref)
+    group Transacción única: checkpoint del paso (negocio + ejecución, un solo guardar)
+      ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
+      SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
+      return
+      ORQ -> SAGA ++ : saga.terminada()
+      return false (PASO1_HECHO .. PASO7_HECHO)
+      ORQ -> ORDEN ++ : resetearIntentos()
+      return intentos=0, ticketAbiertoEn=null
+      ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+      return tokenExpiraEn = ahora + lease
+      ORQ -> REPO ++ : guardar(orden)
+      return
+      note right of REPO
+        Guardar lleva la version de la carga hecha por CONT antes
+        del REST. Si otro actor escribió mientras el REST estaba en
+        vuelo (takeover de un pod zombi, soporte), falla con
+        ConcurrenciaOptimistaException y el pod se retira.
+      end note
+    end
+    return HayMasTrabajo()
+    CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle
   else falla
     PASOS --> ORQ : lanza ExcepcionServicioExterno(motivo)
-    note right of ORQ
-      Se propaga sin capturar: ServicioContinuarSaga.
-      reclamarYEjecutar() la atrapa como RuntimeException y llama a
-      programarReintento(sagaId) — ver 07-error-ticket-soporte.
+    deactivate PASOS
+    ORQ --> CONT : se propaga sin capturar (RuntimeException)
+    deactivate ORQ
+    note right of CONT
+      reclamarYEjecutar() la atrapa como RuntimeException y programa
+      el reintento sobre la MISMA orden cargada arriba (fix del
+      takeover seguro) — ver 07-error-ticket-soporte.
     end note
+    group Transacción: reintento sobre la orden ya cargada (no se recarga)
+      CONT -> ORDEN ++ : programarReintento(politica, Instant.now())
+      return intentos++, proximoReintentoEn = ahora + esperaTras(intentos), token liberado
+      CONT -> REPO ++ : guardar(orden)
+      return
+    end
   end
-
-  group Transacción única: checkpoint del paso (negocio + ejecución, un solo guardar)
-    ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
-    SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
-    return
-    ORQ -> SAGA ++ : saga.terminada()
-    return false (PASO1_HECHO .. PASO7_HECHO)
-    ORQ -> ORDEN ++ : resetearIntentos()
-    return intentos=0, ticketAbiertoEn=null
-    ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
-    return tokenExpiraEn = ahora + lease
-    ORQ -> REPO ++ : guardar(orden)
-    return
-    note right of REPO
-      Sin recarga dentro de la tx: guardar lleva la version
-      de la carga inicial. Si otro actor escribió mientras el
-      REST estaba en vuelo (takeover de un pod zombi, soporte),
-      falla con ConcurrenciaOptimistaException y el pod se retira.
-    end note
-  end
-  return HayMasTrabajo()
-  CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle
 end
 
 note over SAGA

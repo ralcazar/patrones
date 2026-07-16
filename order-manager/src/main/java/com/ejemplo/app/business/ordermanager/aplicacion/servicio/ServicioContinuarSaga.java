@@ -18,8 +18,11 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 /**
  * Bucle de ejecución de una saga: reclama el token bajo optimistic lock y
  * encadena pasos síncronos hasta que el orquestador aparca, termina o falla.
- * Cada paso persiste por su cuenta (ver {@link OrquestadorSaga}); este bucle
- * solo decide cuándo seguir, aparcar, reintentar o rendirse ante otro pod.
+ * Carga el agregado una única vez por paso, antes del REST (ver
+ * {@link OrquestadorSaga}), y reutiliza esa misma instancia si el paso falla
+ * y hay que programar un reintento: así el guardado del reintento conserva
+ * la protección por version frente a un takeover concurrente (otro pod que
+ * reclamó tras vencer el lease).
  */
 @Service
 public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
@@ -41,39 +44,13 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
         this.lote = lote;
     }
 
-    @Override
-    public void continuar(SagaId id, TipoSaga tipo) {
-        reclamarYEjecutar(id, tipo);
-    }
-
     /** Reclama el token y, si gana, encadena los pasos; devuelve si llegó a reclamar. */
     private boolean reclamarYEjecutar(SagaId id, TipoSaga tipo) {
-        if (!reclamarToken(id)) {
-            return false;
-        }
-        var orquestador = orquestadores.get(tipo);
-        while (true) {
-            SenalPaso senal;
-            try {
-                senal = orquestador.ejecutarPaso(id);
-            } catch (ConcurrenciaOptimistaException e) {
-                return true; // otro pod/actor tocó el agregado entre medias
-            } catch (RuntimeException e) {
-                programarReintento(id);
-                return true;
-            }
-            switch (senal) {
-                case SenalPaso.HayMasTrabajo() -> { /* el orquestador ya reseteó intentos y renovó el lease */ }
-                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el orquestador
-                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el orquestador
-            }
-        }
-    }
-
-    /** Reclamo con optimistic lock: si otro pod ya la tomó (o venció el conflicto), nos retiramos. */
-    private boolean reclamarToken(SagaId id) {
+        // Reclamo con optimistic lock: si otro pod ya la tomó (o venció el
+        // conflicto contra el guardado), nos retiramos en silencio.
+        boolean reclamada;
         try {
-            return tx.enTransaccion(() -> {
+            reclamada = tx.enTransaccion(() -> {
                 var orden = repo.cargar(id);
                 var ahora = Instant.now();
                 if (!orden.estaViva() || orden.tieneTokenVigente(ahora)) {
@@ -84,7 +61,35 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
                 return true;
             });
         } catch (ConcurrenciaOptimistaException e) {
+            reclamada = false;
+        }
+        if (!reclamada) {
             return false;
+        }
+
+        var orquestador = orquestadores.get(tipo);
+        while (true) {
+            var orden = repo.cargar(id); // una única carga por paso, antes del REST
+            SenalPaso senal;
+            try {
+                senal = orquestador.ejecutarPaso(orden);
+            } catch (ConcurrenciaOptimistaException e) {
+                return true; // otro pod/actor tocó el agregado entre medias
+            } catch (RuntimeException e) {
+                // Reintento sobre la MISMA orden cargada arriba (fix del takeover
+                // seguro): si otro actor escribió entre medias, este guardado falla
+                // por version igual que el de cualquier otro paso.
+                tx.enTransaccion(() -> {
+                    orden.programarReintento(politica, Instant.now());
+                    repo.guardar(orden);
+                });
+                return true;
+            }
+            switch (senal) {
+                case SenalPaso.HayMasTrabajo() -> { /* el orquestador ya reseteó intentos y renovó el lease */ }
+                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el orquestador
+                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el orquestador
+            }
         }
     }
 
@@ -101,13 +106,5 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
     @Override
     public boolean hayTrabajoPendiente() {
         return repo.hayEjecutables(Instant.now());
-    }
-
-    private void programarReintento(SagaId id) {
-        tx.enTransaccion(() -> {
-            var orden = repo.cargar(id);
-            orden.programarReintento(politica, Instant.now());
-            repo.guardar(orden);
-        });
     }
 }

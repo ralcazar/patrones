@@ -10,7 +10,6 @@ package "puerto.entrada" {
     record ComandoIniciarTramitacion(externalId,\ndatoNegocio3, datoNegocio2)
   }
   interface CasoUsoContinuarSaga {
-    +continuar(SagaId, TipoSaga)
     +continuarSiguiente() : boolean
     +hayTrabajoPendiente() : boolean
   }
@@ -33,21 +32,20 @@ package "servicio" {
     -politica : PoliticaReintentos
     -lease : Duration
     -lote : int  «orden.planificador.lote, 16»
-    +continuar(id, tipo)
     +continuarSiguiente() : boolean
     +hayTrabajoPendiente() : boolean
     -reclamarYEjecutar(id, tipo) : boolean
-    -reclamarToken(id) : boolean  «tx: estaViva()+tieneTokenVigente()\n+asignarToken(); catch ConcurrenciaOptimistaException»
-    -programarReintento(id)  «tx: orden.programarReintento(politica, ahora)»
   }
   note right of ServicioContinuarSaga
-    reclamarYEjecutar(): si reclamarToken() falla, false (otro
-    worker/pod la tiene). Si no, bucle while(true):
-    orquestador.ejecutarPaso(id); catch
-    ConcurrenciaOptimistaException -> return; catch
-    RuntimeException -> programarReintento(id) + return; según la
-    señal: HayMasTrabajo -> continue, Aparcar/Finalizada -> return
-    (ya persistido por el orquestador). continuar() delega en él.
+    reclamarYEjecutar(): tx { estaViva()+tieneTokenVigente()+
+    asignarToken() }; catch ConcurrenciaOptimistaException -> false
+    (otro worker/pod la tiene). Si reclama, bucle while(true): carga
+    la orden (ÚNICA carga del paso, antes del REST) y llama a
+    orquestador.ejecutarPaso(orden); catch
+    ConcurrenciaOptimistaException -> return; catch RuntimeException
+    -> tx { orden.programarReintento(politica, ahora) } sobre esa
+    MISMA orden + return; según la señal: HayMasTrabajo -> continue,
+    Aparcar/Finalizada -> return (ya persistido por el orquestador).
     continuarSiguiente() (pull de cada worker): recorre
     repo.buscarEjecutables(ahora, lote) y procesa la PRIMERA que
     gane el reclamo -> true; lote agotado sin ganar -> false.
@@ -56,13 +54,14 @@ package "servicio" {
 
   interface OrquestadorSaga {
     +tipo() : TipoSaga
-    +ejecutarPaso(SagaId) : SenalPaso
+    +ejecutarPaso(OrdenRoot) : SenalPaso
   }
   note right of OrquestadorSaga
-    Una implementación por TipoSaga (ver 18-21): carga el agregado
-    UNA sola vez, hace el REST del paso FUERA de tx (puede lanzar),
-    y en UNA sola tx aplica el resultado a esa MISMA instancia
-    (sin recargar) y la parte operativa de la señal
+    Una implementación por TipoSaga (ver 18-21): recibe el agregado
+    YA CARGADO por ServicioContinuarSaga (una única carga por paso,
+    antes del REST), hace el REST del paso FUERA de tx (puede
+    lanzar) y, en UNA sola tx, aplica el resultado a esa MISMA
+    instancia (sin recargar) y la parte operativa de la señal
     (resetearIntentos()+renovarLease() | aparcar() | finalizar()),
     y guarda una única vez: si otro actor escribió con el REST en
     vuelo, guardar falla por version (takeover seguro).

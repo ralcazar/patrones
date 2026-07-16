@@ -12,12 +12,13 @@ class ServicioSagaSecundaria1 <<@Service>> {
   -lease : Duration
   -puerto : PuertoSagaSecundaria1
   +tipo() : TipoSaga  «SECUNDARIA1»
-  +ejecutarPaso(id) : SenalPaso
+  +ejecutarPaso(orden) : SenalPaso
   -ejecutarComando(ComandoPaso) : ResultadoPasoSecundaria1  «switch: Iniciar->puerto.iniciar,\nConfirmar->puerto.confirmar»
 }
 note right of ServicioSagaSecundaria1
-  ejecutarPaso: UNA única carga (comandoActual) + REST fuera de tx;
-  la tx guarda esa misma instancia sin recargar (aplicarYAvanzar; si
+  ejecutarPaso: recibe el agregado YA CARGADO por
+  ServicioContinuarSaga (ver 17); comandoActual() + REST fuera de
+  tx; la tx guarda esa misma instancia sin recargar (aplicarYAvanzar; si
   terminada() -> finalizar(FINALIZADA_OK), si no -> resetearIntentos()+
   renovarLease()); si otro actor escribió entre medias, guardar falla
   por version. Sin comprobación de estado de compensación (a

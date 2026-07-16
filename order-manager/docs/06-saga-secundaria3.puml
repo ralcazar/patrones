@@ -31,9 +31,9 @@ TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, SECUNDARIA3), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA3)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria3.Ejecutar(externalId, refPaso7)
 ORQ -> PSIM ++ : ejecutar(cmd) -- REST fuera de tx
@@ -49,9 +49,10 @@ group Transacción única: checkpoint del paso
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Sin recarga dentro de la tx: si otro actor escribió con el
-    REST en vuelo, guardar falla por version
-    (ConcurrenciaOptimistaException) y el pod se retira.
+    Guardar lleva la version de la carga hecha por CONT antes del
+    REST: si otro actor escribió con el REST en vuelo, guardar
+    falla por version (ConcurrenciaOptimistaException) y el pod se
+    retira.
   end note
 end
 return Finalizada(FINALIZADA_OK)
@@ -65,7 +66,8 @@ note over ORQ, PSIM
   EJECUCION siempre deja la saga en TERMINADA, así que
   ejecutarPaso() va derecho a finalizar(). Ante
   ExcepcionServicioExterno: propaga fuera de tx y
-  ServicioContinuarSaga.reclamarYEjecutar() programa reintento
-  (backoff 1..180 min) — ver 07. Nunca se cancela ni compensa.
+  ServicioContinuarSaga.reclamarYEjecutar() programa el reintento
+  sobre la MISMA orden cargada arriba (backoff 1..180 min) — ver
+  07. Nunca se cancela ni compensa.
 end note
 @enduml

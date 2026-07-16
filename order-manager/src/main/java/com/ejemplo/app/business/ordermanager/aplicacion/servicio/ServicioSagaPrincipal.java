@@ -74,15 +74,14 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
     @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
 
     /**
-     * Una ÚNICA carga por paso, antes del REST: la transacción guarda esa misma
-     * instancia (con su version), de modo que si otro actor escribió entre
-     * medias (takeover tras lease vencido, soporte, ...) el guardar falla por
-     * version y este pod se retira. No recargar dentro de la tx: anularía esa
-     * protección.
+     * Recibe el agregado ya cargado por el llamante (una única carga por paso,
+     * antes del REST): la transacción guarda esa misma instancia (con su
+     * version), de modo que si otro actor escribió entre medias (takeover tras
+     * lease vencido, soporte, ...) el guardar falla por version y este pod se
+     * retira.
      */
     @Override
-    public SenalPaso ejecutarPaso(SagaId id) {
-        var orden = repo.cargar(id);
+    public SenalPaso ejecutarPaso(OrdenRoot orden) {
         var saga = (SagaPrincipalRoot) orden.saga();
         return esCompensacion(saga.estado()) ? ejecutarCompensacion(orden, saga) : ejecutarPasoNormal(orden, saga);
     }

@@ -36,9 +36,9 @@ TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, SECUNDARIA2), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.estado()
 return INICIAL
 ORQ -> ORQ : solicitar(orden, saga)
@@ -56,10 +56,11 @@ group Transacción única
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Sin recarga dentro de la tx (aquí y en el resto de
-    transacciones de este orquestador): si otro actor escribió
-    con el REST en vuelo (takeover, consumer de Kafka, soporte),
-    guardar falla por version y el pod se retira.
+    Guardar lleva la version de la carga hecha por CONT antes del
+    REST (aquí y en el resto de transacciones de este orquestador):
+    si otro actor escribió con el REST en vuelo (takeover, consumer
+    de Kafka, soporte), guardar falla por version y el pod se
+    retira.
   end note
 end
 return Aparcar(3h)
@@ -106,9 +107,9 @@ TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, SECUNDARIA2), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.estado()
 return TERMINADA
 ORQ -> ORQ : finalizarYa(orden, saga)
@@ -132,9 +133,9 @@ TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(sagaId, SECUNDARIA2), ...]
 CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.estado()
 return ESPERANDO_RESPUESTA
 ORQ -> ORQ : conciliar(orden, saga)
@@ -165,8 +166,8 @@ else FalloRegistrado(motivo): el destino terminó con error
   deactivate ORQ
   note right of CONT
     ServicioContinuarSaga.reclamarYEjecutar() la atrapa como
-    RuntimeException y llama a programarReintento
-    (backoff 1..180 min) — ver 07.
+    RuntimeException y programa el reintento sobre la MISMA orden
+    cargada arriba (backoff 1..180 min) — ver 07.
   end note
 end
 

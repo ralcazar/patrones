@@ -50,9 +50,9 @@ group Transacción: reclamarToken
 end
 
 == Paso INICIO (primer método REST) ==
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Iniciar(externalId, refPaso1)
 ORQ -> PSEC ++ : iniciar(cmd) -- REST fuera de tx
@@ -74,9 +74,9 @@ return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue
 
 == Paso CONFIRMACION (segundo método REST) y finalización ==
-CONT -> ORQ ++ : ejecutarPaso(sagaId)
-ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
+CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
 return orden
+CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Confirmar(refInicio)
 ORQ -> PSEC ++ : confirmar(cmd) -- REST fuera de tx
@@ -94,9 +94,10 @@ group Transacción única: checkpoint del paso
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Sin recarga dentro de la tx: si otro actor escribió con el
-    REST en vuelo, guardar falla por version
-    (ConcurrenciaOptimistaException) y el pod se retira.
+    Guardar lleva la version de la carga hecha por CONT antes del
+    REST: si otro actor escribió con el REST en vuelo, guardar
+    falla por version (ConcurrenciaOptimistaException) y el pod se
+    retira.
   end note
 end
 return Finalizada(FINALIZADA_OK)
@@ -107,8 +108,9 @@ deactivate TRAB
 note over ORQ, PSEC
   Ante ExcepcionServicioExterno en cualquiera de los dos métodos:
   se propaga fuera de tx; ServicioContinuarSaga.reclamarYEjecutar()
-  la atrapa y llama a programarReintento (backoff 1..180 min,
-  indefinido) — ver 07-error-ticket-soporte. Nunca se cancela ni
-  compensa: nace tras el punto de no retorno de la principal.
+  la atrapa y programa el reintento sobre la MISMA orden cargada
+  arriba (backoff 1..180 min, indefinido) — ver
+  07-error-ticket-soporte. Nunca se cancela ni compensa: nace tras
+  el punto de no retorno de la principal.
 end note
 @enduml

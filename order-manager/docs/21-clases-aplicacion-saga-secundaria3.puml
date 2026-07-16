@@ -12,10 +12,11 @@ class ServicioSagaSecundaria3 <<@Service>> {
   -lease : Duration
   -puerto : PuertoSagaSecundaria3
   +tipo() : TipoSaga  «SECUNDARIA3»
-  +ejecutarPaso(id) : SenalPaso
+  +ejecutarPaso(orden) : SenalPaso
 }
 note right of ServicioSagaSecundaria3
-  Un único paso: UNA única carga (comandoActual) + puerto.ejecutar
+  Un único paso: recibe el agregado YA CARGADO por
+  ServicioContinuarSaga (ver 17); comandoActual() + puerto.ejecutar
   (REST fuera de tx); la tx guarda esa misma instancia sin recargar:
   aplicarYAvanzar + orden.finalizar(FINALIZADA_OK) directo, sin
   comprobar terminada() (el único paso siempre termina la saga); si
