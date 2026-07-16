@@ -1,63 +1,81 @@
 @startuml 24-clases-infraestructura-saga
-title Infraestructura — el puente sagas <-> gestor (infraestructure.ordermanager.saga)
+title Infraestructura — el resto del módulo: entrada Kafka, planificadores y adaptadores de lectura/soporte
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
 ' --- adaptadores de ENTRADA (invocan la capa de aplicación) ---
 class ConsumidorRespuestaSecundaria2 <<@Component>> {
-  +onRespuesta(mensaje, ...)  «@KafkaListener\ntopic respuesta.secundaria2»
+  -registro : CasoUsoRegistrarRespuestaSecundaria2
+  -mapper : ObjectMapper
+  +onRespuesta(mensaje, key)  «@KafkaListener\ntopic ordermanager.topics.respuesta-secundaria2»
 }
+note right of ConsumidorRespuestaSecundaria2
+  Consumer FINO: parsea el JSON (sagaId, mensajeId, exito, ref |
+  codigo/detalle/reintentable) y llama a
+  registro.respuestaOk(...)/respuestaError(...). No toca el
+  agregado ni RepositorioOrden directamente (regla de
+  arquitectura del CLAUDE.md).
+end note
+
 class PlanificadorLimpieza <<@Component>> {
-  +ejecutar()  «@Scheduled cron 3:00»
+  -limpieza : CasoUsoLimpiarDatosAntiguos
+  -retencion : Duration  «ordermanager.limpieza.retencion-dias, 30»
+  +ejecutar()  «@Scheduled cron ordermanager.limpieza.cron\n(0 0 3 * * *)»
 }
 class PlanificadorTicketsSoporte <<@Component>> {
-  +ejecutar()  «@Scheduled cron\n0 0 8-17/3 * * * (8,11,14,17h)»
+  -tickets : CasoUsoAbrirTicketsPendientes
+  +ejecutar()  «@Scheduled cron ordermanager.tickets.cron\n(0 0 8-17/3 * * *)»
 }
 
 ' --- capa de aplicación (ver 17-22) ---
-class "ManejadorTareasSaga" as ManejadorTareasSaga
 interface CasoUsoRegistrarRespuestaSecundaria2
 interface CasoUsoLimpiarDatosAntiguos
 interface CasoUsoAbrirTicketsPendientes
-interface PuertoColaTareas
-interface PuertoRecepcionTareas
+interface PuertoConsultaSagasSoporte
+interface PuertoSagasTicketPendiente
 interface PuertoTicketsSoporte
 interface UnidadDeTrabajo
 
-' --- adaptadores de SALIDA (implementan puertos de salida) ---
-class AdaptadorColaTareas <<@Component>> {
-  +encolar(tarea) / encolar(tarea, noAntesDe)
-  +purgarTerminadasAntesDe(corte)
+' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
+class AdaptadorConsultaSagasSoporte <<@Component>> {
+  -ordenes : OrdenJpaRepository
+  -sagas : SagaJpaRepository
+  +sagasBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nvistaTramitacion/detalle
+  -pasoPendiente(tipo, estado) : String  «tabla duplicada a propósito:\nel dominio no la expone, la lectura no carga agregados»
+  -datosManualesObligatorios(tipo, estado) / cancelable(tipo, estado)
 }
-class AdaptadorRecepcionTareas <<@Component>> {
-  +hayPendientes() : boolean
-  +reclamarSiguiente(lease) : Optional<TareaReclamada>
-  +finalizar(TareaReclamada, exito)
+class AdaptadorSagasTicketPendiente <<@Component>> {
+  -ordenes : OrdenJpaRepository
+  +buscar() : List<SagaTicketPendiente>  «delega en\nordenes.buscarTicketsPendientes()»
 }
 class AdaptadorTicketsLog <<@Component>> {
-  +abrir(sagas): log.error("TICKET-SOPORTE-...")
-  «un texto en el log = el ticket; sin id»
+  +abrir(sagas)  «log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\nun texto en el log = el ticket; sin id»
 }
 class UnidadDeTrabajoSpring <<@Component>> {
   -template : TransactionTemplate
   +enTransaccion(Supplier<T>) : T
 }
 
-' --- piezas comunes ---
-class CodecTareaSaga <<@Component>> {
-  +tipoDe(TareaSaga) : String
-  +codificar(TareaSaga) : String
-  +decodificar(String) : TareaSaga
-}
-note right of CodecTareaSaga
-  Discriminadores: INICIAR, ARRANCAR_SAGA (tipoSaga),
-  REINTENTAR (paso por nombre -> PasoSaga.de),
-  TIMEOUT_SECUNDARIA2, RESULTADO_SECUNDARIA2_OK/_ERROR.
-end note
-class "ServicioOrdenes\n(cola — ver 23)" as ServicioOrdenes
+' --- configuración y piezas comunes ---
 class ConfiguracionAplicacion <<@Configuration>> {
-  +@Bean de los servicios de aplicación\n(POJOs sin anotaciones Spring)
+  +@Bean de PoliticaReintentos y de los 4\nOrquestadorSaga + servicios de soporte/limpieza
+  «POJOs sin anotaciones Spring: la capa business\nno depende de ningún framework»
+}
+class ConfiguracionEjecucionAsincrona <<@Configuration, SchedulingConfigurer>> {
+  -tamanoPool : int  «orden.planificador.tamano-pool, 4»
+  +configureTasks(ScheduledTaskRegistrar)
+}
+note bottom of ConfiguracionEjecucionAsincrona
+  Pool pequeño compartido por los 3 @Scheduled del módulo
+  (PlanificadorContinuacion, PlanificadorTicketsSoporte,
+  PlanificadorLimpieza): una pasada lenta de uno no bloquea a los
+  demás. Ya no hay trabajador dedicado ni cola: cada orden
+  candidata se procesa en el hilo del planificador que la reclamó.
+end note
+class "ContextoCodec" as Codec <<package-private>> {
+  {static} escribir(Map<String,String>) : String
+  {static} leer(String) : Map<String,String>
 }
 
 ' Entrada -> aplicación
@@ -66,37 +84,34 @@ PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
 PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
 
 ' Puertos de salida <- adaptadores
-PuertoColaTareas <|.. AdaptadorColaTareas
-PuertoRecepcionTareas <|.. AdaptadorRecepcionTareas
+PuertoConsultaSagasSoporte <|.. AdaptadorConsultaSagasSoporte
+PuertoSagasTicketPendiente <|.. AdaptadorSagasTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
 UnidadDeTrabajo <|.. UnidadDeTrabajoSpring
-AdaptadorColaTareas --> ServicioOrdenes : encolar(JSON,\nsagaId, tipo)
-AdaptadorColaTareas --> CodecTareaSaga : codificar
-AdaptadorRecepcionTareas --> ServicioOrdenes : hayTrabajo /\nreclamar / finalizar
-AdaptadorRecepcionTareas --> CodecTareaSaga : decodificar
-
-' Layout: entrada arriba, aplicación en medio, salida abajo
-ConsumidorRespuestaSecundaria2 -[hidden]right- PlanificadorLimpieza
-PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
-CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- ManejadorTareasSaga
-CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
-PuertoColaTareas -[hidden]down- AdaptadorColaTareas
-PuertoRecepcionTareas -[hidden]down- AdaptadorRecepcionTareas
-PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
-UnidadDeTrabajo -[hidden]down- UnidadDeTrabajoSpring
-ManejadorTareasSaga -[hidden]down- PuertoColaTareas
-CasoUsoAbrirTicketsPendientes -[hidden]down- PuertoTicketsSoporte
-AdaptadorColaTareas -[hidden]right- AdaptadorRecepcionTareas
-AdaptadorRecepcionTareas -[hidden]right- AdaptadorTicketsLog
-AdaptadorTicketsLog -[hidden]right- UnidadDeTrabajoSpring
-UnidadDeTrabajoSpring -[hidden]right- ConfiguracionAplicacion
 
 note as NRegla
-  Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA (fila superior:
-  ConsumidorRespuestaSecundaria2 y los dos planificadores) solo invocan la capa
-  de aplicación (casos de uso, fila central); los adaptadores de SALIDA (fila
-  inferior) implementan los puertos de salida. El pool del gestor (GestorOrdenes/
-  TrabajadorOrdenes, ver 23) también entra por un caso de uso: reclama y finaliza
-  vía PuertoRecepcionTareas, que reimplementa AdaptadorRecepcionTareas.
+  Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA
+  (fila superior: ConsumidorRespuestaSecundaria2 y los dos
+  planificadores) solo invocan casos de uso de la capa de
+  aplicación; los adaptadores de SALIDA (AdaptadorConsultaSagas
+  Soporte, AdaptadorSagasTicketPendiente, AdaptadorTicketsLog,
+  UnidadDeTrabajoSpring) implementan puertos de salida.
+  PlanificadorContinuacion y AdaptadorRepositorioOrden (la
+  persistencia del agregado) están en 23.
 end note
+
+ConsumidorRespuestaSecundaria2 -[hidden]right- PlanificadorLimpieza
+PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
+CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- CasoUsoLimpiarDatosAntiguos
+CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
+PuertoConsultaSagasSoporte -[hidden]down- AdaptadorConsultaSagasSoporte
+PuertoSagasTicketPendiente -[hidden]down- AdaptadorSagasTicketPendiente
+PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
+UnidadDeTrabajo -[hidden]down- UnidadDeTrabajoSpring
+AdaptadorConsultaSagasSoporte -[hidden]right- AdaptadorSagasTicketPendiente
+AdaptadorSagasTicketPendiente -[hidden]right- AdaptadorTicketsLog
+AdaptadorTicketsLog -[hidden]right- UnidadDeTrabajoSpring
+UnidadDeTrabajoSpring -[hidden]right- ConfiguracionAplicacion
+ConfiguracionAplicacion -[hidden]right- ConfiguracionEjecucionAsincrona
+ConfiguracionEjecucionAsincrona -[hidden]right- Codec
 @enduml

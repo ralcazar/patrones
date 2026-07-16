@@ -1,87 +1,103 @@
 @startuml 13-maquinas-de-estado
-title Máquinas de estado: EstadoSaga, EstadoPaso y EstadoTicket (negocio) + EstadoOrden (cola de infraestructura)
+title Máquinas de estado de NEGOCIO (EstadoSaga* + ResultadoOrden) y el modelo OPERATIVO (atributos, no FSM)
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
-state "EstadoSaga (Saga) — único estado de ejecución de negocio" as MSaga {
-  state INICIADA
-  state EN_CURSO
-  state FALLIDA
-  state COMPLETADA
+state "EstadoSagaPrincipal (SagaPrincipalRoot)" as MPrincipal {
+  state INICIAL
+  state PASO1_HECHO
+  state PASO2_HECHO
+  state PASO3_HECHO
+  state PASO4_HECHO
+  state PASO5_HECHO
+  state PASO6_HECHO
+  state PASO7_HECHO
+  state TERMINADA
+  state COMPENSAR_PASO2
+  state COMPENSAR_PASO1
   state CANCELADA
 
-  [*] --> INICIADA : crear()
-  INICIADA --> EN_CURSO : iniciar()\nsolicita pasoInicial()
-  EN_CURSO --> COMPLETADA : finalizar() tras completar\nel último paso\n(fin del camino: sin eventos)
-  EN_CURSO --> FALLIDA : fallar() con motivo NO reintentable\n(paso -> BLOQUEADO_SOPORTE,\nflag ticket = PENDIENTE)\nLos reintentables NUNCA fallan la saga:\nreintentan indefinidamente
-  FALLIDA --> EN_CURSO : reanudarPorSoporte() /\nmarcarOkManual()
-  INICIADA --> CANCELADA : cancelarPorSoporte()
-  EN_CURSO --> CANCELADA : cancelarPorSoporte()\n[solo SagaPrincipalRoot y antes\ndel punto de no retorno (PASO7)]
-  FALLIDA --> CANCELADA : cancelarPorSoporte()\n[misma restricción]
-  COMPLETADA --> [*]
-  CANCELADA --> [*]
+  [*] --> INICIAL : crear(id, externalId, datoNegocio3, datoNegocio2)
+  INICIAL --> PASO1_HECHO : aplicarYAvanzar(ResultadoPaso1)
+  PASO1_HECHO --> PASO2_HECHO : aplicarYAvanzar(ResultadoPaso2)
+  PASO2_HECHO --> PASO3_HECHO : aplicarYAvanzar(ResultadoPaso3)
+  PASO3_HECHO --> PASO4_HECHO : aplicarYAvanzar(ResultadoPaso4)
+  PASO4_HECHO --> PASO5_HECHO : aplicarYAvanzar(ResultadoPaso5)
+  PASO5_HECHO --> PASO6_HECHO : aplicarYAvanzar(ResultadoPaso6)
+  PASO6_HECHO --> PASO7_HECHO : aplicarYAvanzar(ResultadoPaso7)
+  PASO7_HECHO --> TERMINADA : aplicarYAvanzar(ResultadoPaso8)\n(punto de no retorno ya superado)
+  TERMINADA --> [*] : resultadoFinal() = FINALIZADA_OK
+
+  INICIAL --> CANCELADA : cancelar(quien, motivo)
+  PASO1_HECHO --> COMPENSAR_PASO1 : cancelar(quien, motivo)
+  PASO2_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
+  PASO3_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
+  PASO4_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
+  PASO5_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
+  PASO6_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
+  COMPENSAR_PASO2 --> COMPENSAR_PASO1 : compensacionCompletada()\n(orquestador ya ejecutó\npuertoPaso2.compensar)
+  COMPENSAR_PASO1 --> CANCELADA : compensacionCompletada()\n(orquestador ya ejecutó\npuertoPaso1.compensar)
+  CANCELADA --> [*] : resultadoFinal() = FINALIZADA_COMPENSADA
+  PASO7_HECHO --> PASO7_HECHO : cancelar() lanza\nPuntoNoRetornoSuperadoException
+  COMPENSAR_PASO2 --> COMPENSAR_PASO2 : cancelar() no-op idempotente
+  COMPENSAR_PASO1 --> COMPENSAR_PASO1 : cancelar() no-op idempotente
+  CANCELADA --> CANCELADA : cancelar() no-op idempotente
+  TERMINADA --> TERMINADA : cancelar() lanza\nSagaYaCompletadaException
 }
 
-state "EstadoTicket (Saga) — marcador para el planificador de tickets" as MTicket {
-  state SIN_TICKET
-  state PENDIENTE_T as "PENDIENTE"
-  state ABIERTO
+state "EstadoSagaSecundaria1 (SagaSecundaria1Root)" as MSec1 {
+  state INICIAL2 as "INICIAL"
+  state INICIO_HECHO
+  state TERMINADA2 as "TERMINADA"
 
-  [*] --> SIN_TICKET
-  SIN_TICKET --> PENDIENTE_T : fallo tras consumir la escalera\nde backoff (180 min) o fallo\nno reintentable / compensación fallida
-  PENDIENTE_T --> ABIERTO : barrido @Scheduled (8-17h, cada 3h):\nUN ticket en el log para todas;\nguarda ticketAbiertoEn\n(sin id: no se conoce)
-  PENDIENTE_T --> SIN_TICKET : completar() / marcarOkManual():\nel problema se curó antes del barrido
-  ABIERTO --> SIN_TICKET : completar() / marcarOkManual():\nel problema quedó resuelto
+  [*] --> INICIAL2 : crear(id, ArranqueSecundaria1)
+  INICIAL2 --> INICIO_HECHO : aplicarYAvanzar(Iniciada(refInicio))
+  INICIO_HECHO --> TERMINADA2 : aplicarYAvanzar(Confirmada(refConfirmacion))
+  TERMINADA2 --> [*] : resultadoFinal() = FINALIZADA_OK
 }
 
-state "EstadoPaso (EjecucionPaso)" as MPaso {
-  state PENDIENTE
-  state SOLICITADO
-  state ESPERANDO_REINTENTO
-  state BLOQUEADO_SOPORTE
-  state COMPLETADO
-  state COMPLETADO_MANUAL
-  state CANCELADO
-  state COMPENSADO
+state "EstadoSagaSecundaria2 (SagaSecundaria2Root)" as MSec2 {
+  state INICIAL3 as "INICIAL"
+  state ESPERANDO_RESPUESTA
+  state TERMINADA3 as "TERMINADA"
 
-  [*] --> PENDIENTE : EjecucionPaso.nuevo()
-  PENDIENTE --> SOLICITADO : solicitar()\nDecision.Ejecutar(comando)
-  SOLICITADO --> COMPLETADO : completar(resultado)\n(borra el flag de ticket)
-  SOLICITADO --> ESPERANDO_REINTENTO : fallar(motivo) [reintentable]\nProgramarReintento(1,3,5,10,20,\n45,90,180 min; después siempre 180,\nsin límite de intentos)
-  SOLICITADO --> BLOQUEADO_SOPORTE : fallar(motivo) [NO reintentable]\nsaga -> FALLIDA, ticket PENDIENTE
-  ESPERANDO_REINTENTO --> SOLICITADO : reintentar()\nal vencer el backoff
-  BLOQUEADO_SOPORTE --> SOLICITADO : reanudarPorSoporte()\nresetea intentos
-  BLOQUEADO_SOPORTE --> COMPLETADO_MANUAL : marcarOkManual()\n[con datos si el paso los exige]
-  SOLICITADO --> CANCELADO : cancelación de la saga
-  ESPERANDO_REINTENTO --> CANCELADO : cancelación de la saga
-  BLOQUEADO_SOPORTE --> CANCELADO : cancelación de la saga
-  COMPLETADO --> COMPENSADO : compensacionCompletada()\n[solo PASO1 y PASO2\nal cancelar la principal]
-  COMPLETADO --> BLOQUEADO_SOPORTE : compensacionFallida()\n[inconsistencia real:\nticket PENDIENTE, sin reintento]
-
-  COMPLETADO --> [*]
-  COMPLETADO_MANUAL --> [*]
-  CANCELADO --> [*]
-  COMPENSADO --> [*]
+  [*] --> INICIAL3 : crear(id, ArranqueSecundaria2)
+  INICIAL3 --> ESPERANDO_RESPUESTA : solicitudEnviada()\n(tras puerto.solicitar REST)
+  ESPERANDO_RESPUESTA --> TERMINADA3 : respuestaRecibida(ref)\n(evento Kafka o conciliación\nDisponible(ref))
+  ESPERANDO_RESPUESTA --> INICIAL3 : volverASolicitar()\n(evento Kafka de error o\nconciliación FalloRegistrado)
+  TERMINADA3 --> [*] : resultadoFinal() = FINALIZADA_OK
 }
 
-state "EstadoOrden (Orden, patrón lease) — estado interno de la cola: INFRAESTRUCTURA, no dominio" as MOrden {
-  state PENDIENTE_O as "PENDIENTE"
-  state EN_PROCESO
-  state COMPLETADA_O as "COMPLETADA"
-  state FALLIDA_O as "FALLIDA"
+state "EstadoSagaSecundaria3 (SagaSecundaria3Root)" as MSec3 {
+  state INICIAL4 as "INICIAL"
+  state TERMINADA4 as "TERMINADA"
 
-  [*] --> PENDIENTE_O : encolar()\n[elegible cuando ejecutar_desde <= now]
-  PENDIENTE_O --> EN_PROCESO : reclamar()\nUPDATE condicional: token + reclamada_en
-  EN_PROCESO --> EN_PROCESO : lease expirado\n(reclamada_en < limiteLease):\nre-reclamada por otro trabajador
-  EN_PROCESO --> COMPLETADA_O : finalizar(ok)\n[token coincide]
-  EN_PROCESO --> FALLIDA_O : finalizar(error)\n[token coincide]
-  COMPLETADA_O --> [*]
-  FALLIDA_O --> [*]
+  [*] --> INICIAL4 : crear(id, ArranqueSecundaria3)
+  INICIAL4 --> TERMINADA4 : aplicarYAvanzar(Ejecutada(refEjecucion))
+  TERMINADA4 --> [*] : resultadoFinal() = FINALIZADA_OK
 }
 
-note bottom of MOrden
-  La Orden ya no es un concepto de dominio: es la cola de tareas
-  durable del GestorOrdenes (paquete infraestructure.ordermanager.cola).
+state "ResultadoOrden (OrdenRoot.resultado) — estado OPERATIVO final, no de negocio" as MResultado {
+  state VIVA as "null (viva)"
+  state FINALIZADA_OK
+  state FINALIZADA_COMPENSADA
+
+  [*] --> VIVA : OrdenRoot.nueva(saga, ahora)
+  VIVA --> FINALIZADA_OK : finalizar(saga.resultadoFinal())\n[saga.terminada() con FSM normal]
+  VIVA --> FINALIZADA_COMPENSADA : finalizar(saga.resultadoFinal())\n[SagaPrincipalRoot en CANCELADA]
+  FINALIZADA_OK --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
+  FINALIZADA_COMPENSADA --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
+}
+
+note bottom of MResultado
+  intentos, proximoReintentoEn, tokenTrabajador/tokenExpiraEn (lease)
+  y ticketAbiertoEn NO son una FSM: son atributos operativos de
+  OrdenRoot que cambian con cada método (programarReintento(),
+  resetearIntentos(), asignarToken()/renovarLease()/liberarToken(),
+  marcarTicketAbierto()) independientemente del estado de negocio
+  de la saga que contiene. Ya no existen EstadoTicket ni EstadoPaso:
+  el ticket es ticketAbiertoEn (Instant o null) y el "paso pendiente"
+  se deriva de (tipo, estado) sin un enum de paso propio.
 end note
 
 @enduml

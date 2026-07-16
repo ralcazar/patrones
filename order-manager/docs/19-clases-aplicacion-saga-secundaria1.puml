@@ -4,16 +4,28 @@ title Aplicación — saga secundaria 1: ServicioSagaSecundaria1 y sus puertos
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "ServicioSagaBase<PasoSagaSecundaria1,\nSagaSecundaria1Root> (ver 17)" as Base <<@Service>>
+interface "OrquestadorSaga (ver 17)" as Base
 
 class ServicioSagaSecundaria1 <<@Service>> {
-  #ejecutar: INICIO y CONFIRMACION síncronos,\nreentran con el resultado (checkpoint por paso)
+  -repo : RepositorioOrden
+  -tx : UnidadDeTrabajo
+  -lease : Duration
+  -puerto : PuertoSagaSecundaria1
+  +tipo() : TipoSaga  «SECUNDARIA1»
+  +ejecutarPaso(id) : SenalPaso
+  -ejecutarComando(ComandoPaso) : ResultadoPasoSecundaria1  «switch: Iniciar->puerto.iniciar,\nConfirmar->puerto.confirmar»
 }
+note right of ServicioSagaSecundaria1
+  ejecutarPaso: 1 cargar (comandoActual) + REST fuera de tx + 1
+  cargar dentro de la tx (aplicarYAvanzar; si terminada() ->
+  finalizar(FINALIZADA_OK), si no -> resetearIntentos()+
+  renovarLease()). Sin comprobación de estado de compensación (a
+  diferencia de la principal): nunca se cancela ni compensa.
+end note
 
 package "puerto.salida" {
-  interface RepositorioSagaSecundaria1 <<@Repository>> {
-    +crear / cargar / guardar
-    +purgarFinalizadasAntesDe(corte)
+  interface RepositorioOrden <<@Repository>> {
+    «ver 17: único puerto de escritura del agregado»
   }
   interface PuertoSagaSecundaria1 {
     +iniciar(cmd) : Iniciada(refInicio)
@@ -22,7 +34,7 @@ package "puerto.salida" {
   }
 }
 
-Base <|-down- ServicioSagaSecundaria1
-ServicioSagaSecundaria1 --> RepositorioSagaSecundaria1
-ServicioSagaSecundaria1 --> PuertoSagaSecundaria1 : REST síncrono\n(fuera de la tx)
+Base <|.. ServicioSagaSecundaria1
+ServicioSagaSecundaria1 --> RepositorioOrden
+ServicioSagaSecundaria1 --> PuertoSagaSecundaria1 : REST síncrono (fuera de la tx)
 @enduml

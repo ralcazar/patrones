@@ -4,19 +4,28 @@ title Dominio — las 3 sagas secundarias (dominio.sagasecundaria1/2/3)
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "Saga<P>\n(dominio.comun — ver 14)" as Saga {
-  ciclo de vida común: iniciar / completar /
-  fallar / reintentos / soporte / tickets
+abstract class "SagaRoot<E>\n(dominio.comun — ver 14)" as SagaRoot {
+  ciclo de vida común: comandoActual / aplicarYAvanzar /
+  terminada / resultadoFinal / marcarPasoActualOkManual
+  Sin version propia: la controla OrdenRoot (ver 14).
 }
 
 package "dominio.sagasecundaria1" {
   class SagaSecundaria1Root <<@AggregateRoot>> {
-    -refPaso1 / refInicio / refConfirmacion
-    +{static} crear(id, ArranqueSecundaria1)
+    -refPaso1 : RefPaso1  «final»
+    -refInicio : RefInicio
+    -refConfirmacion : RefConfirmacion
+    +{static} crear(id, ArranqueSecundaria1) : SagaSecundaria1Root
+    +{static} rehidratar(id, externalId, refPaso1,\nrefInicio, refConfirmacion, estado, auditoria)
+    +comandoActual() : ComandoPasoSecundaria1
+    +aplicarYAvanzar(ResultadoPasoSecundaria1)
+    +terminada() : boolean  «estado == TERMINADA»
+    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
   }
-  enum PasoSagaSecundaria1 {
-    INICIO
-    CONFIRMACION
+  enum EstadoSagaSecundaria1 {
+    INICIAL
+    INICIO_HECHO
+    TERMINADA
   }
   interface ComandoPasoSecundaria1 <<sealed>> {
     Iniciar(externalId, refPaso1)
@@ -27,19 +36,31 @@ package "dominio.sagasecundaria1" {
     Confirmada(refConfirmacion)
   }
   note bottom of SagaSecundaria1Root
-    Dos REST síncronos encadenados;
-    marcar-OK de INICIO exige aportar
-    refInicio (lo consume CONFIRMACION).
+    Dos REST síncronos encadenados: INICIO -> CONFIRMACION.
+    marcarPasoActualOkManual de INICIO exige aportar refInicio
+    (lo consume CONFIRMACION); CONFIRMACION no exige datos (nadie
+    consume su resultado tras ella).
   end note
 }
 
 package "dominio.sagasecundaria2" {
   class SagaSecundaria2Root <<@AggregateRoot>> {
-    -refPaso5 / refRespuesta
-    +{static} crear(id, ArranqueSecundaria2)
+    -refPaso5 : RefPaso5  «final»
+    -refRespuesta : RefRespuesta
+    +{static} crear(id, ArranqueSecundaria2) : SagaSecundaria2Root
+    +{static} rehidratar(id, externalId, refPaso5,\nrefRespuesta, estado, auditoria)
+    +comandoActual() : ComandoPasoSecundaria2  «solo si INICIAL»
+    +aplicarYAvanzar(ResultadoPasoSecundaria2.Respuesta)  «delega en respuestaRecibida()»
+    +terminada() : boolean  «estado == TERMINADA»
+    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
+    +solicitudEnviada()  «INICIAL -> ESPERANDO_RESPUESTA»
+    +respuestaRecibida(RefRespuesta)  «-> TERMINADA»
+    +volverASolicitar()  «-> INICIAL»
   }
-  enum PasoSagaSecundaria2 {
-    SOLICITUD
+  enum EstadoSagaSecundaria2 {
+    INICIAL
+    ESPERANDO_RESPUESTA
+    TERMINADA
   }
   interface ComandoPasoSecundaria2 <<sealed>> {
     Solicitar(externalId, refPaso5)
@@ -48,20 +69,27 @@ package "dominio.sagasecundaria2" {
     Respuesta(refRespuesta)
   }
   note bottom of SagaSecundaria2Root
-    Un paso SOLICITUD: REST cuya respuesta
-    llega por Kafka. El agregado no sabe nada
-    del timeout de 24h ni de la conciliación:
-    los orquesta la capa de aplicación (ver 20).
+    Un único paso SOLICITUD: la solicitud es REST, la respuesta
+    llega a posteriori como evento Kafka (puede tardar). El
+    agregado no sabe nada del aparcado de 3h ni de la conciliación
+    REST: los orquesta la capa de aplicación (ver 20).
   end note
 }
 
 package "dominio.sagasecundaria3" {
   class SagaSecundaria3Root <<@AggregateRoot>> {
-    -refPaso7 / refEjecucion
-    +{static} crear(id, ArranqueSecundaria3)
+    -refPaso7 : RefPaso7  «final»
+    -refEjecucion : RefEjecucion
+    +{static} crear(id, ArranqueSecundaria3) : SagaSecundaria3Root
+    +{static} rehidratar(id, externalId, refPaso7,\nrefEjecucion, estado, auditoria)
+    +comandoActual() : ComandoPasoSecundaria3  «solo si INICIAL»
+    +aplicarYAvanzar(ResultadoPasoSecundaria3.Ejecutada)  «-> TERMINADA directo»
+    +terminada() : boolean  «estado == TERMINADA»
+    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
   }
-  enum PasoSagaSecundaria3 {
-    EJECUCION
+  enum EstadoSagaSecundaria3 {
+    INICIAL
+    TERMINADA
   }
   interface ComandoPasoSecundaria3 <<sealed>> {
     Ejecutar(externalId, refPaso7)
@@ -70,13 +98,14 @@ package "dominio.sagasecundaria3" {
     Ejecutada(refEjecucion)
   }
   note bottom of SagaSecundaria3Root
-    Una única llamada REST y COMPLETADA.
+    Una única llamada REST: aplicarYAvanzar() deja el estado en
+    TERMINADA directamente (sin paso intermedio).
   end note
 }
 
-Saga <|-down- SagaSecundaria1Root
-Saga <|-down- SagaSecundaria2Root
-Saga <|-down- SagaSecundaria3Root
+SagaRoot <|-down- SagaSecundaria1Root
+SagaRoot <|-down- SagaSecundaria2Root
+SagaRoot <|-down- SagaSecundaria3Root
 
 SagaSecundaria1Root ..> ComandoPasoSecundaria1
 SagaSecundaria1Root ..> ResultadoPasoSecundaria1
@@ -86,8 +115,11 @@ SagaSecundaria3Root ..> ComandoPasoSecundaria3
 SagaSecundaria3Root ..> ResultadoPasoSecundaria3
 
 note as NNace
-  Las 3 nacen cuando la principal completa
-  (tras el punto de no retorno): nunca se
-  cancelan ni compensan.
+  Las 3 nacen cuando la principal alcanza TERMINADA (después del
+  punto de no retorno), una por cada ContextoArranque de
+  contextosArranque() (ver 03 y 15): nunca se cancelan ni
+  compensan. Cada una es su propio OrdenRoot (ver 14): no hay FK
+  ni relación de objetos con la principal, solo el externalId
+  compartido.
 end note
 @enduml

@@ -1,132 +1,186 @@
 @startuml 05-saga-secundaria2
-title Saga SECUNDARIA2 de principio a fin: solicitud REST, respuesta diferida por Kafka, timeout de 24h con conciliación
+title Saga SECUNDARIA2 de principio a fin: solicitud REST, respuesta diferida por Kafka, aparcado de 3h con conciliación
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
-  participant "ConsumidorRespuesta\nSecundaria2 (Kafka)" as CONS
+  participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "ConsumidorRespuesta\nSecundaria2 (@KafkaListener)" as CONS
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
-  participant "ManejadorTareasSaga" as MANEJ
-  participant "ServicioSagaSecundaria2" as SSEC
+  participant "ServicioContinuarSaga" as CONT
+  participant "ServicioSagaSecundaria2\n(OrquestadorSaga)" as ORQ
   participant "ServicioRegistrarRespuesta\nSecundaria2" as SREG
 end box
 box "Dominio" #FBF5EF
+  participant "OrdenRoot" as ORDEN
   participant "SagaSecundaria2Root" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaSecundaria2\n(BBDD sagas)" as REPOS
+  participant "AdaptadorRepositorioOrden" as REPO
   participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
-  participant "Tabla ordenes\n(AdaptadorColaTareas /\nAdaptadorRecepcionTareas)" as ORD
   participant "PuertoSagaSecundaria2\n(REST de solicitud)" as PSOL
-  participant "PuertoConciliacion\nSecundaria2 (REST)" as PCON
+  participant "PuertoConciliacionSecundaria2\n(REST)" as PCON
 end box
 
-== Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
-TRAB -> DESP ++ : reclamarSiguiente(lease)
-DESP -> ORD ++ : reclamar orden PENDIENTE (lease)
-return Orden (ARRANCAR_SAGA, tipo SECUNDARIA2)
-return TareaReclamada
-TRAB -> DESP ++ : procesar(tareaReclamada)
-DESP -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
-MANEJ -> SSEC ++ : continuar(sagaId)
-group Transacción
-  SSEC -> REPOS ++ : cargar(id)
-  return SagaSecundaria2Root INICIADA
-  SSEC -> SAGA ++ : continuar() -> iniciar()
-  SAGA -> SAGA : estado = EN_CURSO\nSOLICITUD -> SOLICITADO
-  return [Decision.Ejecutar(SOLICITUD)]
-  SSEC -> ORD ++ : encolar(TimeoutSagaSecundaria2,\nejecutar_desde = ahora + 24 h)
+note over PLAN, CONT
+  La hija SECUNDARIA2 nació en 03 con proximoReintentoEn = ahora:
+  el planificador la recoge (reclamo de token omitido aquí, igual
+  que en 02/04).
+end note
+
+== INICIAL: solicitar y aparcar 3h a la espera del evento Kafka ==
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).estado()
+return INICIAL
+ORQ -> ORQ : solicitar(sagaId, saga)
+ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+return ComandoPasoSecundaria2.Solicitar(externalId, refPaso5)
+ORQ -> PSOL ++ : solicitar(sagaId, cmd) -- REST fuera de tx\n(sagaId viaja como clave de correlación)
+return
+group Transacción única
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).solicitudEnviada()
+  SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
   return
-  SSEC -> REPOS ++ : guardar(saga)
+  ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
+  ORDEN -> ORDEN : proximoReintentoEn = ahora + 3h; liberarToken()
+  return
+  ORQ -> REPO ++ : guardar(orden)
   return
 end
-SSEC -> PSOL ++ : solicitar(sagaId,\nComandoPasoSecundaria2.Solicitar) — REST,\nfuera de la tx (sagaId como correlación)
-return
-return
-return
-return
-TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
-DESP -> ORD ++ : finalizar(orden, COMPLETADA)
-return
-return
+return Aparcar(3h)
+CONT -> CONT : switch(señal): Aparcar -> return (fin del bucle)
 
-== El servicio externo responde a posteriori (puede tardar) por Kafka ==
-[o-> CONS : evento en topic respuesta.secundaria2
+== El servicio externo responde a posteriori (puede tardar) por Kafka: éxito ==
+[o-> CONS : evento en topic respuesta.secundaria2 (JSON)
 activate CONS
-CONS -> SREG ++ : respuestaOk(sagaId, ref, mensajeId)\n(el adaptador de entrada no toca la cola:\npasa por la capa de aplicación)
-SREG -> ORD ++ : encolar(TareaSaga.ResultadoSagaSecundaria2Ok\n(sagaId, ref, mensajeId))
-return
+CONS -> CONS : parsear sagaId, mensajeId, ref
+CONS -> SREG ++ : respuestaOk(sagaId, RefRespuesta(ref), mensajeId)
+SREG -> DEDUP ++ : yaProcesado(MensajeId.externo(mensajeId))
+return no
+group Transacción
+  SREG -> DEDUP ++ : registrar(msgId)
+  return
+  SREG -> REPO ++ : cargar(sagaId)
+  return orden
+  SREG -> SAGA ++ : (orden.saga()).respuestaRecibida(ref)
+  SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
+  return
+  SREG -> ORDEN ++ : despertar(Instant.now())
+  ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
+  return
+  SREG -> REPO ++ : guardar(orden)
+  return
+end
 return
 [<-o CONS : ack del offset
 deactivate CONS
 
-== El pool procesa el resultado: la saga finaliza ==
-TRAB -> DESP ++ : reclamarSiguiente(lease)
-DESP -> ORD ++ : reclamar orden (RESULTADO_SECUNDARIA2_OK)
-return Orden
-return TareaReclamada
-TRAB -> DESP ++ : procesar(tareaReclamada)
-DESP -> MANEJ ++ : procesar(tarea)
-MANEJ -> SSEC ++ : pasoCompletado(id, SOLICITUD,\nRespuesta(ref), mensajeId externo)
-SSEC -> DEDUP ++ : yaProcesado(mensajeId)?
+note over SREG
+  respuestaOk deja la saga en TERMINADA pero NO llama a
+  orden.finalizar(): el cierre operativo lo hace el mismo
+  orquestador en su siguiente pasada (rama TERMINADA de abajo),
+  manteniendo un único punto que decide cuándo la orden acaba.
+end note
+
+== El planificador recoge la orden despierta: cierre operativo ==
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).estado()
+return TERMINADA
+ORQ -> ORQ : finalizarYa(sagaId)
+group Transacción única
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  return FINALIZADA_OK
+  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  return
+  ORQ -> REPO ++ : guardar(orden)
+  return
+end
+return Finalizada(FINALIZADA_OK)
+CONT -> CONT : switch(señal): Finalizada -> return
+
+== Si vence el aparcado de 3h sin respuesta: conciliación ==
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).estado()
+return ESPERANDO_RESPUESTA
+ORQ -> ORQ : conciliar(sagaId, saga)
+ORQ -> PCON ++ : consultar(sagaId, externalId) -- REST fuera de tx
+return Disponible(ref) | SinResultado() | FalloRegistrado(motivo)
+alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
+  group Transacción
+    ORQ -> REPO ++ : cargar(sagaId)
+    return orden
+    ORQ -> SAGA ++ : (orden.saga()).respuestaRecibida(ref)
+    return estado = TERMINADA
+    ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+    return FINALIZADA_OK
+    ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+    return
+    ORQ -> REPO ++ : guardar(orden)
+    return
+  end
+  return Finalizada(FINALIZADA_OK)
+else SinResultado(): sigue sin respuesta
+  group Transacción
+    ORQ -> REPO ++ : cargar(sagaId)
+    return orden
+    ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
+    return
+    ORQ -> REPO ++ : guardar(orden)
+    return
+  end
+  return Aparcar(3h) (nueva ventana de 3h)
+else FalloRegistrado(motivo): el destino terminó con error
+  ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
+  deactivate ORQ
+  note right of CONT
+    ServicioContinuarSaga.continuar() la atrapa como
+    RuntimeException y llama a programarReintento
+    (backoff 1..180 min) — ver 07.
+  end note
+end
+
+== Kafka responde con error: vuelve a solicitar ==
+[o-> CONS : evento en topic respuesta.secundaria2 (error)
+activate CONS
+CONS -> SREG ++ : respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)
+SREG -> DEDUP ++ : yaProcesado(msgId)
 return no
 group Transacción
-  SSEC -> DEDUP ++ : registrar(mensajeId)
+  SREG -> DEDUP ++ : registrar(msgId)
   return
-  SSEC -> REPOS ++ : cargar(id)
-  return saga
-  SSEC -> SAGA ++ : completar(SOLICITUD, Respuesta(ref))
-  SAGA -> SAGA : finalizar():\nestado = COMPLETADA\n(y borra el flag de ticket si lo había)
-  return [] (la saga termina aquí:\nno se publica ningún evento)
-  SSEC -> REPOS ++ : guardar(saga)
+  SREG -> REPO ++ : cargar(sagaId)
+  return orden
+  SREG -> SAGA ++ : (orden.saga()).volverASolicitar()
+  SAGA -> SAGA : estado = INICIAL
+  return
+  SREG -> ORDEN ++ : programarReintento(politica, Instant.now())
+  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera; liberarToken()
+  return
+  SREG -> REPO ++ : guardar(orden)
   return
 end
 return
-return
-return
-TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
-DESP -> ORD ++ : finalizar(orden, COMPLETADA)
-return
-return
+[<-o CONS : ack del offset
+deactivate CONS
 
-== Cuando el timeout vence (24 h después): conciliación ==
-TRAB -> DESP ++ : reclamarSiguiente(lease)
-DESP -> ORD ++ : reclamar orden diferida (TIMEOUT_SECUNDARIA2)
-return Orden
-return TareaReclamada
-TRAB -> DESP ++ : procesar(tareaReclamada)
-DESP -> MANEJ ++ : procesar(tarea)
-MANEJ -> SSEC ++ : timeoutVencido(id)
-SSEC -> REPOS ++ : cargar(id) — guard barato, fuera de tx
-return saga
-alt SOLICITUD ya no está SOLICITADO (la respuesta llegó entre medias)
-  SSEC -> SSEC : timeout obsoleto: no-op
-else sigue SOLICITADO: preguntar al servicio de conciliación
-  SSEC -> PCON ++ : consultar(sagaId, externalId) — REST
-  return Disponible(ref) / FalloRegistrado(motivo) / SinResultado
-  alt Disponible(ref): el resultado existía (el evento se perdió o va tarde)
-    SSEC -> SSEC : pasoCompletado(id, SOLICITUD, Respuesta(ref))\n(misma tx y guards que el flujo Kafka)
-  else FalloRegistrado(motivo): el destino terminó con error
-    SSEC -> SSEC : pasoFallido(id, SOLICITUD, motivo)\n(backoff si es reintentable — ver 07)
-  else SinResultado (o la propia conciliación falló)
-    group Transacción
-      SSEC -> ORD ++ : encolar(TimeoutSagaSecundaria2,\nejecutar_desde = ahora + 24 h)\n(nueva ventana de espera)
-      return
-    end
-  end
-end
-return
-return
-return
-TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
-DESP -> ORD ++ : finalizar(orden, COMPLETADA)
-return
-return
-note over SAGA, ORD
-  El timeout nunca da la respuesta por perdida: cada 24 h concilia y,
-  si no hay resultado, abre otra ventana de 24 h. El timeout se encola
-  en la MISMA tx que deja SOLICITADO: si el proceso muere tras el commit
-  y antes del REST, la conciliación/lease lo autorecupera.
+note over SAGA, PCON
+  El aparcado nunca da la respuesta por perdida: cada 3h concilia
+  y, si no hay resultado, abre otra ventana de 3h. Nunca se cancela
+  ni compensa: nace tras el punto de no retorno de la principal.
 end note
 @enduml

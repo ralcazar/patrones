@@ -18,6 +18,15 @@ Guía para trabajar en este repositorio.
   en un flujo natural. Mostrar líneas de activación (`activate`/`deactivate`)
   para poder seguir el flujo.
 - Mantener también al día el índice `order-manager/docs/README.md`.
+- Las llamadas que aparecen en un diagrama de secuencia deben corresponder a
+  llamadas que existen realmente en el código (mismo método, misma clase/
+  interfaz). No se inventan ni se resumen pasos que el código no tiene.
+- En cada llamada se muestran solo los parámetros significativos para explicar
+  el flujo (los que cambian el comportamiento o el estado relevante), no la
+  firma completa si tiene detalles irrelevantes para el lector del diagrama.
+- No comprimir el flujo: el diagrama debe quedar muy cercano al código real
+  (mismo número de pasos, mismas transacciones, mismas condiciones), no una
+  versión simplificada o idealizada de lo que hace el código.
 
 ## Restricción de arquitectura: entrada → aplicación → salida
 

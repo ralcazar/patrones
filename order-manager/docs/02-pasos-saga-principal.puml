@@ -1,62 +1,93 @@
 @startuml 02-pasos-saga-principal
-title Saga principal: todos los pasos (PASO1 -> ... -> PASO8) con checkpoint por paso
+title Saga principal: reclamo de token + bucle PASO1..PASO8, REST fuera de tx, checkpoint transaccional por paso
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
+  participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
-  participant "ManejadorTareasSaga" as MANEJ
-  participant "ServicioSagaPrincipal" as SVC
+  participant "ServicioContinuarSaga" as CONT
+  participant "ServicioSagaPrincipal\n(OrquestadorSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
+  participant "OrdenRoot" as ORDEN
   participant "SagaPrincipalRoot" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
-  participant "PuertoPaso1 .. PuertoPaso8\n(REST a los servicios externos)" as PASOS
+  participant "AdaptadorRepositorioOrden" as REPO
+  participant "PuertoPaso1 .. PuertoPaso8\n(según el paso actual)" as PASOS
 end box
 
-note over TRAB, SVC
-  Contexto: la cadena completa corre dentro del procesar() de UNA orden
-  INICIAR (ver 01). El lease del GestorOrdenes debe superar su peor caso.
+note over PLAN, CONT
+  Continuación de 01: PlanificadorContinuacion ya localizó la orden como
+  candidata y llamó a continuarCandidatas(limite), que invoca
+  continuar(sagaId, PRINCIPAL) para cada una.
 end note
 
-TRAB -> DESP ++ : procesar(tareaReclamada)\n(viene de 01: la orden INICIAR)
-DESP -> MANEJ ++ : procesar(tarea)
-MANEJ -> SVC ++ : iniciarOContinuar(...): PASO1 quedó\nSOLICITADO y despachar() arranca la cadena
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, PRINCIPAL)
 
-loop para cada paso N = 1..8
-  SVC -> PASOS ++ : puertoPasoN.ejecutar(\nComandoPasoPrincipal.EjecutarPasoN)
-  PASOS -> PASOS : llamada REST al servicio del paso N\n(idempotente por externalId)
-  return ResultadoPasoN
+group Transacción: reclamarToken (ConcurrenciaOptimistaException -> return, otro pod la tiene)
+  CONT -> REPO ++ : cargar(sagaId)
+  return orden
+  CONT -> ORDEN ++ : estaViva()
+  return true
+  CONT -> ORDEN ++ : tieneTokenVigente(ahora)
+  return false
+  CONT -> ORDEN ++ : asignarToken(UUID.randomUUID(), lease, ahora)
+  return tokenExpiraEn = ahora + lease
+  CONT -> REPO ++ : guardar(orden)
+  return
+end
 
-  SVC -> SVC : pasoCompletado(id, PASO_N, resultado)
-  group Transacción (checkpoint del paso)
-    SVC -> REPO ++ : cargar(id)
-    return saga (PASO_N SOLICITADO)
-    SVC -> SAGA ++ : completar(PASO_N, resultado)
-    SAGA -> SAGA : guard: ignora duplicados y tardíos\n(si el paso no está SOLICITADO, no-op)
-    SAGA -> SAGA : aplicar resultado al contexto\n+ transicionTras(PASO_N)
-    return N < 8: [Ejecutar(PASO_N+1)]\n(PASO_N+1 -> SOLICITADO)
-    SVC -> REPO ++ : guardar(saga)\n(versión optimista)
+loop while (true) hasta Aparcar / Finalizada / excepción
+  CONT -> ORQ ++ : ejecutarPaso(sagaId)
+
+  ORQ -> REPO ++ : cargar(sagaId)  [#1: leer estado para decidir\nnormal vs. compensación]
+  return orden
+  ORQ -> SAGA ++ : orden.saga().estado()
+  return PASOn_HECHO (no está en COMPENSAR_*/CANCELADA)
+  ORQ -> ORQ : ejecutarPasoNormal(sagaId)
+  ORQ -> REPO ++ : cargar(sagaId)  [#2: releer para comandoActual()]
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+  return ComandoPasoPrincipal.EjecutarPasoN(...)
+
+  == REST fuera de tx ==
+  ORQ -> PASOS ++ : puertoPasoN.ejecutar(EjecutarPasoN(...))
+  alt éxito
+    return ResultadoPasoN(ref)
+  else falla
+    PASOS --> ORQ : lanza ExcepcionServicioExterno(motivo)
+    note right of ORQ
+      Se propaga sin capturar: ServicioContinuarSaga.continuar()
+      la atrapa como RuntimeException y llama a
+      programarReintento(sagaId) — ver 07-error-ticket-soporte.
+    end note
+  end
+
+  group Transacción única: checkpoint del paso (negocio + ejecución, un solo guardar)
+    ORQ -> REPO ++ : cargar(sagaId)  [#3: dentro de la tx]
+    return orden
+    ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(resultado)
+    SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
+    return
+    ORQ -> SAGA ++ : (orden.saga()).terminada()
+    return false (PASO1_HECHO .. PASO7_HECHO)
+    ORQ -> ORDEN ++ : resetearIntentos()
+    return intentos=0, ticketAbiertoEn=null
+    ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+    return tokenExpiraEn = ahora + lease
+    ORQ -> REPO ++ : guardar(orden)
     return
   end
+  return HayMasTrabajo()
+  CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle
 end
 
 note over SAGA
-  Al completar PASO7 se supera el punto de no retorno:
-  la saga deja de ser cancelable.
-  Al completar PASO8 no hay paso siguiente:
-  finalización — ver 03-finalizacion-saga-principal.
+  Al completar PASO7, terminada() sigue en false pero la saga ya
+  superó el punto de no retorno: deja de ser cancelable (ver 08).
+  Al completar PASO8, terminada() pasa a true: la rama Finalizada()
+  la cubre 03-finalizacion-saga-principal (misma tx de checkpoint).
 end note
-
-note over SVC, PASOS
-  Si un puerto lanza ExcepcionServicioExterno: backoff 1..180 min con
-  reintento indefinido o, si no es reintentable, saga FALLIDA; el ticket
-  lo abre después el planificador @Scheduled — ver 07.
-end note
-return
-return
-return
 @enduml

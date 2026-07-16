@@ -1,56 +1,72 @@
 @startuml 03-finalizacion-saga-principal
-title Finalización de la saga principal: COMPLETADA + 3 órdenes PENDIENTE en un solo commit
+title Finalización de la saga principal: TERMINADA + creación de las 3 sagas hijas en la misma tx
 
 box "Aplicación" #F5FBEF
-  participant "ServicioSagaPrincipal" as SVC
+  participant "ServicioSagaPrincipal\n(OrquestadorSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
+  participant "OrdenRoot" as ORDEN
   participant "SagaPrincipalRoot" as SAGA
-  participant "SagaSecundaria1Root /\nSagaSecundaria2Root /\nSagaSecundaria3Root" as SEC
+  participant "SagaSecundaria1Root /\nSagaSecundaria2Root /\nSagaSecundaria3Root" as HIJAS
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
-  participant "RepositorioSagaSecundaria1/2/3\n(BBDD sagas)" as REPOS
-  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
+  participant "AdaptadorRepositorioOrden" as REPO
 end box
 
-[-> SVC : PuertoPaso8 devuelve su resultado (ver 02)
-activate SVC
+note over ORQ
+  Continuación de 02: PuertoPaso8.ejecutar(...) ya devolvió su
+  ResultadoPaso8 fuera de tx. Entramos en la MISMA tx única de
+  checkpoint que 02, pero aquí terminada() da true.
+end note
 
-group Transacción única (UnidadDeTrabajo)
-  SVC -> REPO ++ : cargar(id)
-  return saga (PASO8 SOLICITADO)
-  SVC -> SAGA ++ : completar(PASO8, resultado)
-  SAGA -> SAGA : completarYArrancarSagas():\nestado = COMPLETADA
-  return [ArrancarSaga(ArranqueSecundaria1),\nArrancarSaga(ArranqueSecundaria2),\nArrancarSaga(ArranqueSecundaria3)]
+[-> ORQ : ejecutarPaso(sagaId) reentra tras el REST de PASO8 (ver 02)
+activate ORQ
 
-  loop por cada Decision.ArrancarSaga (x3)
-    SVC -> SEC ++ : SagaSecundariaNRoot.crear(SagaId.nuevo(),\ncontexto recortado con el externalId)
-    return secundaria INICIADA\n(independiente, sin vínculo con la principal)
-    SVC -> REPOS ++ : crear(secundaria)\n(en el repositorio de su tipo)
-    return
-    SVC -> ORD ++ : encolar(TareaSaga.ArrancarSaga(idNueva, tipo))
-    ORD -> ORD : INSERT orden estado = PENDIENTE\n(tipo_tarea = ARRANCAR_SAGA)
+group Transacción única: checkpoint del paso (crea agregados hijos + finaliza el propio)
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(ResultadoPaso8(ref))
+  SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar():\nPASO7_HECHO -> TERMINADA
+  return
+  ORQ -> SAGA ++ : (orden.saga()).terminada()
+  return true
+
+  ORQ -> SAGA ++ : (orden.saga()).contextosArranque()
+  return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
+
+  loop por cada ContextoArranque (x3)
+    ORQ -> HIJAS ++ : SagaSecundariaNRoot.crear(SagaId.nuevo(), contexto)
+    return sagaHija (estado INICIAL)
+    ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, ahora)
+    return ordenHija (intentos=0, proximoReintentoEn=ahora, version=0)
+    ORQ -> REPO ++ : crear(ordenHija)
+    REPO -> REPO : sagas.save(entidadSagaDe(sagaHija))
+    REPO -> REPO : ordenes.save(entidadOrdenDe(ordenHija))
     return
   end
 
-  SVC -> REPO ++ : guardar(principal COMPLETADA)
+  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  return FINALIZADA_OK
+  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  ORDEN -> ORDEN : resultado = FINALIZADA_OK; liberarToken()
+  return
+  ORQ -> REPO ++ : guardar(orden)
   return
 end
+return Finalizada(FINALIZADA_OK)
+[<- ORQ
+deactivate ORQ
 
-note over SVC, ORD
-  UN solo commit: la principal COMPLETADA, las 3 sagas secundarias
-  creadas y sus 3 órdenes en estado PENDIENTE. Sin hueco de caída:
-  si el proceso muere antes del commit, el lease reentrega la tarea.
-  Aquí no se publica ningún evento: todo termina cuando las sagas
-  se completan.
+note over ORQ, REPO
+  Un único commit: la principal queda FINALIZADA_OK y las 3 hijas
+  quedan creadas con proximoReintentoEn = ahora (candidatas
+  inmediatas). Es la excepción aceptada a "un agregado por
+  transacción": aquí se MODIFICA la principal y se CREAN las 3
+  hijas, cada una agregado propio. No se publica ningún evento.
 end note
 
-[<- SVC
-deactivate SVC
-
-note over ORD
-  El pool del GestorOrdenes encontrará las 3 órdenes PENDIENTE
-  y procesará cada secundaria en paralelo — ver 04, 05 y 06.
+note over REPO
+  El planificador (ver 01) encontrará las 3 hijas en su siguiente
+  pasada y las procesará cada una por su cuenta — ver 04, 05 y 06.
 end note
 @enduml

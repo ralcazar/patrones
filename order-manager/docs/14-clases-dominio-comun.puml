@@ -1,133 +1,148 @@
 @startuml 14-clases-dominio-comun
-title Dominio — shared kernel (dominio.comun): base Saga<P> y su vocabulario
+title Dominio — shared kernel (dominio.comun): el agregado único OrdenRoot ⊃ SagaRoot
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "Saga<P extends Enum<P> & PasoSaga>" as Saga {
+class OrdenRoot <<@AggregateRoot>> {
+  -sagaId : SagaId  «@Identity»
+  -saga : SagaRoot<?>
+  -intentos : int
+  -proximoReintentoEn : Instant
+  -tokenTrabajador : UUID
+  -tokenExpiraEn : Instant
+  -ticketAbiertoEn : Instant
+  -resultado : ResultadoOrden
+  -version : long  «ÚNICA del agregado»
+  +{static} nueva(saga, ahora) : OrdenRoot
+  +{static} rehidratar(saga, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, resultado, version)
+  +asignarToken(token, lease, ahora)
+  +renovarLease(lease, ahora)
+  +tieneTokenVigente(ahora) : boolean
+  +liberarToken()
+  +resetearIntentos()  «intentos=0 Y ticketAbiertoEn=null»
+  +marcarTicketAbierto(ahora)
+  +despertar(ahora)  «proximoReintentoEn=ahora, libera token»
+  +aparcar(ventana, ahora)  «proximoReintentoEn=ahora+ventana»
+  +programarReintento(PoliticaReintentos, ahora)  «intentos++»
+  +finalizar(ResultadoOrden)
+  +estaViva() : boolean  «resultado == null»
+  +saga() : SagaRoot<?>
+  +tipo() : TipoSaga  «delega en saga.tipo()»
+}
+note right of OrdenRoot
+  Reloj determinista: nunca Instant.now(); todo método que
+  depende del tiempo recibe Instant ahora como parámetro,
+  aportado por la capa de aplicación. Una sola version protege
+  ejecución (intentos/lease/ticket/resultado) + negocio (saga):
+  varios flujos mutan ambos en la misma tx (consumer Kafka,
+  soporte, arranque de secundarias), así que separarlos en dos
+  agregados violaría "un agregado por transacción".
+end note
+
+abstract class "SagaRoot<E extends Enum<E>>" as SagaRoot <<@Entity>> {
   #id : SagaId  «@Identity»
   #externalId : ExternalId
-  #pasos : EnumMap<P, EjecucionPaso<P>>
+  #estado : E
   #auditoria : List<AuditoriaIntervencion>
-  #reintentos : PoliticaReintentos
-  #estado : EstadoSaga
-  #estadoTicket : EstadoTicket
-  #ticketAbiertoEn : Instant
-  #version : long
-  +iniciar() / continuar() : List<Decision<P>>
-  +completar(paso, resultado) : List<Decision<P>>
-  +fallar(paso, motivo) : List<Decision<P>>
-  +reintentar(paso) : List<Decision<P>>
-  +reanudarPorSoporte(paso, quien) : List<Decision<P>>
-  +marcarOkManual(paso, quien, justificacion, datos) : List<Decision<P>>
-  +marcarTicketAbierto(cuando) : List<Decision<P>>
-  +esCancelable() : boolean
-  #bloquearPorFallo(paso, motivo)
   {abstract} +tipo() : TipoSaga
-  {abstract} #pasoInicial() : P
-  {abstract} #comandoPara(paso) : ComandoPaso
-  {abstract} #aplicarResultado(paso, resultado)
-  {abstract} #transicionTras(paso) : List<Decision<P>>
+  {abstract} +comandoActual() : ComandoPaso
+  {abstract} +aplicarYAvanzar(ResultadoPaso)
+  {abstract} +terminada() : boolean
+  {abstract} +resultadoFinal() : ResultadoOrden
+  {abstract} +marcarPasoActualOkManual(quien, justificacion, datos)
+  #auditar(quien, accion, detalle)
+  +id() / +externalId() / +estado() / +auditoria()
 }
-note right of Saga
-  Base abstracta común: NO es un agregado.
-  finalizar() = COMPLETADA y nada más (sin eventos).
-  fallar(): reintentable -> ProgramarReintento (indefinido);
-  no reintentable -> FALLIDA + ticket PENDIENTE.
-  completar() borra el flag de ticket.
+note right of SagaRoot
+  Entidad interna del agregado: SOLO negocio (la FSM E y la
+  auditoría). Sin version propia (la controla OrdenRoot) y sin
+  reintentos/tiempo/token: eso es responsabilidad de OrdenRoot.
+  4 subclases — ver 15 (principal) y 16 (las 3 secundarias).
 end note
-
-class "EjecucionPaso<P>" as EjecucionPaso <<@ValueObject>> {
-  -paso : P
-  -estado : EstadoPaso
-  -intentos : int
-  -ultimoFallo : MotivoFallo
-}
-
-interface PasoSaga {
-  +name() : String
-  +{static} de(tipo, nombre) : PasoSaga
-}
 
 class PoliticaReintentos {
-  escalera: 1, 3, 5, 10, 20,
-  45, 90, 180 minutos
+  -ESCALERA : List<Duration> = {1,3,5,10,\n20,45,90,180 min}
   +esperaTras(intentosFallidos) : Duration
-  +escaleraConsumida(intentosFallidos) : boolean
+  +debeAbrirTicket(intentos) : boolean  «intentos >= 8»
 }
 note bottom of PoliticaReintentos
-  Nunca se agota: consumida la escalera
-  se sigue reintentando cada 180 min
-  (con flag de ticket PENDIENTE).
+  Nunca se agota: consumida la escalera (8 intentos) se sigue
+  reintentando cada 180 min indefinidamente. debeAbrirTicket
+  combina con OrdenRoot.ticketAbiertoEn == null en la query del
+  planificador de tickets (ver 07 y 17).
 end note
 
-enum EstadoSaga {
-  INICIADA
-  EN_CURSO
-  FALLIDA
-  COMPLETADA
-  CANCELADA
-}
-enum EstadoTicket {
-  SIN_TICKET
-  PENDIENTE
-  ABIERTO
-}
-enum EstadoPaso {
-  PENDIENTE
-  SOLICITADO
-  ESPERANDO_REINTENTO
-  BLOQUEADO_SOPORTE
-  COMPLETADO
-  COMPLETADO_MANUAL
-  CANCELADO
-  COMPENSADO
-}
 enum TipoSaga {
   PRINCIPAL
   SECUNDARIA1
   SECUNDARIA2
   SECUNDARIA3
 }
-
-interface "Decision<P>" as Decision <<sealed>> {
-  Ejecutar(paso, comando)
-  ProgramarReintento(paso, espera, intentoNum)
-  Compensar(paso, comando)
-  ArrancarSaga(contexto)
+enum ResultadoOrden {
+  FINALIZADA_OK
+  FINALIZADA_COMPENSADA
 }
+
 interface ComandoPaso <<marcadora>>
 interface ResultadoPaso <<marcadora>>
 interface ContextoArranque <<sealed>> {
+  ExternalId externalId()
   ArranqueSecundaria1(externalId, refPaso1)
   ArranqueSecundaria2(externalId, refPaso5)
   ArranqueSecundaria3(externalId, refPaso7)
 }
 
+class ConcurrenciaOptimistaException <<RuntimeException>> {
+  (SagaId id, long versionEsperada)
+}
+class ExcepcionServicioExterno <<RuntimeException>> {
+  -motivo : MotivoFallo  «transient»
+}
+class PasoNoIntervenibleException <<RuntimeException>> {
+  (SagaId id, String detalle)
+}
+class DatosManualesRequeridosException <<RuntimeException>> {
+  (SagaId id, String detalle)
+}
+class PuntoNoRetornoSuperadoException <<RuntimeException>> {
+  (SagaId id)
+}
+class SagaYaCompletadaException <<RuntimeException>> {
+  (SagaId id)
+}
+
 class MotivoFallo <<@ValueObject>> {
-  codigo / detalle / esReintentable
+  codigo : String
+  detalle : String
+  esReintentable : boolean
+  +{static} timeout() / errorTecnico(detalle) / errorNegocio(detalle)
 }
 class "SagaId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion,\nRefPaso1 / RefPaso5 / RefPaso7" as VOs <<@ValueObject>>
 
-Saga "1" *-- "n" EjecucionPaso : pasos
-Saga *-- PoliticaReintentos
-Saga o-- EstadoSaga
-Saga o-- EstadoTicket
-EjecucionPaso o-- EstadoPaso
-EjecucionPaso o-- MotivoFallo
-Saga .right.> Decision : emite
-Decision ..> ContextoArranque : ArrancarSaga
+OrdenRoot "1" *-- "1" SagaRoot : saga
+OrdenRoot ..> PoliticaReintentos : programarReintento(politica, ahora)
+OrdenRoot ..> ResultadoOrden : resultado
+OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide
+SagaRoot ..> TipoSaga : tipo()
+SagaRoot ..> ComandoPaso : comandoActual()
+SagaRoot ..> ResultadoPaso : aplicarYAvanzar()
+SagaRoot ..> ResultadoOrden : resultadoFinal()
+SagaRoot ..> PasoNoIntervenibleException
+SagaRoot ..> DatosManualesRequeridosException
+ExcepcionServicioExterno ..> MotivoFallo
 
 ' Layout: columnas sin cruces
-EstadoSaga -[hidden]down- EstadoTicket
-EstadoTicket -[hidden]down- EstadoPaso
-PasoSaga -[hidden]down- ComandoPaso
+TipoSaga -[hidden]down- ResultadoOrden
 ComandoPaso -[hidden]down- ResultadoPaso
-TipoSaga -[hidden]down- VOs
+ResultadoPaso -[hidden]down- ContextoArranque
+MotivoFallo -[hidden]down- VOs
 
-note bottom of ComandoPaso
-  Marcadoras en comun: cada agregado define su sealed local
-  (sin module-info los sealed exigen mismo paquete).
-  Los 4 agregados y sus tipos por saga: ver 15 y 16.
+note bottom of ContextoArranque
+  Contexto recortado con el que arranca cada saga secundaria (lo
+  crea SagaPrincipalRoot.contextosArranque() al llegar a
+  TERMINADA — ver 03 y 15). RefPaso1/RefPaso5/RefPaso7 viven en
+  este paquete porque los produce la principal y los consumen
+  las secundarias (shared kernel mínimo).
 end note
 @enduml

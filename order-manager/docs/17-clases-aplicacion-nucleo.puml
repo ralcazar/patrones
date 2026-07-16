@@ -1,5 +1,5 @@
 @startuml 17-clases-aplicacion-nucleo
-title Aplicación — núcleo: ServicioSagaBase, router de tareas e intake
+title Aplicación — núcleo: ServicioContinuarSaga, OrquestadorSaga y el lease del token
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
@@ -7,134 +7,109 @@ skinparam classAttributeIconSize 0
 package "puerto.entrada" {
   interface CasoUsoIniciarTramitacion {
     +iniciar(ComandoIniciarTramitacion) : SagaId
+    record ComandoIniciarTramitacion(externalId,\ndatoNegocio3, datoNegocio2)
   }
-  interface "CasoUsoProcesarResultadoPaso<P>" as CasoUsoProcesarResultadoPaso {
-    +pasoCompletado(id, paso : P, resultado, msgId)
-    +pasoFallido(id, paso : P, motivo, msgId)
-  }
-  interface CasoUsoDespacharTareas {
-    +hayTrabajoPendiente() : boolean
-    +reclamarSiguiente(lease) : Optional<TareaReclamada>
-    +procesar(TareaReclamada)
-    +finalizar(TareaReclamada, exito)
+  interface CasoUsoContinuarSaga {
+    +continuar(SagaId, TipoSaga)
+    +continuarCandidatas(limite)
   }
 }
 
 package "servicio" {
-  abstract class "ServicioSagaBase<P, S extends Saga<P>>" as Base <<@Service>> {
-    #tx : UnidadDeTrabajo
-    #dedup : PuertoMensajesProcesados
-    #cola : PuertoColaTareas
-    +continuar(id)
-    +pasoCompletado / pasoFallido / reintentar
-    +reanudarPaso / marcarPasoOk
-    +marcarTicketAbierto(id, apertura)
-    #procesar(msgId, id, accion)  «tx + dedup + reintento optimista»
-    #despachar(id, decisiones)  «I/O fuera de la tx»
-    {abstract} #cargar(id) : S
-    {abstract} #guardar(S)
-    {abstract} #ejecutar(id, paso, cmd)
-    #alSolicitarEjecucion(saga, d)  «hook tx»
-    #arrancarSaga(saga, d)  «hook tx»
-    #compensar(id, paso, cmd)
-  }
-  note right of Base
-    Regla de oro: dentro de la tx solo BBDD
-    (estado + tareas encoladas); fuera solo
-    I/O externo (REST). Subclases: ver 18-21.
-  end note
-
-  class ManejadorTareasSaga <<@Service>> {
-    +procesar(TareaSaga)
-  }
-  note bottom of ManejadorTareasSaga
-    Router: switch por tipo de tarea y TipoSaga.
-    Única frontera donde PasoSaga se baja al
-    enum concreto de cada saga.
-  end note
-
-  class ServicioEncolarTramitacion <<@Service>> {
+  class ServicioIniciarTramitacion <<@Service>> {
     +iniciar(cmd) : SagaId
   }
-  note bottom of ServicioEncolarTramitacion
-    Intake durable: genera SagaId, encola
-    IniciarTramitacion y responde 202.
+  note bottom of ServicioIniciarTramitacion
+    sagaId = SagaId.nuevo(); tx { saga =
+    SagaPrincipalRoot.crear(...); repo.crear(OrdenRoot.nueva(saga,
+    Instant.now())) }. Una sola llamada persiste saga + orden.
   end note
 
-  class ServicioDespachoTareas <<@Service>> {
-    +hayTrabajoPendiente() : boolean
-    +reclamarSiguiente(lease)
-    +procesar(TareaReclamada)
-    +finalizar(TareaReclamada, exito)
+  class ServicioContinuarSaga <<@Service>> {
+    -orquestadores : Map<TipoSaga, OrquestadorSaga>
+    -repo : RepositorioOrden
+    -tx : UnidadDeTrabajo
+    -politica : PoliticaReintentos
+    -lease : Duration
+    +continuar(id, tipo)
+    +continuarCandidatas(limite)
+    -reclamarToken(id) : boolean  «tx: estaViva()+tieneTokenVigente()\n+asignarToken(); catch ConcurrenciaOptimistaException»
+    -programarReintento(id)  «tx: orden.programarReintento(politica, ahora)»
   }
-  note bottom of ServicioDespachoTareas
-    Media entre el pool (entrada) y la cola
-    (salida) al RECIBIR trabajo: delega en
-    PuertoRecepcionTareas y ManejadorTareasSaga.
-    El bucle y los hilos son del pool (ver 23).
+  note right of ServicioContinuarSaga
+    continuar(): si reclamarToken() falla, return (otro pod la
+    tiene). Si no, bucle while(true): orquestador.ejecutarPaso(id);
+    catch ConcurrenciaOptimistaException -> return; catch
+    RuntimeException -> programarReintento(id) + return; según la
+    señal: HayMasTrabajo -> continue, Aparcar/Finalizada -> return
+    (ya persistido por el orquestador). continuarCandidatas(limite):
+    repo.buscarEjecutables(ahora, limite) y continua cada una.
   end note
 
-  class ReintentoOptimista <<package-private>> {
-    {static} ejecutar(Supplier<T>) : T
-    MAX_REINTENTOS = 5
+  interface OrquestadorSaga {
+    +tipo() : TipoSaga
+    +ejecutarPaso(SagaId) : SenalPaso
   }
-}
+  note right of OrquestadorSaga
+    Una implementación por TipoSaga (ver 18-21): carga el
+    agregado, hace el REST del paso FUERA de tx (puede lanzar), y
+    en UNA sola tx recarga, aplica el resultado a la saga y la
+    parte operativa de la señal (resetearIntentos()+renovarLease()
+    | aparcar() | finalizar()), y guarda una única vez.
+  end note
 
-package "tarea" {
-  interface TareaSaga <<sealed>> {
-    +sagaId() : SagaId
-    IniciarTramitacion(sagaId, externalId, datos, datoNegocio2)
-    ArrancarSaga(sagaId, tipo)
-    Reintentar(tipo, sagaId, paso, intentoNum)
-    TimeoutSagaSecundaria2(sagaId)
-    ResultadoSagaSecundaria2Ok(sagaId, ref, mensajeId)
-    ResultadoSagaSecundaria2Error(sagaId, ..., reintentable, mensajeId)
-  }
-  class TareaReclamada <<record>> {
-    +referencia : String  «asa opaca de la Orden»
-    +lease : String
-    +tarea : TareaSaga
+  class "SenalPaso" as SenalPaso <<sealed>> {
+    HayMasTrabajo()
+    Aparcar(ventana : Duration)
+    Finalizada(resultado : ResultadoOrden)
   }
 }
 
 package "puerto.salida (transversales)" {
+  interface RepositorioOrden <<@Repository>> {
+    +crear(OrdenRoot)
+    +cargar(SagaId) : OrdenRoot
+    +guardar(OrdenRoot)  «lanza ConcurrenciaOptimistaException»
+    +buscarEjecutables(ahora, limite) : List<CandidataOrden>
+    +purgarFinalizadasAntesDe(corte) : long
+    record CandidataOrden(sagaId, tipo)
+  }
+  note right of RepositorioOrden
+    ÚNICO puerto de escritura del agregado: siempre persiste o
+    rehidrata OrdenRoot completo (ejecución + saga + auditoría).
+    buscarEjecutables: proximo_reintento_en<=ahora AND resultado
+    IS NULL AND (token_trabajador IS NULL OR token_expira_en<=ahora)
+    — el segundo OR reclama tokens de pods muertos al vencer el lease.
+  end note
   interface UnidadDeTrabajo {
     +enTransaccion(Supplier<T>) : T
-  }
-  interface PuertoColaTareas {
-    +encolar(tarea)
-    +encolar(tarea, noAntesDe)
-    +purgarTerminadasAntesDe(corte)
-  }
-  interface PuertoRecepcionTareas {
-    +hayPendientes() : boolean
-    +reclamarSiguiente(lease) : Optional<TareaReclamada>
-    +finalizar(TareaReclamada, exito)
-  }
-  interface PuertoMensajesProcesados {
-    +yaProcesado(msgId) : boolean
-    +registrar(msgId)
-    +purgarAnterioresA(corte)
+    +enTransaccion(Runnable)  «default»
   }
 }
 
-CasoUsoIniciarTramitacion <|.. ServicioEncolarTramitacion
-CasoUsoProcesarResultadoPaso <|.. Base
-CasoUsoDespacharTareas <|.. ServicioDespachoTareas
+CasoUsoIniciarTramitacion <|.. ServicioIniciarTramitacion
+CasoUsoContinuarSaga <|.. ServicioContinuarSaga
+ServicioIniciarTramitacion --> RepositorioOrden
+ServicioIniciarTramitacion --> UnidadDeTrabajo
+ServicioContinuarSaga --> RepositorioOrden
+ServicioContinuarSaga --> UnidadDeTrabajo
+ServicioContinuarSaga --> OrquestadorSaga : Map<TipoSaga, ->\n(una por tipo de saga)
+ServicioContinuarSaga ..> SenalPaso : interpreta la señal
+OrquestadorSaga ..> SenalPaso : devuelve
 
-Base --> UnidadDeTrabajo
-Base --> PuertoMensajesProcesados
-Base --> PuertoColaTareas
-Base ..> ReintentoOptimista
-Base ..> TareaSaga : encola Reintentar
-ManejadorTareasSaga ..> TareaSaga : despacha por tipo
-ManejadorTareasSaga ..> Base : rutea a la subclase\nde la saga correcta
-ServicioEncolarTramitacion --> PuertoColaTareas
-ServicioDespachoTareas --> PuertoRecepcionTareas : reclamar / finalizar
-ServicioDespachoTareas --> ManejadorTareasSaga : procesar(TareaSaga)
-PuertoRecepcionTareas ..> TareaReclamada : devuelve
+note as NLease
+  Lease del token (robustez ante caída de pod): asignarToken() fija
+  tokenExpiraEn = ahora + lease (config orden.lease, p. ej. PT10M);
+  renovarLease() lo alarga en la tx de cada paso completado (no
+  necesita cubrir la saga entera, solo el peor REST de un paso). Si
+  un pod muere con el token asignado, al vencer el lease la orden
+  vuelve a ser candidata de buscarEjecutables() y otro pod la
+  reclama (optimistic lock: si dos pods ven el mismo token
+  caducado, solo uno gana al guardar). Si el pod solo iba lento
+  (no muerto), su guardar() posterior falla por version y se retira.
+end note
+NLease .. RepositorioOrden
+NLease .. ServicioContinuarSaga
 
-UnidadDeTrabajo -[hidden]down- PuertoColaTareas
-PuertoColaTareas -[hidden]down- PuertoRecepcionTareas
-PuertoRecepcionTareas -[hidden]down- PuertoMensajesProcesados
+RepositorioOrden -[hidden]down- UnidadDeTrabajo
 @enduml

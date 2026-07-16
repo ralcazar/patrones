@@ -2,78 +2,96 @@
 title Saga SECUNDARIA1 de principio a fin: INICIO -> CONFIRMACION, dos llamadas REST al mismo servicio
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
+  participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
-  participant "ManejadorTareasSaga" as MANEJ
-  participant "ServicioSagaSecundaria1" as SSEC
+  participant "ServicioContinuarSaga" as CONT
+  participant "ServicioSagaSecundaria1\n(OrquestadorSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
+  participant "OrdenRoot" as ORDEN
   participant "SagaSecundaria1Root" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaSecundaria1\n(BBDD sagas)" as REPOS
+  participant "AdaptadorRepositorioOrden" as REPO
   participant "PuertoSagaSecundaria1\n(REST: dos métodos del\nmismo servicio externo)" as PSEC
-  participant "Tabla ordenes" as ORD
 end box
 
-== Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
-TRAB -> DESP ++ : reclamarSiguiente(lease)
-DESP -> ORD ++ : reclamar orden PENDIENTE (lease)
-return Orden (ARRANCAR_SAGA, tipo SECUNDARIA1)
-return TareaReclamada
-TRAB -> DESP ++ : procesar(tareaReclamada)
-DESP -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
-MANEJ -> SSEC ++ : continuar(sagaId)
-group Transacción
-  SSEC -> REPOS ++ : cargar(id)
-  return SagaSecundaria1Root INICIADA
-  SSEC -> SAGA ++ : continuar() -> iniciar()
-  SAGA -> SAGA : estado = EN_CURSO\nINICIO -> SOLICITADO
-  return [Decision.Ejecutar(INICIO)]
-  SSEC -> REPOS ++ : guardar(saga)
+note over PLAN, CONT
+  La hija SECUNDARIA1 nació en 03 con proximoReintentoEn = ahora:
+  el planificador la recoge como candidata en su siguiente pasada.
+end note
+
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, SECUNDARIA1)
+group Transacción: reclamarToken
+  CONT -> REPO ++ : cargar(sagaId)
+  return orden
+  CONT -> ORDEN ++ : estaViva() / tieneTokenVigente(ahora)
+  return true / false
+  CONT -> ORDEN ++ : asignarToken(UUID.randomUUID(), lease, ahora)
+  return
+  CONT -> REPO ++ : guardar(orden)
   return
 end
 
 == Paso INICIO (primer método REST) ==
-SSEC -> PSEC ++ : iniciar(ComandoPasoSecundaria1.Iniciar\n(externalId, refPaso1))
-return RefInicio
-SSEC -> SSEC : pasoCompletado(id, INICIO, resultado)
-group Transacción (checkpoint)
-  SSEC -> REPOS ++ : cargar(id)
-  return saga
-  SSEC -> SAGA ++ : completar(INICIO, Iniciada(refInicio))
-  SAGA -> SAGA : guarda refInicio (lo consume CONFIRMACION)\nCONFIRMACION -> SOLICITADO
-  return [Decision.Ejecutar(CONFIRMACION)]
-  SSEC -> REPOS ++ : guardar(saga)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+return ComandoPasoSecundaria1.Iniciar(externalId, refPaso1)
+ORQ -> PSEC ++ : iniciar(cmd) -- REST fuera de tx
+return ResultadoPasoSecundaria1.Iniciada(refInicio)
+group Transacción única: checkpoint del paso
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(Iniciada(refInicio))
+  SAGA -> SAGA : refInicio = ref; avanzar():\nINICIAL -> INICIO_HECHO
+  return
+  ORQ -> SAGA ++ : (orden.saga()).terminada()
+  return false
+  ORQ -> ORDEN ++ : resetearIntentos()
+  return
+  ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+  return
+  ORQ -> REPO ++ : guardar(orden)
   return
 end
+return HayMasTrabajo()
+CONT -> CONT : switch(señal): HayMasTrabajo -> continue
 
 == Paso CONFIRMACION (segundo método REST) y finalización ==
-SSEC -> PSEC ++ : confirmar(ComandoPasoSecundaria1.Confirmar\n(refInicio))
-return RefConfirmacion
-SSEC -> SSEC : pasoCompletado(id, CONFIRMACION, resultado)
-group Transacción
-  SSEC -> REPOS ++ : cargar(id)
-  return saga
-  SSEC -> SAGA ++ : completar(CONFIRMACION, Confirmada(ref))
-  SAGA -> SAGA : finalizar():\nestado = COMPLETADA
-  return [] (la saga termina aquí:\nno se publica ningún evento)
-  SSEC -> REPOS ++ : guardar(saga)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+return ComandoPasoSecundaria1.Confirmar(refInicio)
+ORQ -> PSEC ++ : confirmar(cmd) -- REST fuera de tx
+return ResultadoPasoSecundaria1.Confirmada(refConfirmacion)
+group Transacción única: checkpoint del paso
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(Confirmada(ref))
+  SAGA -> SAGA : refConfirmacion = ref; avanzar():\nINICIO_HECHO -> TERMINADA
+  return
+  ORQ -> SAGA ++ : (orden.saga()).terminada()
+  return true
+  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  return FINALIZADA_OK
+  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  return
+  ORQ -> REPO ++ : guardar(orden)
   return
 end
-return
-return
-return
-TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
-DESP -> ORD ++ : finalizar(orden, COMPLETADA)
-return
-return
+return Finalizada(FINALIZADA_OK)
+CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
 
-note over SSEC, PSEC
-  Ante ExcepcionServicioExterno en cualquiera de los dos pasos:
-  backoff 1..180 min con reintento indefinido (o saga FALLIDA si el
-  fallo no es reintentable) y ticket vía planificador — ver 07.
+note over ORQ, PSEC
+  Ante ExcepcionServicioExterno en cualquiera de los dos métodos:
+  se propaga fuera de tx; ServicioContinuarSaga.continuar() la
+  atrapa y llama a programarReintento (backoff 1..180 min,
+  indefinido) — ver 07-error-ticket-soporte. Nunca se cancela ni
+  compensa: nace tras el punto de no retorno de la principal.
 end note
 @enduml

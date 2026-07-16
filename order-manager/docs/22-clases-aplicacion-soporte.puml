@@ -8,68 +8,112 @@ package "puerto.entrada" {
   interface CasoUsoIntervenirSaga {
     +cancelarPrincipal(id, quien, motivo)
     +reintentarPaso(tipo, id, nombrePaso, quien)
-    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)
+    +marcarPasoOk(tipo, id, nombrePaso, quien,\njustificacion, datosManuales)
   }
+  note bottom of CasoUsoIntervenirSaga
+    nombrePaso se conserva por compatibilidad de firma y como
+    dato informativo de auditoría, pero es opcional: cada saga
+    tiene como mucho UN paso pendiente (el que marca su FSM), ya
+    no hace falta identificarlo por su enum.
+  end note
   interface CasoUsoConsultarSagasSoporte {
-    +sagasBloqueadas() : List<SagaResumen>
-    +sagasEnEjecucion() : List<SagaResumen>
-    +sagasConTicket(estadoTicket) : List<SagaResumen>
+    +sagasBloqueadas() : List<SagaResumen>  «intentos >= 8»
+    +sagasEnEjecucion() : List<SagaResumen>  «token vigente»
+    +sagasConTicketPendiente() : List<SagaResumen>
     +buscar(FiltroSagas) : List<SagaResumen>
     +vistaTramitacion(externalId) : VistaTramitacion
     +detalle(tipo, id) : SagaDetalle
+    record SagaResumen(id, tipo, externalId, estado : String,\nintentos, ticketAbiertoEn, proximoReintentoEn,\niniciadaEn, actualizadaEn)
+    record FiltroSagas(estado : String, iniciadaDesde/Hasta,\nactualizadaDesde/Hasta)
+    record PasoDetalle(nombrePaso, datosManualesObligatorios)
+    record SagaDetalle(resumen, cancelable, pasos, auditoria)
+    record VistaTramitacion(externalId, principal, secundarias)
   }
   note bottom of CasoUsoConsultarSagasSoporte
-    SagaResumen incluye estadoTicket,
-    ticketAbiertoEn, proximoReintentoEn y
-    tienePasosBloqueados (paso sin reintento
-    automático: lo resuelve una persona).
+    Modelo de lectura CQRS puro: el adaptador resuelve con SQL
+    sobre orden/saga sin cargar agregados; por eso "estado" viaja
+    como String (el nombre del enum), no como EstadoSaga*.
   end note
   interface CasoUsoAbrirTicketsPendientes {
     +abrirTicketsPendientes() : int
   }
   interface CasoUsoLimpiarDatosAntiguos {
     +purgarAnterioresA(corte) : ResultadoLimpieza
+    record ResultadoLimpieza(ordenes, mensajesDedup) { +total() }
   }
 }
 
 package "servicio" {
   class ServicioSoporteSagas <<@Service>> {
-    -principal + 3 secundarias
-    resuelve nombrePaso -> enum por TipoSaga
-    y rutea la intervención al servicio correcto
+    -repo : RepositorioOrden
+    -tx : UnidadDeTrabajo
+    -consultas : PuertoConsultaSagasSoporte
+    +cancelarPrincipal(id, quien, motivo)  «tx: saga.cancelar()+orden.despertar()»
+    +reintentarPaso(tipo, id, nombrePaso, quien)  «tx: orden.resetearIntentos()+despertar()»
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «tx: saga.marcarPasoActualOkManual()+orden.despertar()»
+    +sagasBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nvistaTramitacion/detalle  «delegan tal cual en consultas»
   }
+  note bottom of ServicioSoporteSagas
+    Cada intervención actúa DIRECTAMENTE sobre el agregado vía
+    RepositorioOrden (un único agregado, un único guardar): no pasa
+    por los orquestadores de ejecución. despertar() la deja
+    candidata inmediata para que el planificador la recoja (ver 08).
+  end note
+
   class ServicioTicketsSoporte <<@Service>> {
-    +abrirTicketsPendientes():
-    1. buscar sagas con flag PENDIENTE
-    2. abrir UN ticket para todas (log, sin id)
-    3. marcarTicketAbierto(saga, ahora) x N
+    -pendientes : PuertoSagasTicketPendiente
+    -tickets : PuertoTicketsSoporte
+    -repo : RepositorioOrden
+    -tx : UnidadDeTrabajo
+    +abrirTicketsPendientes() : int
+    -marcarAbierto(sagaId, apertura)  «ReintentoOptimista.ejecutar(tx:\norden.marcarTicketAbierto(apertura))»
   }
+  note bottom of ServicioTicketsSoporte
+    1. pendientes.buscar(); 2. si no vacío, tickets.abrir(sagas) — UN
+    ticket para todas, fuera de tx; 3. marcarAbierto por cada una
+    (at-least-once: si el proceso muere entre 2 y 3, el siguiente
+    barrido repite el aviso).
+  end note
+
   class ServicioLimpiezaDatos <<@Service>> {
-    -repoPrincipal + 3 repos secundarios
+    -repo : RepositorioOrden
+    -dedup : PuertoMensajesProcesados
+    -tx : UnidadDeTrabajo
     +purgarAnterioresA(corte) : ResultadoLimpieza
   }
-  class FabricaResultadoManual <<@Factory, package-private>> {
-    {static} paraPaso(PasoSaga, Map datos) : ResultadoPaso
+  note bottom of ServicioLimpiezaDatos
+    Una única tx: repo.purgarFinalizadasAntesDe(corte) +
+    dedup.purgarAnterioresA(corte). Solo borra resultado != null y
+    antiguo; cualquier orden viva sobrevive.
   }
+
+  class "ReintentoOptimista" as Reintento <<package-private>> {
+    {static} ejecutar(Supplier<T>) : T
+    MAX_REINTENTOS = 5
+  }
+  note bottom of Reintento
+    Reintenta ante ConcurrenciaOptimistaException: recarga y
+    reaplica. Lo usa ServicioTicketsSoporte.marcarAbierto (poco
+    probable pero posible: la orden estaba bloqueada, sin token).
+  end note
 }
 
 package "puerto.salida" {
   interface PuertoConsultaSagasSoporte {
     +sagasBloqueadas() / sagasEnEjecucion()
-    +sagasConTicket(estadoTicket)
-    +buscar(filtro) / vistaTramitacion(externalId)
-    +detalle(tipo, id)
+    +sagasConTicketPendiente() / buscar(filtro)
+    +vistaTramitacion(externalId) / detalle(tipo, id)
   }
   interface PuertoSagasTicketPendiente {
     +buscar() : List<SagaTicketPendiente>
-    «sagas con estado_ticket = PENDIENTE»
+    record SagaTicketPendiente(tipo, sagaId, externalId, intentos)
+    «intentos >= 8 AND ticket_abierto_en IS NULL AND resultado IS NULL»
   }
   interface PuertoTicketsSoporte {
     +abrir(List<SagaTicketPendiente>)
-    «UN ticket para todas: texto en el log,
-    sin id (no se conoce)»
+    «UN ticket para todas: texto en el log, sin id»
   }
-  interface "Repositorios de las 4 sagas,\nPuertoMensajesProcesados,\nPuertoColaTareas, UnidadDeTrabajo" as PuertosLimpieza
+  interface "RepositorioOrden,\nPuertoMensajesProcesados,\nUnidadDeTrabajo (ver 17)" as PuertosNucleo
 }
 
 CasoUsoIntervenirSaga <|.. ServicioSoporteSagas
@@ -78,16 +122,20 @@ CasoUsoAbrirTicketsPendientes <|.. ServicioTicketsSoporte
 CasoUsoLimpiarDatosAntiguos <|.. ServicioLimpiezaDatos
 
 ServicioSoporteSagas --> PuertoConsultaSagasSoporte
-ServicioSoporteSagas ..> FabricaResultadoManual
+ServicioSoporteSagas --> PuertosNucleo
 ServicioTicketsSoporte --> PuertoSagasTicketPendiente
 ServicioTicketsSoporte --> PuertoTicketsSoporte
-ServicioLimpiezaDatos --> PuertosLimpieza
+ServicioTicketsSoporte --> PuertosNucleo
+ServicioTicketsSoporte ..> Reintento
+ServicioLimpiezaDatos --> PuertosNucleo
 
 note as NRuteo
-  ServicioSoporteSagas y ServicioTicketsSoporte delegan en los
-  4 orquestadores (ServicioSagaPrincipal/Secundaria1/2/3 — ver 17-21)
-  para intervenir sagas o marcar el ticket como ABIERTO.
+  A diferencia del diseño anterior, ServicioSoporteSagas y
+  ServicioTicketsSoporte ya NO delegan en los orquestadores
+  (ServicioSagaPrincipal/Secundaria1/2/3 — ver 18-21): mutan
+  OrdenRoot/SagaRoot directamente vía RepositorioOrden. La
+  ejecución real de la compensación tras cancelarPrincipal() la
+  recoge, asíncrona, el propio bucle de ServicioContinuarSaga
+  (ver 08 y 17).
 end note
-ServicioSoporteSagas .. NRuteo
-ServicioTicketsSoporte .. NRuteo
 @enduml

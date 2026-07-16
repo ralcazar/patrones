@@ -1,65 +1,60 @@
 @startuml 06-saga-secundaria3
-title Saga SECUNDARIA3 de principio a fin: una única llamada REST y COMPLETADA
+title Saga SECUNDARIA3 de principio a fin: una única llamada REST y FINALIZADA_OK
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "TrabajadorOrdenes\n(pool @Async)" as TRAB
+  participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioDespachoTareas\n(CasoUsoDespacharTareas)" as DESP
-  participant "ManejadorTareasSaga" as MANEJ
-  participant "ServicioSagaSecundaria3" as SSEC
+  participant "ServicioContinuarSaga" as CONT
+  participant "ServicioSagaSecundaria3\n(OrquestadorSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
+  participant "OrdenRoot" as ORDEN
   participant "SagaSecundaria3Root" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaSecundaria3\n(BBDD sagas)" as REPOS
+  participant "AdaptadorRepositorioOrden" as REPO
   participant "PuertoSagaSecundaria3\n(REST al servicio externo)" as PSIM
-  participant "Tabla ordenes" as ORD
 end box
 
-== Arranque: el pool reclama la orden ARRANCAR_SAGA (creada en 03) ==
-TRAB -> DESP ++ : reclamarSiguiente(lease)
-DESP -> ORD ++ : reclamar orden PENDIENTE (lease)
-return Orden (ARRANCAR_SAGA, tipo SECUNDARIA3)
-return TareaReclamada
-TRAB -> DESP ++ : procesar(tareaReclamada)
-DESP -> MANEJ ++ : procesar(TareaSaga.ArrancarSaga)
-MANEJ -> SSEC ++ : continuar(sagaId)
-group Transacción
-  SSEC -> REPOS ++ : cargar(id)
-  return SagaSecundaria3Root INICIADA
-  SSEC -> SAGA ++ : continuar() -> iniciar()
-  SAGA -> SAGA : estado = EN_CURSO\nEJECUCION -> SOLICITADO
-  return [Decision.Ejecutar(EJECUCION)]
-  SSEC -> REPOS ++ : guardar(saga)
+note over PLAN, CONT
+  La hija SECUNDARIA3 nació en 03 con proximoReintentoEn = ahora:
+  el planificador la recoge (reclamo de token omitido aquí,
+  igual que en 02/04).
+end note
+
+PLAN -> CONT ++ : continuarCandidatas(limite)
+CONT -> CONT : continuar(sagaId, SECUNDARIA3)
+CONT -> ORQ ++ : ejecutarPaso(sagaId)
+ORQ -> REPO ++ : cargar(sagaId)
+return orden
+ORQ -> SAGA ++ : (orden.saga()).comandoActual()
+return ComandoPasoSecundaria3.Ejecutar(externalId, refPaso7)
+ORQ -> PSIM ++ : ejecutar(cmd) -- REST fuera de tx
+return ResultadoPasoSecundaria3.Ejecutada(refEjecucion)
+group Transacción única: checkpoint del paso
+  ORQ -> REPO ++ : cargar(sagaId)
+  return orden
+  ORQ -> SAGA ++ : (orden.saga()).aplicarYAvanzar(Ejecutada(ref))
+  SAGA -> SAGA : refEjecucion = ref; estado = TERMINADA
+  return
+  ORQ -> SAGA ++ : (orden.saga()).resultadoFinal()
+  return FINALIZADA_OK
+  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  return
+  ORQ -> REPO ++ : guardar(orden)
   return
 end
+return Finalizada(FINALIZADA_OK)
+CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
 
-== Paso EJECUCION y finalización ==
-SSEC -> PSIM ++ : ejecutar(ComandoPasoSecundaria3.Ejecutar\n(externalId, refPaso7))
-return RefEjecucion
-SSEC -> SSEC : pasoCompletado(id, EJECUCION, resultado)
-group Transacción
-  SSEC -> REPOS ++ : cargar(id)
-  return saga
-  SSEC -> SAGA ++ : completar(EJECUCION, Ejecutada(ref))
-  SAGA -> SAGA : finalizar():\nestado = COMPLETADA
-  return [] (la saga termina aquí:\nno se publica ningún evento)
-  SSEC -> REPOS ++ : guardar(saga)
-  return
-end
-return
-return
-return
-TRAB -> DESP ++ : finalizar(tareaReclamada, ok)
-DESP -> ORD ++ : finalizar(orden, COMPLETADA)
-return
-return
-
-note over SSEC, PSIM
-  Ante ExcepcionServicioExterno: backoff 1..180 min con reintento
-  indefinido (o saga FALLIDA si no es reintentable) y ticket
-  vía planificador — ver 07.
+note over ORQ, PSIM
+  A diferencia de la principal y de secundaria1, este orquestador
+  no comprueba terminada() antes de finalizar: el único paso
+  EJECUCION siempre deja la saga en TERMINADA, así que
+  ejecutarPaso() va derecho a finalizar(). Ante
+  ExcepcionServicioExterno: propaga fuera de tx y
+  ServicioContinuarSaga.continuar() programa reintento (backoff
+  1..180 min) — ver 07. Nunca se cancela ni compensa.
 end note
 @enduml

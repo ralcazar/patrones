@@ -1,54 +1,50 @@
 @startuml 09-limpieza-datos
-title Limpieza periódica: purgar los datos ya no utilizados (acabaron bien y son antiguos)
+title Limpieza periódica: purgar órdenes finalizadas-bien y antiguas + registros de deduplicación
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "PlanificadorLimpieza\n(@Scheduled cron)" as PLAN
+  participant "PlanificadorLimpieza\n(@Scheduled cron 0 0 3 * * *)" as PLAN
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioLimpiezaDatos" as LIMP
 end box
 box "Adaptadores de salida" #F3EFFB
-  participant "RepositorioSagaPrincipal\n(BBDD sagas)" as REPO
-  participant "RepositorioSagaSecundaria1/2/3\n(BBDD sagas)" as REPOS
+  participant "AdaptadorRepositorioOrden" as REPO
   participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
-  participant "Tabla ordenes\n(AdaptadorColaTareas)" as ORD
 end box
 
 note over PLAN, LIMP
-  La limpieza no pasa por el dominio: solo toca lo YA finalizado.
-  Criterio: sagas que se sabe que NO acabaron mal (COMPLETADA o
-  CANCELADA-compensada) y que son antiguas (corte = ahora - retención).
+  Solo borra órdenes finalizadas (resultado no nulo) y ya viejas:
+  cualquier orden viva (resultado == null), sea cual sea su
+  estado o sus intentos, sobrevive siempre a la limpieza.
 end note
 
-[o-> PLAN : dispara el cron\n(p. ej. cada noche a las 03:00)
+[o-> PLAN : dispara el cron (cada noche a las 03:00)
 activate PLAN
-PLAN -> PLAN : corte = ahora - retención\n(retencion-dias, p. ej. 30 días)
+PLAN -> PLAN : corte = Instant.now().minus(retencion)\n(ordermanager.limpieza.retencion-dias, por defecto 30)
 PLAN -> LIMP ++ : purgarAnterioresA(corte)
 
 group Transacción única (UnidadDeTrabajo)
   LIMP -> REPO ++ : purgarFinalizadasAntesDe(corte)
-  REPO -> REPO : DELETE sagas COMPLETADA/CANCELADA\ncon última actualización < corte
-  return nº borradas
-  loop por cada repositorio secundario (x3)
-    LIMP -> REPOS ++ : purgarFinalizadasAntesDe(corte)
-    REPOS -> REPOS : DELETE secundarias COMPLETADAs\nantiguas
-    return nº borradas
+  REPO -> REPO : ids = idsFinalizadasAntesDe(corte)\n(SELECT saga_id WHERE resultado IS NOT NULL\nAND actualizada_en < corte)
+  alt ids.isEmpty()
+    REPO -> REPO : return 0
+  else hay ids
+    REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE saga_id IN ids)
+    REPO -> REPO : sagas.borrarPorIds(ids)\n(DELETE FROM saga WHERE saga_id IN ids)
+    REPO -> REPO : return ids.size()
   end
+  return nº órdenes borradas
   LIMP -> DEDUP ++ : purgarAnterioresA(corte)
-  DEDUP -> DEDUP : DELETE registros de deduplicación\nviejos (ya no llegan duplicados)
-  return nº borrados
-  LIMP -> ORD ++ : purgarTerminadasAntesDe(corte)
-  ORD -> ORD : DELETE ordenes COMPLETADA < corte\n(las FALLIDA se conservan: señal de bug)
-  return nº borradas
+  DEDUP -> DEDUP : borra registros de deduplicación\nanteriores al corte
+  return nº registros dedup borrados
 end
-
-return ResultadoLimpieza(recuentos)
-PLAN -> PLAN : log del resultado
+return ResultadoLimpieza(ordenes, mensajesDedup)
+PLAN -> PLAN : log.info("Limpieza de datos (corte {}):\n{} órdenes y {} registros dedup borrados", ...)
 deactivate PLAN
 
-note over REPO, ORD
-  Nunca se borra trabajo vivo: sagas EN_CURSO, pasos
-  BLOQUEADO_SOPORTE y órdenes PENDIENTE/diferidas
-  quedan siempre fuera del corte. Todo o nada: un solo commit.
+note over REPO
+  Al borrar la fila de orden se borra también (ON DELETE CASCADE
+  desde saga_id) la tabla hija saga_auditoria. Todo o nada: un
+  solo commit para órdenes + saga + dedup.
 end note
 @enduml
