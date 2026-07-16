@@ -13,7 +13,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  * lease, o aparcar, o finalizar), y guarda esa misma instancia una única vez.
  * Una implementación por TipoSaga.
  */
-public interface OrquestadorSaga {
+public interface ServicioSaga {
 
     TipoSaga tipo();
 

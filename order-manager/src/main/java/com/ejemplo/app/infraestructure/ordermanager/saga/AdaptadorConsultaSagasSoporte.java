@@ -22,7 +22,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * Modelo de lectura de la pantalla de soporte: queries SQL directas sobre
  * {@code orden}/{@code saga} (CQRS ligero), sin cargar agregados. El paso
  * pendiente y si es cancelable se derivan de (tipo, estado) con la misma
- * tabla que la FSM de cada SagaRoot, duplicada aquí a propósito: el dominio
+ * tabla que la FSM de cada Saga, duplicada aquí a propósito: el dominio
  * no expone esa forma internamente y la lectura no debe cargar agregados.
  */
 @Component

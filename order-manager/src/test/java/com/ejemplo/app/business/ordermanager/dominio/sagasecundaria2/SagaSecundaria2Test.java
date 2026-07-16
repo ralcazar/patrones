@@ -20,12 +20,12 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * posibilidad de volver a INICIAL si la conciliación detecta un fallo
  * registrado en destino.
  */
-class SagaSecundaria2RootTest {
+class SagaSecundaria2Test {
 
-    private static SagaSecundaria2Root nueva() {
+    private static SagaSecundaria2 nueva() {
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
-        return SagaSecundaria2Root.crear(SagaId.nuevo(), ctx);
+        return SagaSecundaria2.crear(SagaId.nuevo(), ctx);
     }
 
     @Test

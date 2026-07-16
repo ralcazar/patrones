@@ -2,12 +2,12 @@
 title Finalización de la saga principal: TERMINADA + creación de las 3 sagas hijas en la misma tx
 
 box "Aplicación" #F5FBEF
-  participant "ServicioSagaPrincipal\n(OrquestadorSaga)" as ORQ
+  participant "ServicioSagaPrincipal\n(ServicioSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
-  participant "SagaPrincipalRoot" as SAGA
-  participant "SagaSecundaria1Root /\nSagaSecundaria2Root /\nSagaSecundaria3Root" as HIJAS
+  participant "SagaPrincipal" as SAGA
+  participant "SagaSecundaria1 /\nSagaSecundaria2 /\nSagaSecundaria3" as HIJAS
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
@@ -34,7 +34,7 @@ group Transacción única: checkpoint del paso (crea agregados hijos + finaliza 
   return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
 
   loop por cada ContextoArranque (x3)
-    ORQ -> HIJAS ++ : SagaSecundariaNRoot.crear(SagaId.nuevo(), contexto)
+    ORQ -> HIJAS ++ : SagaSecundariaN.crear(SagaId.nuevo(), contexto)
     return sagaHija (estado INICIAL)
     ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, ahora)
     return ordenHija (intentos=0, proximoReintentoEn=ahora, version=0)

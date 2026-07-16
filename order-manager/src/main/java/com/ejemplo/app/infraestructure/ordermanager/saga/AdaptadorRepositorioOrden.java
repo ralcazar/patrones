@@ -20,8 +20,8 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ContextoTramitacion;
@@ -33,22 +33,22 @@ import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso3;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso4;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso6;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso8;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.EstadoSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.RefConfirmacion;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.RefInicio;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.EstadoSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.RefEjecucion;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
  * ÚNICO adaptador de escritura del agregado: OrdenRoot (que contiene su
- * SagaRoot). Mapea dominio&lt;-&gt;entidades JPA despachando la subclase de
- * SagaRoot por {@code tipo}, y traduce el conflicto de versión de Hibernate a
+ * Saga). Mapea dominio&lt;-&gt;entidades JPA despachando la subclase de
+ * Saga por {@code tipo}, y traduce el conflicto de versión de Hibernate a
  * {@link ConcurrenciaOptimistaException}.
  */
 @Component
@@ -135,10 +135,10 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     // ------------------------------------------------------------------
-    // SagaEntity <-> SagaRoot (despacho por tipo)
+    // SagaEntity <-> Saga (despacho por tipo)
     // ------------------------------------------------------------------
 
-    private static SagaEntity entidadSagaDe(SagaRoot<?> saga) {
+    private static SagaEntity entidadSagaDe(Saga<?> saga) {
         var auditoria = new ArrayList<AuditoriaEntity>();
         for (var a : saga.auditoria()) {
             auditoria.add(new AuditoriaEntity(a.cuando(), a.quien().usuario(), a.accion(), a.detalle()));
@@ -146,19 +146,19 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         var sagaId = saga.id().valor().toString();
         var externalId = saga.externalId().valor().toString();
         return switch (saga) {
-            case SagaPrincipalRoot s -> new SagaEntity(sagaId, TipoSaga.PRINCIPAL.name(), externalId,
+            case SagaPrincipal s -> new SagaEntity(sagaId, TipoSaga.PRINCIPAL.name(), externalId,
                     s.estado().name(), ContextoCodec.escribir(contextoDePrincipal(s.contexto())), auditoria);
-            case SagaSecundaria1Root s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA1.name(), externalId,
+            case SagaSecundaria1 s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA1.name(), externalId,
                     s.estado().name(), ContextoCodec.escribir(contextoDeSecundaria1(s)), auditoria);
-            case SagaSecundaria2Root s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA2.name(), externalId,
+            case SagaSecundaria2 s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA2.name(), externalId,
                     s.estado().name(), ContextoCodec.escribir(contextoDeSecundaria2(s)), auditoria);
-            case SagaSecundaria3Root s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA3.name(), externalId,
+            case SagaSecundaria3 s -> new SagaEntity(sagaId, TipoSaga.SECUNDARIA3.name(), externalId,
                     s.estado().name(), ContextoCodec.escribir(contextoDeSecundaria3(s)), auditoria);
             default -> throw new IllegalStateException("Tipo de saga desconocido: " + saga.getClass());
         };
     }
 
-    private static SagaRoot<?> sagaDesde(SagaEntity entity) {
+    private static Saga<?> sagaDesde(SagaEntity entity) {
         var id = SagaId.de(entity.getSagaId());
         var externalId = ExternalId.de(entity.getExternalId());
         var auditoria = entity.getAuditoria().stream()
@@ -167,15 +167,15 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                 .toList();
         var ctx = ContextoCodec.leer(entity.getContexto());
         return switch (TipoSaga.valueOf(entity.getTipo())) {
-            case PRINCIPAL -> SagaPrincipalRoot.rehidratar(id, externalId, contextoTramitacionDesde(ctx),
+            case PRINCIPAL -> SagaPrincipal.rehidratar(id, externalId, contextoTramitacionDesde(ctx),
                     EstadoSagaPrincipal.valueOf(entity.getEstado()), auditoria);
-            case SECUNDARIA1 -> SagaSecundaria1Root.rehidratar(id, externalId, new RefPaso1(ctx.get("refPaso1")),
+            case SECUNDARIA1 -> SagaSecundaria1.rehidratar(id, externalId, new RefPaso1(ctx.get("refPaso1")),
                     refONull(ctx, "refInicio", RefInicio::new), refONull(ctx, "refConfirmacion", RefConfirmacion::new),
                     EstadoSagaSecundaria1.valueOf(entity.getEstado()), auditoria);
-            case SECUNDARIA2 -> SagaSecundaria2Root.rehidratar(id, externalId, new RefPaso5(ctx.get("refPaso5")),
+            case SECUNDARIA2 -> SagaSecundaria2.rehidratar(id, externalId, new RefPaso5(ctx.get("refPaso5")),
                     refONull(ctx, "refRespuesta", RefRespuesta::new),
                     EstadoSagaSecundaria2.valueOf(entity.getEstado()), auditoria);
-            case SECUNDARIA3 -> SagaSecundaria3Root.rehidratar(id, externalId, new RefPaso7(ctx.get("refPaso7")),
+            case SECUNDARIA3 -> SagaSecundaria3.rehidratar(id, externalId, new RefPaso7(ctx.get("refPaso7")),
                     refONull(ctx, "refEjecucion", RefEjecucion::new),
                     EstadoSagaSecundaria3.valueOf(entity.getEstado()), auditoria);
         };
@@ -208,7 +208,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                 refONull(ctx, "refPaso7", RefPaso7::new), refONull(ctx, "refPaso8", RefPaso8::new));
     }
 
-    private static Map<String, String> contextoDeSecundaria1(SagaSecundaria1Root s) {
+    private static Map<String, String> contextoDeSecundaria1(SagaSecundaria1 s) {
         var m = new LinkedHashMap<String, String>();
         m.put("refPaso1", s.refPaso1().valor());
         ponerSiNoNulo(m, "refInicio", s.refInicio() == null ? null : s.refInicio().valor());
@@ -216,14 +216,14 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         return m;
     }
 
-    private static Map<String, String> contextoDeSecundaria2(SagaSecundaria2Root s) {
+    private static Map<String, String> contextoDeSecundaria2(SagaSecundaria2 s) {
         var m = new LinkedHashMap<String, String>();
         m.put("refPaso5", s.refPaso5().valor());
         ponerSiNoNulo(m, "refRespuesta", s.refRespuesta() == null ? null : s.refRespuesta().valor());
         return m;
     }
 
-    private static Map<String, String> contextoDeSecundaria3(SagaSecundaria3Root s) {
+    private static Map<String, String> contextoDeSecundaria3(SagaSecundaria3 s) {
         var m = new LinkedHashMap<String, String>();
         m.put("refPaso7", s.refPaso7().valor());
         ponerSiNoNulo(m, "refEjecucion", s.refEjecucion() == null ? null : s.refEjecucion().valor());

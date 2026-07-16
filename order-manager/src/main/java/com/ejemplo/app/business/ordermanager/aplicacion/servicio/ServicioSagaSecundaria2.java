@@ -13,23 +13,23 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExte
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.ComandoPasoSecundaria2;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
 
 /**
- * Orquestador de la saga secundaria 2: la solicitud es una llamada REST y la
+ * Servicio de la saga secundaria 2: la solicitud es una llamada REST y la
  * respuesta llega a posteriori como evento Kafka (puede tardar), vigilada por
  * una ventana de espera de 3h. Al vencer, en vez de dar la respuesta por
  * perdida se concilia con el servicio destino: puede que el evento se
  * perdiera o esté aún en camino.
  *
  * Cuando el consumer de Kafka resuelve la saga directamente (respuestaOk /
- * respuestaError), solo despierta o reprograma la orden: es este orquestador,
+ * respuestaError), solo despierta o reprograma la orden: es este servicio,
  * en su siguiente pasada, quien deja el agregado en su estado operativo final
  * (finalizar u otra solicitud), manteniendo un único punto que decide cuándo
  * una orden queda finalizada.
  */
 @Service
-public class ServicioSagaSecundaria2 implements OrquestadorSaga {
+public class ServicioSagaSecundaria2 implements ServicioSaga {
 
     /** La respuesta puede tardar: ventana de espera entre reconciliaciones. */
     static final Duration VENTANA_ESPERA = Duration.ofHours(3);
@@ -57,7 +57,7 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria2Root) orden.saga();
+        var saga = (SagaSecundaria2) orden.saga();
         return switch (saga.estado()) {
             case INICIAL -> solicitar(orden, saga);
             case ESPERANDO_RESPUESTA -> conciliar(orden, saga);
@@ -65,7 +65,7 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
         };
     }
 
-    private SenalPaso solicitar(OrdenRoot orden, SagaSecundaria2Root saga) {
+    private SenalPaso solicitar(OrdenRoot orden, SagaSecundaria2 saga) {
         var cmd = (ComandoPasoSecundaria2.Solicitar) saga.comandoActual();
         puerto.solicitar(saga.id(), cmd); // REST fuera de tx
 
@@ -77,7 +77,7 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
         });
     }
 
-    private SenalPaso conciliar(OrdenRoot orden, SagaSecundaria2Root saga) {
+    private SenalPaso conciliar(OrdenRoot orden, SagaSecundaria2 saga) {
         var resultado = conciliacion.consultar(saga.id(), saga.externalId()); // REST fuera de tx
 
         return switch (resultado) {
@@ -98,7 +98,7 @@ public class ServicioSagaSecundaria2 implements OrquestadorSaga {
     }
 
     /** El consumer de Kafka ya dejó la saga en TERMINADA; solo falta el cierre operativo de la orden. */
-    private SenalPaso finalizarYa(OrdenRoot orden, SagaSecundaria2Root saga) {
+    private SenalPaso finalizarYa(OrdenRoot orden, SagaSecundaria2 saga) {
         return tx.enTransaccion(() -> {
             orden.finalizar(saga.resultadoFinal());
             repo.guardar(orden);

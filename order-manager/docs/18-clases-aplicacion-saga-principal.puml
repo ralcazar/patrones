@@ -4,7 +4,7 @@ title Aplicación — saga principal: ServicioSagaPrincipal y sus puertos
 hide empty members
 skinparam classAttributeIconSize 0
 
-interface "OrquestadorSaga (ver 17)" as Base
+interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaPrincipal <<@Service>> {
   -repo : RepositorioOrden
@@ -15,7 +15,7 @@ class ServicioSagaPrincipal <<@Service>> {
   +ejecutarPaso(orden) : SenalPaso
   -ejecutarPasoNormal(orden, saga) : SenalPaso
   -ejecutarCompensacion(orden, saga) : SenalPaso
-  -crearHijas(contextos, ahora)  «OrdenRoot.nueva(SagaSecundariaNRoot.crear(...))\n+ repo.crear(hija), una vez por ContextoArranque»
+  -crearHijas(contextos, ahora)  «OrdenRoot.nueva(SagaSecundariaN.crear(...))\n+ repo.crear(hija), una vez por ContextoArranque»
   -ejecutarComando(ComandoPaso) : ResultadoPasoPrincipal  «switch: rutea al PuertoPasoN;\nCompensarPaso1/2 -> IllegalStateException (van por ejecutarCompensacion)»
 }
 note right of ServicioSagaPrincipal

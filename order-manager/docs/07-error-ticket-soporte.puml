@@ -6,7 +6,7 @@ box "Adaptadores de entrada" #EFF5FB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
-  participant "OrquestadorSaga\n(cualquiera de los 4)" as ORQ
+  participant "ServicioSaga\n(cualquiera de los 4)" as ORQ
   participant "ServicioTicketsSoporte" as STICK
 end box
 box "Dominio" #FBF5EF

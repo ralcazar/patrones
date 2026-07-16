@@ -17,9 +17,9 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 
 /**
  * Bucle de ejecución de una saga: reclama el token bajo optimistic lock y
- * encadena pasos síncronos hasta que el orquestador aparca, termina o falla.
+ * encadena pasos síncronos hasta que el servicio de la saga aparca, termina o falla.
  * Carga el agregado una única vez por paso, antes del REST (ver
- * {@link OrquestadorSaga}), y reutiliza esa misma instancia si el paso falla
+ * {@link ServicioSaga}), y reutiliza esa misma instancia si el paso falla
  * y hay que programar un reintento: así el guardado del reintento conserva
  * la protección por version frente a un takeover concurrente (otro pod que
  * reclamó tras vencer el lease).
@@ -27,16 +27,16 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 @Service
 public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
 
-    private final Map<TipoSaga, OrquestadorSaga> orquestadores;
+    private final Map<TipoSaga, ServicioSaga> serviciosSaga;
     private final RepositorioOrden repo;
     private final UnidadDeTrabajo tx;
     private final PoliticaReintentos politica;
     private final Duration lease;
     private final int lote;
 
-    public ServicioContinuarSaga(Map<TipoSaga, OrquestadorSaga> orquestadores, RepositorioOrden repo,
+    public ServicioContinuarSaga(Map<TipoSaga, ServicioSaga> serviciosSaga, RepositorioOrden repo,
             UnidadDeTrabajo tx, PoliticaReintentos politica, Duration lease, int lote) {
-        this.orquestadores = orquestadores;
+        this.serviciosSaga = serviciosSaga;
         this.repo = repo;
         this.tx = tx;
         this.politica = politica;
@@ -67,12 +67,12 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
             return false;
         }
 
-        var orquestador = orquestadores.get(tipo);
+        var servicioSaga = serviciosSaga.get(tipo);
         while (true) {
             var orden = repo.cargar(id); // una única carga por paso, antes del REST
             SenalPaso senal;
             try {
-                senal = orquestador.ejecutarPaso(orden);
+                senal = servicioSaga.ejecutarPaso(orden);
             } catch (ConcurrenciaOptimistaException e) {
                 return true; // otro pod/actor tocó el agregado entre medias
             } catch (RuntimeException e) {
@@ -86,9 +86,9 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
                 return true;
             }
             switch (senal) {
-                case SenalPaso.HayMasTrabajo() -> { /* el orquestador ya reseteó intentos y renovó el lease */ }
-                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el orquestador
-                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el orquestador
+                case SenalPaso.HayMasTrabajo() -> { /* el servicio de la saga ya reseteó intentos y renovó el lease */ }
+                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el servicio de la saga
+                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el servicio de la saga
             }
         }
     }

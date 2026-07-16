@@ -15,12 +15,12 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Fachada de la pantalla de soporte: cada intervención actúa directamente
  * sobre el agregado a través de RepositorioOrden (siempre un único agregado,
- * un único guardado), sin pasar por los orquestadores de ejecución; las
+ * un único guardado), sin pasar por los servicios de saga de ejecución; las
  * consultas van al modelo de lectura.
  */
 @Service
@@ -44,7 +44,7 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
         // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
         tx.enTransaccion(() -> {
             var orden = repo.cargar(id);
-            var saga = (SagaPrincipalRoot) orden.saga();
+            var saga = (SagaPrincipal) orden.saga();
             saga.cancelar(quien, motivo);
             orden.despertar(Instant.now());
             repo.guardar(orden);

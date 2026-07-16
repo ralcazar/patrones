@@ -4,15 +4,15 @@ title Dominio — saga principal (dominio.sagaprincipal)
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "SagaRoot<EstadoSagaPrincipal>\n(dominio.comun — ver 14)" as SagaRoot {
+abstract class "Saga<EstadoSagaPrincipal>\n(dominio.comun — ver 14)" as Saga {
   ciclo de vida común: comandoActual / aplicarYAvanzar /
   terminada / resultadoFinal / marcarPasoActualOkManual
 }
 
 package "dominio.sagaprincipal" {
-  class SagaPrincipalRoot <<@AggregateRoot>> {
+  class SagaPrincipal <<@Entity>> {
     -ctx : ContextoTramitacion
-    +{static} crear(id, externalId, datos, datoNegocio2) : SagaPrincipalRoot
+    +{static} crear(id, externalId, datos, datoNegocio2) : SagaPrincipal
     +{static} rehidratar(id, externalId, ctx, estado, auditoria)
     +comandoActual() : ComandoPasoPrincipal  «switch(estado)»
     +aplicarYAvanzar(ResultadoPasoPrincipal)  «ctx = ctx.aplicar(r); avanzar()»
@@ -25,7 +25,7 @@ package "dominio.sagaprincipal" {
     +compensacionCompletada()
     +contexto() : ContextoTramitacion
   }
-  note right of SagaPrincipalRoot
+  note right of SagaPrincipal
     PASO1..PASO8 síncronos. Punto de no retorno: PASO7_HECHO ya
     no es cancelable (PuntoNoRetornoSuperadoException). cancelar():
     TERMINADA->SagaYaCompletadaException; COMPENSAR_*/CANCELADA->
@@ -73,10 +73,10 @@ package "dominio.sagaprincipal" {
 
 class "RefPaso1, RefPaso5, RefPaso7\n(dominio.comun — ver 14)" as RefsComunes <<@ValueObject>>
 
-SagaRoot <|-down- SagaPrincipalRoot
-SagaPrincipalRoot *-- ContextoTramitacion : ctx
-SagaPrincipalRoot ..> ComandoPasoPrincipal : comandoActual()
-SagaPrincipalRoot ..> ResultadoPasoPrincipal : aplicarYAvanzar()
+Saga <|-down- SagaPrincipal
+SagaPrincipal *-- ContextoTramitacion : ctx
+SagaPrincipal ..> ComandoPasoPrincipal : comandoActual()
+SagaPrincipal ..> ResultadoPasoPrincipal : aplicarYAvanzar()
 ContextoTramitacion o-- RefsPropias
 ContextoTramitacion o-- RefsComunes
 ContextoTramitacion o-- Datos

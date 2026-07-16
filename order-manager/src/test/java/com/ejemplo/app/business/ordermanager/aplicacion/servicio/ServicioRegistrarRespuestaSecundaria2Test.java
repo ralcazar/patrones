@@ -25,7 +25,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
 
 /**
  * Consumer de Kafka -&gt; caso de uso que aplica directamente la respuesta
@@ -51,7 +51,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         var id = SagaId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
-        var saga = SagaSecundaria2Root.crear(id, ctx);
+        var saga = SagaSecundaria2.crear(id, ctx);
         saga.solicitudEnviada();
         var orden = OrdenRoot.nueva(saga, Instant.now());
         orden.aparcar(Duration.ofHours(3), Instant.now());
@@ -67,8 +67,8 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         servicio.respuestaOk(id, new RefRespuesta("resp-1"), "msg-1");
 
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2Root) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
-        assertThat(((SagaSecundaria2Root) orden.saga()).refRespuesta().valor()).isEqualTo("resp-1");
+        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+        assertThat(((SagaSecundaria2) orden.saga()).refRespuesta().valor()).isEqualTo("resp-1");
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.proximoReintentoEn()).isBeforeOrEqualTo(Instant.now());
         verify(dedup).registrar(any());
@@ -81,7 +81,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
 
         servicio.respuestaOk(id, new RefRespuesta("resp-1"), "msg-1");
 
-        assertThat(((SagaSecundaria2Root) repo.estadoActual(id).saga()).estado())
+        assertThat(((SagaSecundaria2) repo.estadoActual(id).saga()).estado())
                 .isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
         verify(dedup, never()).registrar(any());
     }
@@ -94,7 +94,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         servicio.respuestaError(id, "ERR", "detalle", true, "msg-1");
 
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2Root) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
+        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
         assertThat(orden.intentos()).isEqualTo(1);
         assertThat(orden.proximoReintentoEn())
                 .isBetween(Instant.now().plus(Duration.ofSeconds(55)), Instant.now().plus(Duration.ofMinutes(1).plusSeconds(5)));

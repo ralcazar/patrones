@@ -7,11 +7,11 @@ box "Adaptadores de entrada" #EFF5FB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaSecundaria3\n(OrquestadorSaga)" as ORQ
+  participant "ServicioSagaSecundaria3\n(ServicioSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
-  participant "SagaSecundaria3Root" as SAGA
+  participant "SagaSecundaria3" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
@@ -61,7 +61,7 @@ return true (el worker sigue con la siguiente candidata\nhasta que continuarSigu
 deactivate TRAB
 
 note over ORQ, PSIM
-  A diferencia de la principal y de secundaria1, este orquestador
+  A diferencia de la principal y de secundaria1, este servicio
   no comprueba terminada() antes de finalizar: el único paso
   EJECUCION siempre deja la saga en TERMINADA, así que
   ejecutarPaso() va derecho a finalizar(). Ante

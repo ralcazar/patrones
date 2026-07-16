@@ -42,7 +42,7 @@ import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso4;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso6;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.RefPaso8;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ResultadoPasoPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Orquestación real de la saga principal a través de ServicioContinuarSaga:
@@ -63,7 +63,7 @@ class ServicioSagaPrincipalTest {
     private PuertoPaso6 puertoPaso6;
     private PuertoPaso7 puertoPaso7;
     private PuertoPaso8 puertoPaso8;
-    private ServicioSagaPrincipal orquestador;
+    private ServicioSagaPrincipal servicioSaga;
     private ServicioContinuarSaga servicioContinuar;
 
     @BeforeEach
@@ -78,9 +78,9 @@ class ServicioSagaPrincipalTest {
         puertoPaso6 = mock(PuertoPaso6.class);
         puertoPaso7 = mock(PuertoPaso7.class);
         puertoPaso8 = mock(PuertoPaso8.class);
-        orquestador = new ServicioSagaPrincipal(repo, tx, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
+        servicioSaga = new ServicioSagaPrincipal(repo, tx, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
-        servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, orquestador), repo, tx,
+        servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repo, tx,
                 new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE, 16);
 
         when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
@@ -95,7 +95,7 @@ class ServicioSagaPrincipalTest {
 
     private SagaId crearOrdenPrincipal() {
         var id = SagaId.nuevo();
-        var saga = SagaPrincipalRoot.crear(id, ExternalId.de(UUID.randomUUID().toString()),
+        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         return id;
@@ -110,7 +110,7 @@ class ServicioSagaPrincipalTest {
         var ordenFinal = repo.estadoActual(id);
         assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
         assertThat(ordenFinal.estaViva()).isFalse();
-        assertThat(((SagaPrincipalRoot) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
+        assertThat(((SagaPrincipal) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
 
         var hijas = repo.todas().stream().filter(o -> o.tipo() != TipoSaga.PRINCIPAL).toList();
         assertThat(hijas).hasSize(3);
@@ -128,11 +128,11 @@ class ServicioSagaPrincipalTest {
         avanzarUnPaso(id); // PASO2
 
         var ordenTrasPaso2 = repo.estadoActual(id);
-        assertThat(((SagaPrincipalRoot) ordenTrasPaso2.saga()).estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
+        assertThat(((SagaPrincipal) ordenTrasPaso2.saga()).estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
         // Soporte cancela: dispara la compensación PASO2 -> PASO1 -> CANCELADA.
         var ordenACancelar = repo.cargar(id);
-        var sagaACancelar = (SagaPrincipalRoot) ordenACancelar.saga();
+        var sagaACancelar = (SagaPrincipal) ordenACancelar.saga();
         sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio");
         ordenACancelar.despertar(Instant.now());
         repo.guardar(ordenACancelar);
@@ -140,7 +140,7 @@ class ServicioSagaPrincipalTest {
         servicioContinuar.continuarSiguiente();
 
         var ordenFinal = repo.estadoActual(id);
-        assertThat(((SagaPrincipalRoot) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
+        assertThat(((SagaPrincipal) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
         assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_COMPENSADA);
         assertThat(ordenFinal.estaViva()).isFalse();
         verify(puertoPaso2).compensar(any());
@@ -159,7 +159,7 @@ class ServicioSagaPrincipalTest {
         // pod hace takeover y ejecuta PASO3 de verdad (escribe y sube la version).
         when(puertoPaso3.ejecutar(any())).thenAnswer(invocacion -> {
             var ordenOtroPod = repo.cargar(id);
-            ((SagaPrincipalRoot) ordenOtroPod.saga())
+            ((SagaPrincipal) ordenOtroPod.saga())
                     .aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod")));
             repo.guardar(ordenOtroPod);
             return new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-zombi"));
@@ -167,19 +167,19 @@ class ServicioSagaPrincipalTest {
 
         // El zombi despierta con su instantánea obsoleta: su guardar falla por version.
         org.assertj.core.api.Assertions
-                .assertThatThrownBy(() -> orquestador.ejecutarPaso(repo.cargar(id)))
+                .assertThatThrownBy(() -> servicioSaga.ejecutarPaso(repo.cargar(id)))
                 .isInstanceOf(com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException.class);
 
         // Gana el otro pod: estado en PASO3_HECHO (sin saltar a PASO4_HECHO) y su ref intacta.
-        var saga = (SagaPrincipalRoot) repo.estadoActual(id).saga();
+        var saga = (SagaPrincipal) repo.estadoActual(id).saga();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
         assertThat(saga.contexto().refPaso3()).isEqualTo(new RefPaso3("ref3-otro-pod"));
     }
 
-    /** Ejecuta exactamente un paso invocando al orquestador directamente (no toca el token). */
+    /** Ejecuta exactamente un paso invocando al servicioSaga directamente (no toca el token). */
     private void avanzarUnPaso(SagaId id) {
         var antes = repo.estadoActual(id).version();
-        orquestador.ejecutarPaso(repo.cargar(id));
+        servicioSaga.ejecutarPaso(repo.cargar(id));
         assertThat(repo.estadoActual(id).version()).isGreaterThan(antes);
     }
 }

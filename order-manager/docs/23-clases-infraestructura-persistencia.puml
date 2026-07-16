@@ -35,7 +35,7 @@ class AdaptadorRepositorioOrden <<@Component>> {
 note right of AdaptadorRepositorioOrden
   ÚNICO adaptador de escritura del agregado. entidadSagaDe()/
   sagaDesde() despachan por TipoSaga (switch sobre la subclase de
-  SagaRoot) y (de)serializan el contexto propio de cada saga con
+  Saga) y (de)serializan el contexto propio de cada saga con
   ContextoCodec (JSON plano: todas las refs son wrappers de un
   único String). ordenes.flush() fuerza el chequeo de version
   aquí, no en el commit de fuera.

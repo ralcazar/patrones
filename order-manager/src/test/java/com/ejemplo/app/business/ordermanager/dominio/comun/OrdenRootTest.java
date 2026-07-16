@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.EstadoSagaPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Estado de EJECUCIÓN del agregado único (OrdenRoot): reintentos, lease del
@@ -24,8 +24,8 @@ class OrdenRootTest {
     private static final Duration LEASE = Duration.ofMinutes(10);
     private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
 
-    private static SagaRoot<?> sagaCualquiera() {
-        return SagaPrincipalRoot.crear(SagaId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
+    private static Saga<?> sagaCualquiera() {
+        return SagaPrincipal.crear(SagaId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
     }
 

@@ -4,7 +4,7 @@ title Aplicación — saga secundaria 1: ServicioSagaSecundaria1 y sus puertos
 hide empty members
 skinparam classAttributeIconSize 0
 
-interface "OrquestadorSaga (ver 17)" as Base
+interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaSecundaria1 <<@Service>> {
   -repo : RepositorioOrden

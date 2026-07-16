@@ -25,11 +25,11 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSaga
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.OrquestadorSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioRegistrarRespuestaSecundaria2;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaPrincipal;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSagaSecundaria2;
@@ -81,7 +81,7 @@ public class ConfiguracionAplicacion {
     }
 
     @Bean
-    Map<TipoSaga, OrquestadorSaga> orquestadoresPorTipo(ServicioSagaPrincipal principal,
+    Map<TipoSaga, ServicioSaga> serviciosSagaPorTipo(ServicioSagaPrincipal principal,
             ServicioSagaSecundaria1 secundaria1, ServicioSagaSecundaria2 secundaria2,
             ServicioSagaSecundaria3 secundaria3) {
         return Map.of(
@@ -92,11 +92,11 @@ public class ConfiguracionAplicacion {
     }
 
     @Bean
-    ServicioContinuarSaga servicioContinuarSaga(Map<TipoSaga, OrquestadorSaga> orquestadores,
+    ServicioContinuarSaga servicioContinuarSaga(Map<TipoSaga, ServicioSaga> serviciosSaga,
             RepositorioOrden repo, UnidadDeTrabajo tx, PoliticaReintentos politica,
             @Value("${orden.lease}") Duration lease,
             @Value("${orden.planificador.lote:16}") int lote) {
-        return new ServicioContinuarSaga(orquestadores, repo, tx, politica, lease, lote);
+        return new ServicioContinuarSaga(serviciosSaga, repo, tx, politica, lease, lote);
     }
 
     @Bean

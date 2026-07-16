@@ -12,13 +12,13 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.RefRespuesta;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
 
 /**
  * Aplica directamente la respuesta diferida de la saga secundaria 2 que trae
  * el consumer de Kafka: una única transacción, deduplicada por mensajeId (la
  * mensajería entrega at-least-once). El agregado se carga, muta y guarda
- * aquí mismo; el cierre operativo final de la orden lo deja al orquestador
+ * aquí mismo; el cierre operativo final de la orden lo deja al servicio de la saga
  * (ver ServicioSagaSecundaria2), que la recoge en su siguiente pasada.
  */
 @Service
@@ -46,7 +46,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         tx.enTransaccion(() -> {
             dedup.registrar(msgId);
             var orden = repo.cargar(sagaId);
-            var saga = (SagaSecundaria2Root) orden.saga();
+            var saga = (SagaSecundaria2) orden.saga();
             saga.respuestaRecibida(ref);
             orden.despertar(Instant.now());
             repo.guardar(orden);
@@ -63,7 +63,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         tx.enTransaccion(() -> {
             dedup.registrar(msgId);
             var orden = repo.cargar(sagaId);
-            var saga = (SagaSecundaria2Root) orden.saga();
+            var saga = (SagaSecundaria2) orden.saga();
             saga.volverASolicitar();
             orden.programarReintento(politica, Instant.now());
             repo.guardar(orden);

@@ -9,7 +9,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.Repositori
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTrabajo;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Iniciar una tramitación: crea el agregado (orden + saga principal) en una
@@ -32,7 +32,7 @@ public class ServicioIniciarTramitacion implements CasoUsoIniciarTramitacion {
     public SagaId iniciar(ComandoIniciarTramitacion cmd) {
         var sagaId = SagaId.nuevo();
         tx.enTransaccion(() -> {
-            var saga = SagaPrincipalRoot.crear(sagaId, cmd.externalId(), cmd.datoNegocio3(), cmd.datoNegocio2());
+            var saga = SagaPrincipal.crear(sagaId, cmd.externalId(), cmd.datoNegocio3(), cmd.datoNegocio2());
             repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         });
         return sagaId;

@@ -10,11 +10,11 @@ end box
 box "Aplicación" #F5FBEF
   participant "ServicioSoporteSagas" as SOP
   participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaPrincipal\n(OrquestadorSaga)" as ORQ
+  participant "ServicioSagaPrincipal\n(ServicioSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
-  participant "SagaPrincipalRoot" as SAGA
+  participant "SagaPrincipal" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO

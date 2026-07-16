@@ -11,7 +11,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 
 /**
  * ÚNICO puerto de persistencia de escritura del agregado: OrdenRoot, que
- * contiene su SagaRoot. Siempre persiste o rehidrata el agregado completo
+ * contiene su Saga. Siempre persiste o rehidrata el agregado completo
  * (ejecución + negocio + auditoría) de una sola vez.
  */
 @Repository
@@ -20,7 +20,7 @@ public interface RepositorioOrden {
     /** Persiste el agregado completo (orden + saga + auditoría) por primera vez. */
     void crear(OrdenRoot orden);
 
-    /** Rehidrata el agregado completo, despachando la subclase de SagaRoot por su tipo. */
+    /** Rehidrata el agregado completo, despachando la subclase de Saga por su tipo. */
     OrdenRoot cargar(SagaId id);
 
     /** Lanza ConcurrenciaOptimistaException si la versión no coincide. */

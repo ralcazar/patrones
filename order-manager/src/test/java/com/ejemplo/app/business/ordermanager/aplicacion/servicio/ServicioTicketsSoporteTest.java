@@ -25,7 +25,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Barrido de tickets: la marca es operativa (intentos &gt;= 8 sin
@@ -48,7 +48,7 @@ class ServicioTicketsSoporteTest {
 
     private SagaId crearOrdenAtascada(int intentos) {
         var id = SagaId.nuevo();
-        var saga = SagaPrincipalRoot.crear(id, ExternalId.de(UUID.randomUUID().toString()),
+        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
         var orden = OrdenRoot.nueva(saga, Instant.now());
         var politica = new PoliticaReintentos();
@@ -64,7 +64,7 @@ class ServicioTicketsSoporteTest {
         return () -> repo.todas().stream()
                 .filter(o -> o.intentos() >= 8 && o.ticketAbiertoEn() == null && o.estaViva())
                 .map(o -> new SagaTicketPendiente(o.tipo(), o.sagaId(),
-                        ((SagaPrincipalRoot) o.saga()).externalId(), o.intentos()))
+                        ((SagaPrincipal) o.saga()).externalId(), o.intentos()))
                 .toList();
     }
 

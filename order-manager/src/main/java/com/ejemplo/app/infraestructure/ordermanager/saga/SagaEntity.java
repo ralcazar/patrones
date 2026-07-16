@@ -15,7 +15,7 @@ import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 
 /**
- * Entidad JPA de la SagaRoot: SIN {@code @Version} (la controla OrdenEntity,
+ * Entidad JPA de la Saga: SIN {@code @Version} (la controla OrdenEntity,
  * la única del agregado). Los campos propios de cada tipo de saga (las refs y
  * datos de negocio) son, en el dominio, siempre wrappers de un único String,
  * así que se guardan como un JSON plano en {@code contexto} en vez de mapear

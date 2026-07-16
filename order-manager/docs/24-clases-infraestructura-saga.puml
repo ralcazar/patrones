@@ -73,7 +73,7 @@ class UnidadDeTrabajoSpring <<@Component>> {
 
 ' --- configuración y piezas comunes ---
 class ConfiguracionAplicacion <<@Configuration>> {
-  +@Bean de PoliticaReintentos y de los 4\nOrquestadorSaga + servicios de soporte/limpieza
+  +@Bean de PoliticaReintentos y de los 4\nServicioSaga + servicios de soporte/limpieza
   «POJOs sin anotaciones Spring: la capa business\nno depende de ningún framework»
 }
 class ConfiguracionEjecucionAsincrona <<@Configuration, SchedulingConfigurer\n@EnableScheduling @EnableAsync>> {

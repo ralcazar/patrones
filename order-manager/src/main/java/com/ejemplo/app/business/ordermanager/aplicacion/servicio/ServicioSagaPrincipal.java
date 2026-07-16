@@ -24,13 +24,13 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ComandoPasoPrincipal;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.ResultadoPasoPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
- * Orquestador de la saga principal: PASO1 -> ... -> PASO8 síncronos y, si
+ * Servicio de la saga principal: PASO1 -> ... -> PASO8 síncronos y, si
  * soporte cancela antes del punto de no retorno, la compensación
  * COMPENSAR_PASO2 -> COMPENSAR_PASO1 -> CANCELADA.
  *
@@ -40,7 +40,7 @@ import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecunda
  * MODIFICA el agregado de la principal y CREA los otros tres.
  */
 @Service
-public class ServicioSagaPrincipal implements OrquestadorSaga {
+public class ServicioSagaPrincipal implements ServicioSaga {
 
     private final RepositorioOrden repo;
     private final UnidadDeTrabajo tx;
@@ -82,11 +82,11 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaPrincipalRoot) orden.saga();
+        var saga = (SagaPrincipal) orden.saga();
         return esCompensacion(saga.estado()) ? ejecutarCompensacion(orden, saga) : ejecutarPasoNormal(orden, saga);
     }
 
-    private SenalPaso ejecutarPasoNormal(OrdenRoot orden, SagaPrincipalRoot saga) {
+    private SenalPaso ejecutarPasoNormal(OrdenRoot orden, SagaPrincipal saga) {
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
 
         return tx.enTransaccion(() -> {
@@ -104,7 +104,7 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
         });
     }
 
-    private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipalRoot saga) {
+    private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
         if (saga.estado() == EstadoSagaPrincipal.CANCELADA) {
             return tx.enTransaccion(() -> {
                 orden.finalizar(saga.resultadoFinal());
@@ -133,11 +133,11 @@ public class ServicioSagaPrincipal implements OrquestadorSaga {
         for (var contexto : contextos) {
             OrdenRoot hija = switch (contexto) {
                 case ContextoArranque.ArranqueSecundaria1 c ->
-                        OrdenRoot.nueva(SagaSecundaria1Root.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria1.crear(SagaId.nuevo(), c), ahora);
                 case ContextoArranque.ArranqueSecundaria2 c ->
-                        OrdenRoot.nueva(SagaSecundaria2Root.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria2.crear(SagaId.nuevo(), c), ahora);
                 case ContextoArranque.ArranqueSecundaria3 c ->
-                        OrdenRoot.nueva(SagaSecundaria3Root.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria3.crear(SagaId.nuevo(), c), ahora);
             };
             repo.crear(hija);
         }

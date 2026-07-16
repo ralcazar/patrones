@@ -8,12 +8,12 @@ box "Adaptadores de entrada" #EFF5FB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaSecundaria2\n(OrquestadorSaga)" as ORQ
+  participant "ServicioSagaSecundaria2\n(ServicioSaga)" as ORQ
   participant "ServicioRegistrarRespuesta\nSecundaria2" as SREG
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
-  participant "SagaSecundaria2Root" as SAGA
+  participant "SagaSecundaria2" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
@@ -57,7 +57,7 @@ group Transacción única
   return
   note right of REPO
     Guardar lleva la version de la carga hecha por CONT antes del
-    REST (aquí y en el resto de transacciones de este orquestador):
+    REST (aquí y en el resto de transacciones de este servicio):
     si otro actor escribió con el REST en vuelo (takeover, consumer
     de Kafka, soporte), guardar falla por version y el pod se
     retira.
@@ -96,7 +96,7 @@ deactivate CONS
 note over SREG
   respuestaOk deja la saga en TERMINADA pero NO llama a
   orden.finalizar(): el cierre operativo lo hace el mismo
-  orquestador en su siguiente pasada (rama TERMINADA de abajo),
+  servicio en su siguiente pasada (rama TERMINADA de abajo),
   manteniendo un único punto que decide cuándo la orden acaba.
 end note
 

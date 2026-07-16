@@ -4,18 +4,18 @@ title Dominio — las 3 sagas secundarias (dominio.sagasecundaria1/2/3)
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "SagaRoot<E>\n(dominio.comun — ver 14)" as SagaRoot {
+abstract class "Saga<E>\n(dominio.comun — ver 14)" as Saga {
   ciclo de vida común: comandoActual / aplicarYAvanzar /
   terminada / resultadoFinal / marcarPasoActualOkManual
   Sin version propia: la controla OrdenRoot (ver 14).
 }
 
 package "dominio.sagasecundaria1" {
-  class SagaSecundaria1Root <<@AggregateRoot>> {
+  class SagaSecundaria1 <<@Entity>> {
     -refPaso1 : RefPaso1  «final»
     -refInicio : RefInicio
     -refConfirmacion : RefConfirmacion
-    +{static} crear(id, ArranqueSecundaria1) : SagaSecundaria1Root
+    +{static} crear(id, ArranqueSecundaria1) : SagaSecundaria1
     +{static} rehidratar(id, externalId, refPaso1,\nrefInicio, refConfirmacion, estado, auditoria)
     +comandoActual() : ComandoPasoSecundaria1
     +aplicarYAvanzar(ResultadoPasoSecundaria1)
@@ -35,7 +35,7 @@ package "dominio.sagasecundaria1" {
     Iniciada(refInicio)
     Confirmada(refConfirmacion)
   }
-  note bottom of SagaSecundaria1Root
+  note bottom of SagaSecundaria1
     Dos REST síncronos encadenados: INICIO -> CONFIRMACION.
     marcarPasoActualOkManual de INICIO exige aportar refInicio
     (lo consume CONFIRMACION); CONFIRMACION no exige datos (nadie
@@ -44,10 +44,10 @@ package "dominio.sagasecundaria1" {
 }
 
 package "dominio.sagasecundaria2" {
-  class SagaSecundaria2Root <<@AggregateRoot>> {
+  class SagaSecundaria2 <<@Entity>> {
     -refPaso5 : RefPaso5  «final»
     -refRespuesta : RefRespuesta
-    +{static} crear(id, ArranqueSecundaria2) : SagaSecundaria2Root
+    +{static} crear(id, ArranqueSecundaria2) : SagaSecundaria2
     +{static} rehidratar(id, externalId, refPaso5,\nrefRespuesta, estado, auditoria)
     +comandoActual() : ComandoPasoSecundaria2  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria2.Respuesta)  «delega en respuestaRecibida()»
@@ -68,7 +68,7 @@ package "dominio.sagasecundaria2" {
   interface ResultadoPasoSecundaria2 <<sealed>> {
     Respuesta(refRespuesta)
   }
-  note bottom of SagaSecundaria2Root
+  note bottom of SagaSecundaria2
     Un único paso SOLICITUD: la solicitud es REST, la respuesta
     llega a posteriori como evento Kafka (puede tardar). El
     agregado no sabe nada del aparcado de 3h ni de la conciliación
@@ -77,10 +77,10 @@ package "dominio.sagasecundaria2" {
 }
 
 package "dominio.sagasecundaria3" {
-  class SagaSecundaria3Root <<@AggregateRoot>> {
+  class SagaSecundaria3 <<@Entity>> {
     -refPaso7 : RefPaso7  «final»
     -refEjecucion : RefEjecucion
-    +{static} crear(id, ArranqueSecundaria3) : SagaSecundaria3Root
+    +{static} crear(id, ArranqueSecundaria3) : SagaSecundaria3
     +{static} rehidratar(id, externalId, refPaso7,\nrefEjecucion, estado, auditoria)
     +comandoActual() : ComandoPasoSecundaria3  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria3.Ejecutada)  «-> TERMINADA directo»
@@ -97,22 +97,22 @@ package "dominio.sagasecundaria3" {
   interface ResultadoPasoSecundaria3 <<sealed>> {
     Ejecutada(refEjecucion)
   }
-  note bottom of SagaSecundaria3Root
+  note bottom of SagaSecundaria3
     Una única llamada REST: aplicarYAvanzar() deja el estado en
     TERMINADA directamente (sin paso intermedio).
   end note
 }
 
-SagaRoot <|-down- SagaSecundaria1Root
-SagaRoot <|-down- SagaSecundaria2Root
-SagaRoot <|-down- SagaSecundaria3Root
+Saga <|-down- SagaSecundaria1
+Saga <|-down- SagaSecundaria2
+Saga <|-down- SagaSecundaria3
 
-SagaSecundaria1Root ..> ComandoPasoSecundaria1
-SagaSecundaria1Root ..> ResultadoPasoSecundaria1
-SagaSecundaria2Root ..> ComandoPasoSecundaria2
-SagaSecundaria2Root ..> ResultadoPasoSecundaria2
-SagaSecundaria3Root ..> ComandoPasoSecundaria3
-SagaSecundaria3Root ..> ResultadoPasoSecundaria3
+SagaSecundaria1 ..> ComandoPasoSecundaria1
+SagaSecundaria1 ..> ResultadoPasoSecundaria1
+SagaSecundaria2 ..> ComandoPasoSecundaria2
+SagaSecundaria2 ..> ResultadoPasoSecundaria2
+SagaSecundaria3 ..> ComandoPasoSecundaria3
+SagaSecundaria3 ..> ResultadoPasoSecundaria3
 
 note as NNace
   Las 3 nacen cuando la principal alcanza TERMINADA (después del

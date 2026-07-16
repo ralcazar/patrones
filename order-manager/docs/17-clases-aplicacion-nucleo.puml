@@ -1,5 +1,5 @@
 @startuml 17-clases-aplicacion-nucleo
-title Aplicación — núcleo: ServicioContinuarSaga, OrquestadorSaga y el lease del token
+title Aplicación — núcleo: ServicioContinuarSaga, ServicioSaga y el lease del token
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
@@ -21,12 +21,12 @@ package "servicio" {
   }
   note bottom of ServicioIniciarTramitacion
     sagaId = SagaId.nuevo(); tx { saga =
-    SagaPrincipalRoot.crear(...); repo.crear(OrdenRoot.nueva(saga,
+    SagaPrincipal.crear(...); repo.crear(OrdenRoot.nueva(saga,
     Instant.now())) }. Una sola llamada persiste saga + orden.
   end note
 
   class ServicioContinuarSaga <<@Service>> {
-    -orquestadores : Map<TipoSaga, OrquestadorSaga>
+    -serviciosSaga : Map<TipoSaga, ServicioSaga>
     -repo : RepositorioOrden
     -tx : UnidadDeTrabajo
     -politica : PoliticaReintentos
@@ -41,22 +41,22 @@ package "servicio" {
     asignarToken() }; catch ConcurrenciaOptimistaException -> false
     (otro worker/pod la tiene). Si reclama, bucle while(true): carga
     la orden (ÚNICA carga del paso, antes del REST) y llama a
-    orquestador.ejecutarPaso(orden); catch
+    servicioSaga.ejecutarPaso(orden); catch
     ConcurrenciaOptimistaException -> return; catch RuntimeException
     -> tx { orden.programarReintento(politica, ahora) } sobre esa
     MISMA orden + return; según la señal: HayMasTrabajo -> continue,
-    Aparcar/Finalizada -> return (ya persistido por el orquestador).
+    Aparcar/Finalizada -> return (ya persistido por el servicio de la saga).
     continuarSiguiente() (pull de cada worker): recorre
     repo.buscarEjecutables(ahora, lote) y procesa la PRIMERA que
     gane el reclamo -> true; lote agotado sin ganar -> false.
     hayTrabajoPendiente(): repo.hayEjecutables(ahora).
   end note
 
-  interface OrquestadorSaga {
+  interface ServicioSaga {
     +tipo() : TipoSaga
     +ejecutarPaso(OrdenRoot) : SenalPaso
   }
-  note right of OrquestadorSaga
+  note right of ServicioSaga
     Una implementación por TipoSaga (ver 18-21): recibe el agregado
     YA CARGADO por ServicioContinuarSaga (una única carga por paso,
     antes del REST), hace el REST del paso FUERA de tx (puede
@@ -105,9 +105,9 @@ ServicioIniciarTramitacion --> RepositorioOrden
 ServicioIniciarTramitacion --> UnidadDeTrabajo
 ServicioContinuarSaga --> RepositorioOrden
 ServicioContinuarSaga --> UnidadDeTrabajo
-ServicioContinuarSaga --> OrquestadorSaga : Map<TipoSaga, ->\n(una por tipo de saga)
+ServicioContinuarSaga --> ServicioSaga : Map<TipoSaga, ->\n(una por tipo de saga)
 ServicioContinuarSaga ..> SenalPaso : interpreta la señal
-OrquestadorSaga ..> SenalPaso : devuelve
+ServicioSaga ..> SenalPaso : devuelve
 
 note as NLease
   Lease del token (robustez ante caída de pod): asignarToken() fija

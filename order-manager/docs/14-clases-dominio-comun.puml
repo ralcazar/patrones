@@ -1,12 +1,12 @@
 @startuml 14-clases-dominio-comun
-title Dominio — shared kernel (dominio.comun): el agregado único OrdenRoot ⊃ SagaRoot
+title Dominio — shared kernel (dominio.comun): el agregado único OrdenRoot ⊃ Saga
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
 class OrdenRoot <<@AggregateRoot>> {
   -sagaId : SagaId  «@Identity»
-  -saga : SagaRoot<?>
+  -saga : Saga<?>
   -intentos : int
   -proximoReintentoEn : Instant
   -tokenTrabajador : UUID
@@ -27,7 +27,7 @@ class OrdenRoot <<@AggregateRoot>> {
   +programarReintento(PoliticaReintentos, ahora)  «intentos++»
   +finalizar(ResultadoOrden)
   +estaViva() : boolean  «resultado == null»
-  +saga() : SagaRoot<?>
+  +saga() : Saga<?>
   +tipo() : TipoSaga  «delega en saga.tipo()»
 }
 note right of OrdenRoot
@@ -40,7 +40,7 @@ note right of OrdenRoot
   agregados violaría "un agregado por transacción".
 end note
 
-abstract class "SagaRoot<E extends Enum<E>>" as SagaRoot <<@Entity>> {
+abstract class "Saga<E extends Enum<E>>" as Saga <<@Entity>> {
   #id : SagaId  «@Identity»
   #externalId : ExternalId
   #estado : E
@@ -54,7 +54,7 @@ abstract class "SagaRoot<E extends Enum<E>>" as SagaRoot <<@Entity>> {
   #auditar(quien, accion, detalle)
   +id() / +externalId() / +estado() / +auditoria()
 }
-note right of SagaRoot
+note right of Saga
   Entidad interna del agregado: SOLO negocio (la FSM E y la
   auditoría). Sin version propia (la controla OrdenRoot) y sin
   reintentos/tiempo/token: eso es responsabilidad de OrdenRoot.
@@ -120,16 +120,16 @@ class MotivoFallo <<@ValueObject>> {
 }
 class "SagaId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion,\nRefPaso1 / RefPaso5 / RefPaso7" as VOs <<@ValueObject>>
 
-OrdenRoot "1" *-- "1" SagaRoot : saga
+OrdenRoot "1" *-- "1" Saga : saga
 OrdenRoot ..> PoliticaReintentos : programarReintento(politica, ahora)
 OrdenRoot ..> ResultadoOrden : resultado
 OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide
-SagaRoot ..> TipoSaga : tipo()
-SagaRoot ..> ComandoPaso : comandoActual()
-SagaRoot ..> ResultadoPaso : aplicarYAvanzar()
-SagaRoot ..> ResultadoOrden : resultadoFinal()
-SagaRoot ..> PasoNoIntervenibleException
-SagaRoot ..> DatosManualesRequeridosException
+Saga ..> TipoSaga : tipo()
+Saga ..> ComandoPaso : comandoActual()
+Saga ..> ResultadoPaso : aplicarYAvanzar()
+Saga ..> ResultadoOrden : resultadoFinal()
+Saga ..> PasoNoIntervenibleException
+Saga ..> DatosManualesRequeridosException
 ExcepcionServicioExterno ..> MotivoFallo
 
 ' Layout: columnas sin cruces
@@ -140,7 +140,7 @@ MotivoFallo -[hidden]down- VOs
 
 note bottom of ContextoArranque
   Contexto recortado con el que arranca cada saga secundaria (lo
-  crea SagaPrincipalRoot.contextosArranque() al llegar a
+  crea SagaPrincipal.contextosArranque() al llegar a
   TERMINADA — ver 03 y 15). RefPaso1/RefPaso5/RefPaso7 viven en
   este paquete porque los produce la principal y los consumen
   las secundarias (shared kernel mínimo).

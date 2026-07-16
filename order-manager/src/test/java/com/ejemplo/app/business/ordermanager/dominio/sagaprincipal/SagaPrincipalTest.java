@@ -21,15 +21,15 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaExcep
  * Saga principal: PASO1..PASO8 síncronos, punto de no retorno en PASO7_HECHO
  * y compensación COMPENSAR_PASO2 -&gt; COMPENSAR_PASO1 -&gt; CANCELADA.
  */
-class SagaPrincipalRootTest {
+class SagaPrincipalTest {
 
-    private static SagaPrincipalRoot nueva() {
-        return SagaPrincipalRoot.crear(SagaId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
+    private static SagaPrincipal nueva() {
+        return SagaPrincipal.crear(SagaId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
     }
 
     /** Ejecuta el flujo feliz completo, paso a paso, aplicando el resultado que produciría cada REST. */
-    private static void avanzarHastaTerminada(SagaPrincipalRoot saga) {
+    private static void avanzarHastaTerminada(SagaPrincipal saga) {
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));

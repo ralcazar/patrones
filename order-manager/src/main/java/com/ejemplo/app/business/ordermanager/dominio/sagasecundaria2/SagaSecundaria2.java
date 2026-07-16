@@ -3,7 +3,7 @@ package com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2;
 import java.util.List;
 import java.util.Map;
 
-import org.jmolecules.ddd.annotation.AggregateRoot;
+import org.jmolecules.ddd.annotation.Entity;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
@@ -14,7 +14,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaRoot;
+import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
@@ -29,33 +29,33 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * Nace cuando la principal alcanza TERMINADA (después del punto de no
  * retorno): nunca se cancela ni compensa.
  */
-@AggregateRoot
-public final class SagaSecundaria2Root extends SagaRoot<EstadoSagaSecundaria2> {
+@Entity
+public final class SagaSecundaria2 extends Saga<EstadoSagaSecundaria2> {
 
     private final RefPaso5 refPaso5;
     private RefRespuesta refRespuesta;
 
-    private SagaSecundaria2Root(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
+    private SagaSecundaria2(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
             EstadoSagaSecundaria2 estado) {
         super(id, externalId, estado);
         this.refPaso5 = refPaso5;
     }
 
-    private SagaSecundaria2Root(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
+    private SagaSecundaria2(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
             RefRespuesta refRespuesta, EstadoSagaSecundaria2 estado, List<AuditoriaIntervencion> auditoria) {
         super(id, externalId, estado, auditoria);
         this.refPaso5 = refPaso5;
         this.refRespuesta = refRespuesta;
     }
 
-    public static SagaSecundaria2Root crear(SagaId id, ContextoArranque.ArranqueSecundaria2 ctx) {
-        return new SagaSecundaria2Root(id, ctx.externalId(), ctx.refPaso5(), EstadoSagaSecundaria2.INICIAL);
+    public static SagaSecundaria2 crear(SagaId id, ContextoArranque.ArranqueSecundaria2 ctx) {
+        return new SagaSecundaria2(id, ctx.externalId(), ctx.refPaso5(), EstadoSagaSecundaria2.INICIAL);
     }
 
     /** Para el adaptador de persistencia. */
-    public static SagaSecundaria2Root rehidratar(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
+    public static SagaSecundaria2 rehidratar(SagaId id, ExternalId externalId, RefPaso5 refPaso5,
             RefRespuesta refRespuesta, EstadoSagaSecundaria2 estado, List<AuditoriaIntervencion> auditoria) {
-        return new SagaSecundaria2Root(id, externalId, refPaso5, refRespuesta, estado, auditoria);
+        return new SagaSecundaria2(id, externalId, refPaso5, refRespuesta, estado, auditoria);
     }
 
     @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA2; }

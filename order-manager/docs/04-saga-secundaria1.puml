@@ -7,11 +7,11 @@ box "Adaptadores de entrada" #EFF5FB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaSecundaria1\n(OrquestadorSaga)" as ORQ
+  participant "ServicioSagaSecundaria1\n(ServicioSaga)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
-  participant "SagaSecundaria1Root" as SAGA
+  participant "SagaSecundaria1" as SAGA
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO

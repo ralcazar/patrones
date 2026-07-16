@@ -11,11 +11,11 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.UnidadDeTr
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.ComandoPasoSecundaria3;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
 
-/** Orquestador de la saga secundaria 3: una única llamada REST síncrona. Nunca se cancela ni compensa. */
+/** Servicio de la saga secundaria 3: una única llamada REST síncrona. Nunca se cancela ni compensa. */
 @Service
-public class ServicioSagaSecundaria3 implements OrquestadorSaga {
+public class ServicioSagaSecundaria3 implements ServicioSaga {
 
     private final RepositorioOrden repo;
     private final UnidadDeTrabajo tx;
@@ -39,7 +39,7 @@ public class ServicioSagaSecundaria3 implements OrquestadorSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria3Root) orden.saga();
+        var saga = (SagaSecundaria3) orden.saga();
         var resultado = puerto.ejecutar((ComandoPasoSecundaria3.Ejecutar) saga.comandoActual()); // REST fuera de tx
 
         return tx.enTransaccion(() -> {

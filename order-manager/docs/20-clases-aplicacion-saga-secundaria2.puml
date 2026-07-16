@@ -16,7 +16,7 @@ package "puerto.entrada" {
   end note
 }
 
-interface "OrquestadorSaga (ver 17)" as Base
+interface "ServicioSaga (ver 17)" as Base
 
 class ServicioSagaSecundaria2 <<@Service>> {
   {static} VENTANA_ESPERA = Duration.ofHours(3)

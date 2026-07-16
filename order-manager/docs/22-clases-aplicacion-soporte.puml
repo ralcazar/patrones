@@ -56,7 +56,7 @@ package "servicio" {
   note bottom of ServicioSoporteSagas
     Cada intervención actúa DIRECTAMENTE sobre el agregado vía
     RepositorioOrden (un único agregado, un único guardar): no pasa
-    por los orquestadores de ejecución. despertar() la deja
+    por los servicios de saga de ejecución. despertar() la deja
     candidata inmediata para que el planificador la recoja (ver 08).
   end note
 
@@ -131,9 +131,9 @@ ServicioLimpiezaDatos --> PuertosNucleo
 
 note as NRuteo
   A diferencia del diseño anterior, ServicioSoporteSagas y
-  ServicioTicketsSoporte ya NO delegan en los orquestadores
+  ServicioTicketsSoporte ya NO delegan en los servicios de saga
   (ServicioSagaPrincipal/Secundaria1/2/3 — ver 18-21): mutan
-  OrdenRoot/SagaRoot directamente vía RepositorioOrden. La
+  OrdenRoot/Saga directamente vía RepositorioOrden. La
   ejecución real de la compensación tras cancelarPrincipal() la
   recoge, asíncrona, el propio bucle de ServicioContinuarSaga
   (ver 08 y 17).

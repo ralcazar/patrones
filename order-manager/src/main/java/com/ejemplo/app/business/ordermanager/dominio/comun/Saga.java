@@ -16,7 +16,7 @@ import org.jmolecules.ddd.annotation.Identity;
  * propia {@code version} (la controla el agregado).
  */
 @Entity
-public abstract class SagaRoot<E extends Enum<E>> {
+public abstract class Saga<E extends Enum<E>> {
 
     @Identity
     protected final SagaId id;
@@ -24,12 +24,12 @@ public abstract class SagaRoot<E extends Enum<E>> {
     protected final List<AuditoriaIntervencion> auditoria;
     protected E estado;
 
-    protected SagaRoot(SagaId id, ExternalId externalId, E estado) {
+    protected Saga(SagaId id, ExternalId externalId, E estado) {
         this(id, externalId, estado, List.of());
     }
 
     /** Constructor de rehidratación para el adaptador de persistencia. */
-    protected SagaRoot(SagaId id, ExternalId externalId, E estado, List<AuditoriaIntervencion> auditoria) {
+    protected Saga(SagaId id, ExternalId externalId, E estado, List<AuditoriaIntervencion> auditoria) {
         this.id = id;
         this.externalId = externalId;
         this.estado = estado;

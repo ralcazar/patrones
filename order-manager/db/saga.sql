@@ -1,4 +1,4 @@
--- Tabla de la SagaRoot: SOLO estado de NEGOCIO (FSM + contexto + auditoría).
+-- Tabla de la Saga (entidad interna del agregado): SOLO estado de NEGOCIO (FSM + contexto + auditoría).
 -- Sin version: la controla la tabla orden (única version del agregado).
 
 CREATE TABLE saga (

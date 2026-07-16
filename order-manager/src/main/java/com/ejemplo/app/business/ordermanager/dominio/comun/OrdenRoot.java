@@ -8,7 +8,7 @@ import org.jmolecules.ddd.annotation.AggregateRoot;
 import org.jmolecules.ddd.annotation.Identity;
 
 /**
- * El ÚNICO agregado por saga: raíz que contiene la {@link SagaRoot} (estado de
+ * El ÚNICO agregado por saga: raíz que contiene la {@link Saga} (estado de
  * NEGOCIO) y añade el estado de EJECUCIÓN (reintentos, lease del token,
  * ticket, resultado final). Una sola {@code version} protege el agregado
  * completo: varios flujos mutan negocio y ejecución en la misma transacción,
@@ -24,7 +24,7 @@ public final class OrdenRoot {
 
     @Identity
     private final SagaId sagaId;
-    private final SagaRoot<?> saga;
+    private final Saga<?> saga;
     private int intentos;
     private Instant proximoReintentoEn;
     private UUID tokenTrabajador;
@@ -33,7 +33,7 @@ public final class OrdenRoot {
     private ResultadoOrden resultado;
     private final long version;
 
-    private OrdenRoot(SagaId sagaId, SagaRoot<?> saga, int intentos, Instant proximoReintentoEn,
+    private OrdenRoot(SagaId sagaId, Saga<?> saga, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
             ResultadoOrden resultado, long version) {
         this.sagaId = sagaId;
@@ -47,12 +47,12 @@ public final class OrdenRoot {
         this.version = version;
     }
 
-    public static OrdenRoot nueva(SagaRoot<?> saga, Instant ahora) {
+    public static OrdenRoot nueva(Saga<?> saga, Instant ahora) {
         return new OrdenRoot(saga.id(), saga, 0, ahora, null, null, null, null, 0L);
     }
 
     /** Para el adaptador de persistencia. */
-    public static OrdenRoot rehidratar(SagaRoot<?> saga, int intentos, Instant proximoReintentoEn,
+    public static OrdenRoot rehidratar(Saga<?> saga, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
             ResultadoOrden resultado, long version) {
         return new OrdenRoot(saga.id(), saga, intentos, proximoReintentoEn, tokenTrabajador,
@@ -115,7 +115,7 @@ public final class OrdenRoot {
         return resultado == null;
     }
 
-    public SagaRoot<?> saga() { return saga; }
+    public Saga<?> saga() { return saga; }
     public TipoSaga tipo() { return saga.tipo(); }
 
     public SagaId sagaId() { return sagaId; }

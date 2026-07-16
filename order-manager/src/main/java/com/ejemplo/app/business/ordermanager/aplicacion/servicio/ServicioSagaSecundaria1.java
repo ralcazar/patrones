@@ -13,14 +13,14 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ComandoPasoSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1;
 
 /**
- * Orquestador de la saga secundaria 1: dos llamadas REST síncronas encadenadas
+ * Servicio de la saga secundaria 1: dos llamadas REST síncronas encadenadas
  * (INICIO -> CONFIRMACION). Nunca se cancela ni compensa.
  */
 @Service
-public class ServicioSagaSecundaria1 implements OrquestadorSaga {
+public class ServicioSagaSecundaria1 implements ServicioSaga {
 
     private final RepositorioOrden repo;
     private final UnidadDeTrabajo tx;
@@ -44,7 +44,7 @@ public class ServicioSagaSecundaria1 implements OrquestadorSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria1Root) orden.saga();
+        var saga = (SagaSecundaria1) orden.saga();
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
 
         return tx.enTransaccion(() -> {

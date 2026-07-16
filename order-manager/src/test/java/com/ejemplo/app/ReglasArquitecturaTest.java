@@ -32,19 +32,19 @@ class ReglasArquitecturaTest {
             .because("la dependencia va siempre de infraestructura hacia business, nunca al revés");
 
     /**
-     * El agregado único (Fase 4 del refactor SagaRoot/OrdenRoot): OrdenRoot y
-     * SagaRoot son el modelo de dominio, nunca infraestructura ni JPA.
+     * OrdenRoot (el único {@code @AggregateRoot}) y Saga (la entidad interna
+     * que contiene) son el modelo de dominio, nunca infraestructura ni JPA.
      */
     @ArchTest
-    static final ArchRule ordenRootYSagaRootVivenEnElDominio = classes()
-            .that().haveSimpleName("OrdenRoot").or().haveSimpleName("SagaRoot")
+    static final ArchRule ordenRootYSagaVivenEnElDominio = classes()
+            .that().haveSimpleName("OrdenRoot").or().haveSimpleName("Saga")
             .should().resideInAPackage("com.ejemplo.app.business.ordermanager.dominio.comun")
-            .because("son el ÚNICO agregado por saga y viven en el dominio, no en infraestructura");
+            .because("son el agregado y su entidad interna, y viven en el dominio, no en infraestructura");
 
     /** JPA (@Entity de jakarta.persistence) solo vive en infraestructure, nunca en business. */
     @ArchTest
     static final ArchRule entidadesJpaVivenEnInfraestructura = classes()
             .that().areAnnotatedWith(jakarta.persistence.Entity.class)
             .should().resideInAPackage("com.ejemplo.app.infraestructure..")
-            .because("las entidades JPA son infraestructura; el dominio (OrdenRoot/SagaRoot) es Java puro + jMolecules");
+            .because("las entidades JPA son infraestructura; el dominio (OrdenRoot/Saga) es Java puro + jMolecules");
 }

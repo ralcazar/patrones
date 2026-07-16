@@ -11,7 +11,7 @@ box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
 end box
 box "Dominio" #FBF5EF
-  participant "SagaPrincipalRoot" as SAGA
+  participant "SagaPrincipal" as SAGA
   participant "OrdenRoot" as ORDEN
 end box
 box "Adaptadores de salida" #F3EFFB
@@ -25,7 +25,7 @@ ENTRADA -> INICIAR ++ : iniciar(ComandoIniciarTramitacion(\nexternalId, datoNego
 INICIAR -> INICIAR : sagaId = SagaId.nuevo()
 
 group Transacción (UnidadDeTrabajo.enTransaccion)
-  INICIAR -> SAGA ++ : SagaPrincipalRoot.crear(sagaId,\nexternalId, datoNegocio3, datoNegocio2)
+  INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId,\nexternalId, datoNegocio3, datoNegocio2)
   return saga (estado = INICIAL)
   INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
   return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, resultado=null, version=0)

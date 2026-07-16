@@ -3,7 +3,7 @@ title Máquinas de estado de NEGOCIO (EstadoSaga* + ResultadoOrden) y el modelo 
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
-state "EstadoSagaPrincipal (SagaPrincipalRoot)" as MPrincipal {
+state "EstadoSagaPrincipal (SagaPrincipal)" as MPrincipal {
   state INICIAL
   state PASO1_HECHO
   state PASO2_HECHO
@@ -35,8 +35,8 @@ state "EstadoSagaPrincipal (SagaPrincipalRoot)" as MPrincipal {
   PASO4_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
   PASO5_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
   PASO6_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
-  COMPENSAR_PASO2 --> COMPENSAR_PASO1 : compensacionCompletada()\n(orquestador ya ejecutó\npuertoPaso2.compensar)
-  COMPENSAR_PASO1 --> CANCELADA : compensacionCompletada()\n(orquestador ya ejecutó\npuertoPaso1.compensar)
+  COMPENSAR_PASO2 --> COMPENSAR_PASO1 : compensacionCompletada()\n(el servicio de la saga ya ejecutó\npuertoPaso2.compensar)
+  COMPENSAR_PASO1 --> CANCELADA : compensacionCompletada()\n(el servicio de la saga ya ejecutó\npuertoPaso1.compensar)
   CANCELADA --> [*] : resultadoFinal() = FINALIZADA_COMPENSADA
   PASO7_HECHO --> PASO7_HECHO : cancelar() lanza\nPuntoNoRetornoSuperadoException
   COMPENSAR_PASO2 --> COMPENSAR_PASO2 : cancelar() no-op idempotente
@@ -45,7 +45,7 @@ state "EstadoSagaPrincipal (SagaPrincipalRoot)" as MPrincipal {
   TERMINADA --> TERMINADA : cancelar() lanza\nSagaYaCompletadaException
 }
 
-state "EstadoSagaSecundaria1 (SagaSecundaria1Root)" as MSec1 {
+state "EstadoSagaSecundaria1 (SagaSecundaria1)" as MSec1 {
   state INICIAL2 as "INICIAL"
   state INICIO_HECHO
   state TERMINADA2 as "TERMINADA"
@@ -56,7 +56,7 @@ state "EstadoSagaSecundaria1 (SagaSecundaria1Root)" as MSec1 {
   TERMINADA2 --> [*] : resultadoFinal() = FINALIZADA_OK
 }
 
-state "EstadoSagaSecundaria2 (SagaSecundaria2Root)" as MSec2 {
+state "EstadoSagaSecundaria2 (SagaSecundaria2)" as MSec2 {
   state INICIAL3 as "INICIAL"
   state ESPERANDO_RESPUESTA
   state TERMINADA3 as "TERMINADA"
@@ -68,7 +68,7 @@ state "EstadoSagaSecundaria2 (SagaSecundaria2Root)" as MSec2 {
   TERMINADA3 --> [*] : resultadoFinal() = FINALIZADA_OK
 }
 
-state "EstadoSagaSecundaria3 (SagaSecundaria3Root)" as MSec3 {
+state "EstadoSagaSecundaria3 (SagaSecundaria3)" as MSec3 {
   state INICIAL4 as "INICIAL"
   state TERMINADA4 as "TERMINADA"
 
@@ -84,7 +84,7 @@ state "ResultadoOrden (OrdenRoot.resultado) — estado OPERATIVO final, no de ne
 
   [*] --> VIVA : OrdenRoot.nueva(saga, ahora)
   VIVA --> FINALIZADA_OK : finalizar(saga.resultadoFinal())\n[saga.terminada() con FSM normal]
-  VIVA --> FINALIZADA_COMPENSADA : finalizar(saga.resultadoFinal())\n[SagaPrincipalRoot en CANCELADA]
+  VIVA --> FINALIZADA_COMPENSADA : finalizar(saga.resultadoFinal())\n[SagaPrincipal en CANCELADA]
   FINALIZADA_OK --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
   FINALIZADA_COMPENSADA --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
 }

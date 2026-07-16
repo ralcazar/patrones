@@ -15,8 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.OrquestadorFalso;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.ServicioSagaFalso;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.UnidadDeTrabajoInmediata;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
@@ -29,7 +29,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Bucle de ServicioContinuarSaga: reclamo del token con optimistic lock,
@@ -55,18 +55,18 @@ class ServicioContinuarSagaTest {
 
     private SagaId crearOrdenPrincipal() {
         var id = SagaId.nuevo();
-        var saga = SagaPrincipalRoot.crear(id, ExternalId.de(UUID.randomUUID().toString()),
+        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         return id;
     }
 
-    private ServicioContinuarSaga servicio(OrquestadorSaga orquestador) {
-        return servicio(orquestador, repo);
+    private ServicioContinuarSaga servicio(ServicioSaga servicioSaga) {
+        return servicio(servicioSaga, repo);
     }
 
-    private ServicioContinuarSaga servicio(OrquestadorSaga orquestador, RepositorioOrden repositorio) {
-        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, orquestador), repositorio, tx, POLITICA,
+    private ServicioContinuarSaga servicio(ServicioSaga servicioSaga, RepositorioOrden repositorio) {
+        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repositorio, tx, POLITICA,
                 LEASE, LOTE);
     }
 
@@ -80,9 +80,9 @@ class ServicioContinuarSagaTest {
     @Test
     void reintentoConEscalera_incrementaIntentosYProgramaElProximoSegunLaEscaleraTrasCadaFallo() {
         var id = crearOrdenPrincipal();
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
                 orden -> { throw new ExcepcionServicioExterno(MotivoFallo.timeout(), null); });
-        var servicio = servicio(orquestador);
+        var servicio = servicio(servicioSaga);
 
         var minutosEsperados = List.of(1, 3, 5);
         for (int minutos : minutosEsperados) {
@@ -101,9 +101,9 @@ class ServicioContinuarSagaTest {
     @Test
     void concurrenciaOptimista_seIgnoraSilenciosamenteYElPodSeRetira() {
         var id = crearOrdenPrincipal();
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
                 orden -> { throw new ConcurrenciaOptimistaException(orden.sagaId(), 0); });
-        var servicio = servicio(orquestador);
+        var servicio = servicio(servicioSaga);
 
         assertThatCode(() -> servicio.continuarSiguiente()).doesNotThrowAnyException();
     }
@@ -126,11 +126,11 @@ class ServicioContinuarSagaTest {
 
         // Pod B la reclama de verdad y ejecuta.
         var invocaciones = new AtomicInteger();
-        var orquestadorPodB = new OrquestadorFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSagaPodB = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
-        assertThat(servicio(orquestadorPodB).continuarSiguiente()).isTrue();
+        assertThat(servicio(servicioSagaPodB).continuarSiguiente()).isTrue();
 
         assertThat(invocaciones.get()).isEqualTo(1);
         assertThat(repo.estadoActual(id).version()).isGreaterThan(1L);
@@ -165,22 +165,22 @@ class ServicioContinuarSagaTest {
 
     @Test
     void continuarSiguiente_sinCandidatas_devuelveFalse() {
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
                 orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
 
-        assertThat(servicio(orquestador).continuarSiguiente()).isFalse();
+        assertThat(servicio(servicioSaga).continuarSiguiente()).isFalse();
     }
 
     @Test
     void continuarSiguiente_conCandidataElegible_reclamaElTokenEjecutaLosPasosYDevuelveTrue() {
         var id = crearOrdenPrincipal();
         var invocaciones = new AtomicInteger();
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Aparcar(Duration.ofMinutes(5));
         });
 
-        assertThat(servicio(orquestador).continuarSiguiente()).isTrue();
+        assertThat(servicio(servicioSaga).continuarSiguiente()).isTrue();
 
         assertThat(invocaciones.get()).isEqualTo(1);
         assertThat(repo.estadoActual(id).tokenTrabajador()).isNotNull(); // token reclamado
@@ -192,12 +192,12 @@ class ServicioContinuarSagaTest {
         crearOrdenPrincipal();
         var repoConCarrera = new RepositorioConCarrera(repo, List.of(idPerdida));
         var procesadas = new ArrayList<SagaId>();
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
             procesadas.add(orden.sagaId());
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
 
-        assertThat(servicio(orquestador, repoConCarrera).continuarSiguiente()).isTrue();
+        assertThat(servicio(servicioSaga, repoConCarrera).continuarSiguiente()).isTrue();
 
         assertThat(procesadas).hasSize(1).doesNotContain(idPerdida);
     }
@@ -207,20 +207,20 @@ class ServicioContinuarSagaTest {
         var ids = List.of(crearOrdenPrincipal(), crearOrdenPrincipal());
         var repoConCarrera = new RepositorioConCarrera(repo, ids);
         var invocaciones = new AtomicInteger();
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
 
-        assertThat(servicio(orquestador, repoConCarrera).continuarSiguiente()).isFalse();
+        assertThat(servicio(servicioSaga, repoConCarrera).continuarSiguiente()).isFalse();
         assertThat(invocaciones.get()).isZero();
     }
 
     @Test
     void hayTrabajoPendiente_delegaEnElRepositorio() {
-        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
                 orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
-        var servicio = servicio(orquestador);
+        var servicio = servicio(servicioSaga);
 
         assertThat(servicio.hayTrabajoPendiente()).isFalse();
         crearOrdenPrincipal();

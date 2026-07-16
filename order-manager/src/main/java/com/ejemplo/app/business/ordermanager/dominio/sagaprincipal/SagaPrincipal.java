@@ -3,7 +3,7 @@ package com.ejemplo.app.business.ordermanager.dominio.sagaprincipal;
 import java.util.List;
 import java.util.Map;
 
-import org.jmolecules.ddd.annotation.AggregateRoot;
+import org.jmolecules.ddd.annotation.Entity;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
@@ -18,7 +18,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaRoot;
+import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaException;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
@@ -37,37 +37,37 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  *   secundarias (SECUNDARIA1, SECUNDARIA2, SECUNDARIA3), independientes entre
  *   sí y sin join.
  */
-@AggregateRoot
-public final class SagaPrincipalRoot extends SagaRoot<EstadoSagaPrincipal> {
+@Entity
+public final class SagaPrincipal extends Saga<EstadoSagaPrincipal> {
 
     private ContextoTramitacion ctx;
 
-    private SagaPrincipalRoot(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    private SagaPrincipal(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
                               EstadoSagaPrincipal estado) {
         super(id, externalId, estado);
         this.ctx = ctx;
     }
 
-    private SagaPrincipalRoot(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    private SagaPrincipal(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
                               EstadoSagaPrincipal estado, List<AuditoriaIntervencion> auditoria) {
         super(id, externalId, estado, auditoria);
         this.ctx = ctx;
     }
 
-    public static SagaPrincipalRoot crear(SagaId id, ExternalId externalId,
+    public static SagaPrincipal crear(SagaId id, ExternalId externalId,
                                           DatoNegocio3 datos, DatoNegocio2 datoNegocio2) {
-        return new SagaPrincipalRoot(id, externalId, ContextoTramitacion.inicial(datos, datoNegocio2),
+        return new SagaPrincipal(id, externalId, ContextoTramitacion.inicial(datos, datoNegocio2),
                 EstadoSagaPrincipal.INICIAL);
     }
 
     /** Para el adaptador de persistencia. */
-    public static SagaPrincipalRoot rehidratar(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    public static SagaPrincipal rehidratar(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
             EstadoSagaPrincipal estado, List<AuditoriaIntervencion> auditoria) {
-        return new SagaPrincipalRoot(id, externalId, ctx, estado, auditoria);
+        return new SagaPrincipal(id, externalId, ctx, estado, auditoria);
     }
 
     // ------------------------------------------------------------------
-    // Especialización del ciclo de vida común de SagaRoot
+    // Especialización del ciclo de vida común de Saga
     // ------------------------------------------------------------------
 
     @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
@@ -214,7 +214,7 @@ public final class SagaPrincipalRoot extends SagaRoot<EstadoSagaPrincipal> {
         auditar(quien, "CANCELAR", motivo);
     }
 
-    /** El orquestador ya ejecutó la compensación del paso correspondiente al estado actual. */
+    /** El servicio de la saga ya ejecutó la compensación del paso correspondiente al estado actual. */
     public void compensacionCompletada() {
         estado = switch (estado) {
             case COMPENSAR_PASO2 -> EstadoSagaPrincipal.COMPENSAR_PASO1;

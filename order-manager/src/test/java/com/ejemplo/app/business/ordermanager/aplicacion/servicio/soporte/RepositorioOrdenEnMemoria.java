@@ -9,12 +9,12 @@ import java.util.Map;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaRoot;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipalRoot;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1Root;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2Root;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3Root;
+import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
  * Fake de RepositorioOrden para tests de la capa de aplicación: se comporta
@@ -102,16 +102,16 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
                 orden.version());
     }
 
-    private static SagaRoot<?> copiarSaga(SagaRoot<?> saga) {
+    private static Saga<?> copiarSaga(Saga<?> saga) {
         return switch (saga) {
-            case SagaPrincipalRoot s -> SagaPrincipalRoot.rehidratar(
+            case SagaPrincipal s -> SagaPrincipal.rehidratar(
                     s.id(), s.externalId(), s.contexto(), s.estado(), new ArrayList<>(s.auditoria()));
-            case SagaSecundaria1Root s -> SagaSecundaria1Root.rehidratar(
+            case SagaSecundaria1 s -> SagaSecundaria1.rehidratar(
                     s.id(), s.externalId(), s.refPaso1(), s.refInicio(), s.refConfirmacion(),
                     s.estado(), new ArrayList<>(s.auditoria()));
-            case SagaSecundaria2Root s -> SagaSecundaria2Root.rehidratar(
+            case SagaSecundaria2 s -> SagaSecundaria2.rehidratar(
                     s.id(), s.externalId(), s.refPaso5(), s.refRespuesta(), s.estado(), new ArrayList<>(s.auditoria()));
-            case SagaSecundaria3Root s -> SagaSecundaria3Root.rehidratar(
+            case SagaSecundaria3 s -> SagaSecundaria3.rehidratar(
                     s.id(), s.externalId(), s.refPaso7(), s.refEjecucion(), s.estado(), new ArrayList<>(s.auditoria()));
             default -> throw new IllegalStateException("Tipo de saga desconocido: " + saga.getClass());
         };
