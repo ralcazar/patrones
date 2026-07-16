@@ -3,6 +3,7 @@ title Saga SECUNDARIA2 de principio a fin: solicitud REST, respuesta diferida po
 
 box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
   participant "ConsumidorRespuesta\nSecundaria2 (@KafkaListener)" as CONS
 end box
 box "Aplicación" #F5FBEF
@@ -23,13 +24,18 @@ end box
 
 note over PLAN, CONT
   La hija SECUNDARIA2 nació en 03 con proximoReintentoEn = ahora:
-  el planificador la recoge (reclamo de token omitido aquí, igual
-  que en 02/04).
+  el planificador ve trabajo (hayTrabajoPendiente()) y despierta
+  hasta N workers @Async — despacho detallado en 01; el reclamo de
+  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04.
 end note
 
 == INICIAL: solicitar y aparcar 3h a la espera del evento Kafka ==
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+PLAN ->> TRAB : trabajar()
+activate TRAB
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, SECUNDARIA2), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden
@@ -58,6 +64,8 @@ group Transacción única
 end
 return Aparcar(3h)
 CONT -> CONT : switch(señal): Aparcar -> return (fin del bucle)
+return true (el worker sigue con la siguiente candidata\nhasta que continuarSiguiente() devuelva false)
+deactivate TRAB
 
 == El servicio externo responde a posteriori (puede tardar) por Kafka: éxito ==
 [o-> CONS : evento en topic respuesta.secundaria2 (JSON)
@@ -91,9 +99,13 @@ note over SREG
   manteniendo un único punto que decide cuándo la orden acaba.
 end note
 
-== El planificador recoge la orden despierta: cierre operativo ==
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+== Un worker recoge la orden despierta: cierre operativo ==
+PLAN ->> TRAB : trabajar()
+activate TRAB
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, SECUNDARIA2), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
 return orden
@@ -110,10 +122,16 @@ group Transacción única
 end
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return
+return true
+deactivate TRAB
 
 == Si vence el aparcado de 3h sin respuesta: conciliación ==
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, SECUNDARIA2)
+PLAN ->> TRAB : trabajar()
+activate TRAB
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, SECUNDARIA2), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso]
 return orden
@@ -146,7 +164,7 @@ else FalloRegistrado(motivo): el destino terminó con error
   ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
   deactivate ORQ
   note right of CONT
-    ServicioContinuarSaga.continuar() la atrapa como
+    ServicioContinuarSaga.reclamarYEjecutar() la atrapa como
     RuntimeException y llama a programarReintento
     (backoff 1..180 min) — ver 07.
   end note

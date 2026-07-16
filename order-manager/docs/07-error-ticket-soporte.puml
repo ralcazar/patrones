@@ -20,8 +20,9 @@ box "Adaptadores de salida" #F3EFFB
 end box
 
 == Un paso falla: ServicioContinuarSaga programa el reintento ==
-[-> CONT : continuar(sagaId, tipo) (ver 02/04/05/06)
+[-> CONT : continuar(sagaId, tipo) / continuarSiguiente() (ver 02/04/05/06)
 activate CONT
+CONT -> CONT : reclamarYEjecutar(sagaId, tipo)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> ORQ : puertoPasoN.ejecutar(cmd) -- REST fuera de tx
 ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)

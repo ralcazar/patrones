@@ -3,6 +3,7 @@ title Saga SECUNDARIA1 de principio a fin: INICIO -> CONFIRMACION, dos llamadas 
 
 box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
@@ -19,11 +20,24 @@ end box
 
 note over PLAN, CONT
   La hija SECUNDARIA1 nació en 03 con proximoReintentoEn = ahora:
-  el planificador la recoge como candidata en su siguiente pasada.
+  en su siguiente tick el planificador ve trabajo pendiente y
+  despierta hasta N workers (ver 01).
 end note
 
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, SECUNDARIA1)
+PLAN -> CONT ++ : hayTrabajoPendiente()
+CONT -> REPO ++ : hayEjecutables(Instant.now())
+return true
+return true
+PLAN ->> TRAB : trabajar()
+activate TRAB
+note right of PLAN
+  @Async("ejecutorContinuacion"): máx N workers,
+  los envíos sobrantes se descartan (sin cola).
+end note
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, SECUNDARIA1), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA1)
 group Transacción: reclamarToken
   CONT -> REPO ++ : cargar(sagaId)
   return orden
@@ -87,11 +101,13 @@ group Transacción única: checkpoint del paso
 end
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
+return true (una procesada; el worker vuelve a llamar a\ncontinuarSiguiente() hasta que devuelva false)
+deactivate TRAB
 
 note over ORQ, PSEC
   Ante ExcepcionServicioExterno en cualquiera de los dos métodos:
-  se propaga fuera de tx; ServicioContinuarSaga.continuar() la
-  atrapa y llama a programarReintento (backoff 1..180 min,
+  se propaga fuera de tx; ServicioContinuarSaga.reclamarYEjecutar()
+  la atrapa y llama a programarReintento (backoff 1..180 min,
   indefinido) — ver 07-error-ticket-soporte. Nunca se cancela ni
   compensa: nace tras el punto de no retorno de la principal.
 end note

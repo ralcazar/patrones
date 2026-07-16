@@ -4,6 +4,7 @@ title Arranque de una nueva saga: ServicioIniciarTramitacion crea el agregado; p
 box "Adaptadores de entrada" #EFF5FB
   participant "Adaptador de entrada\n(REST u otro, aún no\nimplementado en este esqueleto)" as ENTRADA
   participant "PlanificadorContinuacion\n(@Scheduled fixedDelay)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioIniciarTramitacion" as INICIAR
@@ -43,22 +44,40 @@ note right of INICIAR
   el siguiente picking del planificador la recoge sola.
 end note
 
-== Primer picking: el planificador la descubre como candidata ==
+== Primer picking: el planificador descubre que hay trabajo y despierta a los workers ==
 loop cada orden.planificador.intervalo-ms (por defecto 500 ms)
-  PLAN -> CONT ++ : continuarCandidatas(limite)
-  CONT -> REPO ++ : buscarEjecutables(Instant.now(), limite)
-  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :limite ROWS ONLY
-  return [CandidataOrden(sagaId, PRINCIPAL), ...]
-  loop por cada candidata devuelta
-    CONT -> CONT : continuar(candidata.sagaId(), candidata.tipo())
+  PLAN -> CONT ++ : hayTrabajoPendiente()
+  CONT -> REPO ++ : hayEjecutables(Instant.now())
+  REPO -> REPO : SELECT COUNT(*) ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora) AND ROWNUM = 1
+  return true
+  return true
+  loop i = 0 .. trabajadores-1 (orden.planificador.trabajadores, por defecto 4)
+    PLAN ->> TRAB : trabajar()
+    activate TRAB
   end
-  return
+  note right of PLAN
+    trabajar() es @Async("ejecutorContinuacion"): pool con
+    maxPool = trabajadores, sin cola y DiscardPolicy — los envíos
+    que no caben en el pool se descartan en memoria y su cuerpo
+    jamás se ejecuta. El tick dispara y retorna, sin esperar.
+  end note
 end
 
+loop bucle pull: mientras continuarSiguiente() devuelva true
+  TRAB -> CONT ++ : continuarSiguiente()
+  CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :lote ROWS ONLY
+  return [CandidataOrden(sagaId, PRINCIPAL), ...]
+  CONT -> CONT : reclamarYEjecutar(candidata.sagaId(), candidata.tipo())
+  return true (una procesada; false cuando no queda trabajo\ny el worker muere)
+end
+deactivate TRAB
+
 note over CONT
-  continuar(sagaId, PRINCIPAL) reclama el token bajo optimistic
-  lock y entra en el bucle de ejecutarPaso(): el reclamo del
-  token y la cadena PASO1..PASO8 se detallan en
-  02-pasos-saga-principal.
+  reclamarYEjecutar(sagaId, PRINCIPAL) reclama el token bajo
+  optimistic lock y entra en el bucle de ejecutarPaso(): el
+  reclamo del token y la cadena PASO1..PASO8 se detallan en
+  02-pasos-saga-principal. Si pierde el reclamo (otro worker/pod
+  la ganó), continuarSiguiente() prueba la siguiente del lote.
 end note
 @enduml

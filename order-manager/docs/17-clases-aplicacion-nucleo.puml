@@ -11,7 +11,8 @@ package "puerto.entrada" {
   }
   interface CasoUsoContinuarSaga {
     +continuar(SagaId, TipoSaga)
-    +continuarCandidatas(limite)
+    +continuarSiguiente() : boolean
+    +hayTrabajoPendiente() : boolean
   }
 }
 
@@ -31,19 +32,26 @@ package "servicio" {
     -tx : UnidadDeTrabajo
     -politica : PoliticaReintentos
     -lease : Duration
+    -lote : int  «orden.planificador.lote, 16»
     +continuar(id, tipo)
-    +continuarCandidatas(limite)
+    +continuarSiguiente() : boolean
+    +hayTrabajoPendiente() : boolean
+    -reclamarYEjecutar(id, tipo) : boolean
     -reclamarToken(id) : boolean  «tx: estaViva()+tieneTokenVigente()\n+asignarToken(); catch ConcurrenciaOptimistaException»
     -programarReintento(id)  «tx: orden.programarReintento(politica, ahora)»
   }
   note right of ServicioContinuarSaga
-    continuar(): si reclamarToken() falla, return (otro pod la
-    tiene). Si no, bucle while(true): orquestador.ejecutarPaso(id);
-    catch ConcurrenciaOptimistaException -> return; catch
+    reclamarYEjecutar(): si reclamarToken() falla, false (otro
+    worker/pod la tiene). Si no, bucle while(true):
+    orquestador.ejecutarPaso(id); catch
+    ConcurrenciaOptimistaException -> return; catch
     RuntimeException -> programarReintento(id) + return; según la
     señal: HayMasTrabajo -> continue, Aparcar/Finalizada -> return
-    (ya persistido por el orquestador). continuarCandidatas(limite):
-    repo.buscarEjecutables(ahora, limite) y continua cada una.
+    (ya persistido por el orquestador). continuar() delega en él.
+    continuarSiguiente() (pull de cada worker): recorre
+    repo.buscarEjecutables(ahora, lote) y procesa la PRIMERA que
+    gane el reclamo -> true; lote agotado sin ganar -> false.
+    hayTrabajoPendiente(): repo.hayEjecutables(ahora).
   end note
 
   interface OrquestadorSaga {
@@ -73,6 +81,7 @@ package "puerto.salida (transversales)" {
     +cargar(SagaId) : OrdenRoot
     +guardar(OrdenRoot)  «lanza ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
+    +hayEjecutables(ahora) : boolean
     +purgarFinalizadasAntesDe(corte) : long
     record CandidataOrden(sagaId, tipo)
   }
@@ -82,6 +91,8 @@ package "puerto.salida (transversales)" {
     buscarEjecutables: proximo_reintento_en<=ahora AND resultado
     IS NULL AND (token_trabajador IS NULL OR token_expira_en<=ahora)
     — el segundo OR reclama tokens de pods muertos al vencer el lease.
+    hayEjecutables: MISMO predicado, sin cargar filas (EXISTS
+    barato para que el planificador decida si despierta workers).
   end note
   interface UnidadDeTrabajo {
     +enTransaccion(Supplier<T>) : T

@@ -29,20 +29,27 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
     private final UnidadDeTrabajo tx;
     private final PoliticaReintentos politica;
     private final Duration lease;
+    private final int lote;
 
     public ServicioContinuarSaga(Map<TipoSaga, OrquestadorSaga> orquestadores, RepositorioOrden repo,
-            UnidadDeTrabajo tx, PoliticaReintentos politica, Duration lease) {
+            UnidadDeTrabajo tx, PoliticaReintentos politica, Duration lease, int lote) {
         this.orquestadores = orquestadores;
         this.repo = repo;
         this.tx = tx;
         this.politica = politica;
         this.lease = lease;
+        this.lote = lote;
     }
 
     @Override
     public void continuar(SagaId id, TipoSaga tipo) {
+        reclamarYEjecutar(id, tipo);
+    }
+
+    /** Reclama el token y, si gana, encadena los pasos; devuelve si llegó a reclamar. */
+    private boolean reclamarYEjecutar(SagaId id, TipoSaga tipo) {
         if (!reclamarToken(id)) {
-            return;
+            return false;
         }
         var orquestador = orquestadores.get(tipo);
         while (true) {
@@ -50,15 +57,15 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
             try {
                 senal = orquestador.ejecutarPaso(id);
             } catch (ConcurrenciaOptimistaException e) {
-                return; // otro pod/actor tocó el agregado entre medias
+                return true; // otro pod/actor tocó el agregado entre medias
             } catch (RuntimeException e) {
                 programarReintento(id);
-                return;
+                return true;
             }
             switch (senal) {
                 case SenalPaso.HayMasTrabajo() -> { /* el orquestador ya reseteó intentos y renovó el lease */ }
-                case SenalPaso.Aparcar(var ventana) -> { return; } // ya persistido por el orquestador
-                case SenalPaso.Finalizada(var resultado) -> { return; } // ya persistido por el orquestador
+                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el orquestador
+                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el orquestador
             }
         }
     }
@@ -82,10 +89,18 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
     }
 
     @Override
-    public void continuarCandidatas(int limite) {
-        for (var candidata : repo.buscarEjecutables(Instant.now(), limite)) {
-            continuar(candidata.sagaId(), candidata.tipo());
+    public boolean continuarSiguiente() {
+        for (var candidata : repo.buscarEjecutables(Instant.now(), lote)) {
+            if (reclamarYEjecutar(candidata.sagaId(), candidata.tipo())) {
+                return true;   // procesada una; el worker volverá a llamar
+            }                  // otro worker/pod la ganó: probamos la siguiente del lote
         }
+        return false;          // lote agotado sin ganar ninguna: no hay trabajo
+    }
+
+    @Override
+    public boolean hayTrabajoPendiente() {
+        return repo.hayEjecutables(Instant.now());
     }
 
     private void programarReintento(SagaId id) {

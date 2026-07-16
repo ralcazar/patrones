@@ -63,6 +63,14 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
     }
 
     @Override
+    public boolean hayEjecutables(Instant ahora) {
+        return almacen.values().stream()
+                .filter(OrdenRoot::estaViva)
+                .filter(o -> !o.proximoReintentoEn().isAfter(ahora))
+                .anyMatch(o -> !o.tieneTokenVigente(ahora));
+    }
+
+    @Override
     public long purgarFinalizadasAntesDe(Instant corte) {
         var ids = almacen.values().stream()
                 .filter(o -> !o.estaViva())

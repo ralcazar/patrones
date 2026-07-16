@@ -6,10 +6,12 @@ código que documentan (ver `CLAUDE.md` en la raíz del repo).
 
 Modelo: un ÚNICO agregado por saga, `OrdenRoot` (ejecución: intentos, lease
 del token, ticket, resultado) que contiene su `SagaRoot<E>` (negocio: FSM
-`EstadoSaga*` + auditoría). No hay cola de tareas: un planificador
-(`PlanificadorContinuacion`) reclama candidatas por lease y la capa de
-aplicación (`ServicioContinuarSaga` + un `OrquestadorSaga` por tipo de saga)
-las avanza paso a paso.
+`EstadoSaga*` + auditoría). No hay cola de tareas: un planificador por pod
+(`PlanificadorContinuacion`) comprueba si hay trabajo (EXISTS barato) y
+despierta hasta N workers pull (`TrabajadorContinuacion`, `@Async`); cada
+worker reclama candidatas por lease (`continuarSiguiente`, una por pull) y la
+capa de aplicación (`ServicioContinuarSaga` + un `OrquestadorSaga` por tipo
+de saga) las avanza paso a paso.
 
 ## Convención de los diagramas de secuencia
 
@@ -17,7 +19,7 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 
 | Bloque | Color | Contenido |
 |---|---|---|
-| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorLimpieza` (`@Scheduled`), consumer Kafka, futuro REST |
+| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorLimpieza` (`@Scheduled`), `TrabajadorContinuacion` (worker pull `@Async`), consumer Kafka, futuro REST |
 | Aplicación | verde `#F5FBEF` | casos de uso, `ServicioContinuarSaga` y los `OrquestadorSaga` (uno por tipo de saga) |
 | Dominio | naranja `#FBF5EF` | el agregado (`OrdenRoot` ⊃ `SagaRoot`: `SagaPrincipalRoot`/`SagaSecundariaNRoot`) |
 | Adaptadores de salida | violeta `#F3EFFB` | `AdaptadorRepositorioOrden` (persistencia del agregado), puertos REST/Kafka de cada paso |
@@ -36,7 +38,7 @@ activación.
 
 | Diagrama | Qué muestra |
 |---|---|
-| [01-arranque-saga-nueva](01-arranque-saga-nueva.png) | `ServicioIniciarTramitacion` crea el agregado (orden + `SagaPrincipalRoot`) en una tx; el primer picking de `PlanificadorContinuacion` la descubre como candidata |
+| [01-arranque-saga-nueva](01-arranque-saga-nueva.png) | `ServicioIniciarTramitacion` crea el agregado (orden + `SagaPrincipalRoot`) en una tx; `PlanificadorContinuacion` descubre el trabajo (`hayTrabajoPendiente`) y despierta a los workers pull, que la reclaman con `continuarSiguiente` |
 | [02-pasos-saga-principal](02-pasos-saga-principal.png) | Bucle de `ServicioContinuarSaga` + `ServicioSagaPrincipal.ejecutarPaso`: reclamo de token, REST fuera de tx y checkpoint transaccional (`resetearIntentos`+`renovarLease`) por cada uno de PASO1..PASO8 |
 | [03-finalizacion-saga-principal](03-finalizacion-saga-principal.png) | Al completar PASO8: `FINALIZADA_OK` + creación de las 3 sagas hijas (`RepositorioOrden.crear` ×3) en la misma tx (sin eventos) |
 | [04-saga-secundaria1](04-saga-secundaria1.png) | Saga secundaria 1: INICIO → CONFIRMACION, dos llamadas REST a métodos distintos del mismo servicio |
@@ -64,8 +66,8 @@ saga, más el núcleo común, soporte e infraestructura.
 | [20-clases-aplicacion-saga-secundaria2](20-clases-aplicacion-saga-secundaria2.png) | Aplicación de la saga secundaria 2: aparcado de 3 h, `PuertoConciliacionSecundaria2` y `ServicioRegistrarRespuestaSecundaria2` (entrada del consumer Kafka) |
 | [21-clases-aplicacion-saga-secundaria3](21-clases-aplicacion-saga-secundaria3.png) | Aplicación de la saga secundaria 3: `ServicioSagaSecundaria3` y el puerto REST |
 | [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteSagas` (intervenciones + consultas CQRS), `ServicioTicketsSoporte` (ticket único vía log) y `ServicioLimpiezaDatos` |
-| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura: persistencia del agregado (`OrdenEntity`/`SagaEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`saga`) y `PlanificadorContinuacion` |
-| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura: el resto de adaptadores — `ConsumidorRespuestaSecundaria2`, `PlanificadorLimpieza`/`PlanificadorTicketsSoporte`, `AdaptadorTicketsLog`, `AdaptadorConsultaSagasSoporte`, `AdaptadorSagasTicketPendiente` |
+| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura: persistencia del agregado (`OrdenEntity`/`SagaEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`saga`) y `PlanificadorContinuacion` (despierta workers si hay trabajo) |
+| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura: el resto de adaptadores — `ConsumidorRespuestaSecundaria2`, `TrabajadorContinuacion` (worker pull) + `ConfiguracionEjecucionAsincrona` (pool "ejecutorContinuacion"), `PlanificadorLimpieza`/`PlanificadorTicketsSoporte`, `AdaptadorTicketsLog`, `AdaptadorConsultaSagasSoporte`, `AdaptadorSagasTicketPendiente` |
 
 ## Regenerar los PNG
 

@@ -3,6 +3,7 @@ title Saga SECUNDARIA3 de principio a fin: una única llamada REST y FINALIZADA_
 
 box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
@@ -19,12 +20,17 @@ end box
 
 note over PLAN, CONT
   La hija SECUNDARIA3 nació en 03 con proximoReintentoEn = ahora:
-  el planificador la recoge (reclamo de token omitido aquí,
-  igual que en 02/04).
+  el planificador ve trabajo (hayTrabajoPendiente()) y despierta
+  hasta N workers @Async — despacho detallado en 01; el reclamo de
+  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04.
 end note
 
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, SECUNDARIA3)
+PLAN ->> TRAB : trabajar()
+activate TRAB
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, SECUNDARIA3), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA3)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden
@@ -50,6 +56,8 @@ group Transacción única: checkpoint del paso
 end
 return Finalizada(FINALIZADA_OK)
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
+return true (el worker sigue con la siguiente candidata\nhasta que continuarSiguiente() devuelva false)
+deactivate TRAB
 
 note over ORQ, PSIM
   A diferencia de la principal y de secundaria1, este orquestador
@@ -57,7 +65,7 @@ note over ORQ, PSIM
   EJECUCION siempre deja la saga en TERMINADA, así que
   ejecutarPaso() va derecho a finalizar(). Ante
   ExcepcionServicioExterno: propaga fuera de tx y
-  ServicioContinuarSaga.continuar() programa reintento (backoff
-  1..180 min) — ver 07. Nunca se cancela ni compensa.
+  ServicioContinuarSaga.reclamarYEjecutar() programa reintento
+  (backoff 1..180 min) — ver 07. Nunca se cancela ni compensa.
 end note
 @enduml

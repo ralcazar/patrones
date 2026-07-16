@@ -5,6 +5,7 @@ box "Adaptadores de entrada" #EFF5FB
   actor "Equipo de soporte" as OP
   participant "Adaptador de entrada\n(REST del backoffice,\naún no implementado)" as REST
   participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioSoporteSagas" as SOP
@@ -93,14 +94,22 @@ return 200 OK
 
 note over SOP, REPO
   cancelar() solo cambia el estado y despierta la orden: no
-  ejecuta ningún REST de compensación de forma síncrona. Es el
-  planificador quien, al recogerla despierta, dispara la
+  ejecuta ningún REST de compensación de forma síncrona. Son los
+  workers pull quienes, al recogerla despierta, disparan la
   compensación real por el mismo bucle que 02.
 end note
 
-== Compensación asíncrona: el planificador recoge la orden despertada ==
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, PRINCIPAL) (reclamo de token: ver 02)
+== Compensación asíncrona: un worker recoge la orden despertada ==
+PLAN -> CONT ++ : hayTrabajoPendiente()
+CONT -> REPO ++ : hayEjecutables(Instant.now())
+return true
+return true
+PLAN ->> TRAB : trabajar()  «@Async("ejecutorContinuacion"), máx N»
+activate TRAB
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, PRINCIPAL), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL) (reclamo de token: ver 02)
 CONT -> ORQ ++ : ejecutarPaso(sagaId)
 ORQ -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso:\nla misma instancia (con su version) llega al guardar]
 return orden

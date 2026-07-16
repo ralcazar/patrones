@@ -2,7 +2,7 @@
 title Saga principal: reclamo de token + bucle PASO1..PASO8, REST fuera de tx, checkpoint transaccional por paso
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "PlanificadorContinuacion\n(@Scheduled)" as PLAN
+  participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioContinuarSaga" as CONT
@@ -17,14 +17,17 @@ box "Adaptadores de salida" #F3EFFB
   participant "PuertoPaso1 .. PuertoPaso8\n(según el paso actual)" as PASOS
 end box
 
-note over PLAN, CONT
-  Continuación de 01: PlanificadorContinuacion ya localizó la orden como
-  candidata y llamó a continuarCandidatas(limite), que invoca
-  continuar(sagaId, PRINCIPAL) para cada una.
+note over TRAB, CONT
+  Continuación de 01: PlanificadorContinuacion vio trabajo pendiente
+  (hayTrabajoPendiente()) y despertó hasta N workers @Async. Cada
+  TrabajadorContinuacion hace pull con continuarSiguiente(), que
+  relee candidatas frescas y reclama la primera que gane.
 end note
 
-PLAN -> CONT ++ : continuarCandidatas(limite)
-CONT -> CONT : continuar(sagaId, PRINCIPAL)
+TRAB -> CONT ++ : continuarSiguiente()
+CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
+return [CandidataOrden(sagaId, PRINCIPAL), ...]
+CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL)
 
 group Transacción: reclamarToken (ConcurrenciaOptimistaException -> return, otro pod la tiene)
   CONT -> REPO ++ : cargar(sagaId)
@@ -57,8 +60,8 @@ loop while (true) hasta Aparcar / Finalizada / excepción
   else falla
     PASOS --> ORQ : lanza ExcepcionServicioExterno(motivo)
     note right of ORQ
-      Se propaga sin capturar: ServicioContinuarSaga.continuar()
-      la atrapa como RuntimeException y llama a
+      Se propaga sin capturar: ServicioContinuarSaga.
+      reclamarYEjecutar() la atrapa como RuntimeException y llama a
       programarReintento(sagaId) — ver 07-error-ticket-soporte.
     end note
   end

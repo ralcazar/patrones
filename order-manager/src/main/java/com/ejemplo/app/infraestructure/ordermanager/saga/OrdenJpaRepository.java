@@ -35,6 +35,20 @@ interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
             """, nativeQuery = true)
     List<CandidataFila> buscarCandidatas(@Param("ahora") Instant ahora, @Param("limite") int limite);
 
+    /**
+     * ¿Existe alguna candidata? Mismo predicado que {@link #buscarCandidatas}
+     * (¡mantenerlos idénticos, comparten el índice funcional!), sin traer
+     * filas: {@code ROWNUM = 1} corta en la primera coincidencia (devuelve 0 o 1).
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM orden o
+            WHERE o.proximo_reintento_en <= :ahora
+              AND o.resultado IS NULL
+              AND (o.token_trabajador IS NULL OR o.token_expira_en <= :ahora)
+              AND ROWNUM = 1
+            """, nativeQuery = true)
+    int existeCandidata(@Param("ahora") Instant ahora);
+
     @Query(value = """
             SELECT saga_id FROM orden WHERE resultado IS NOT NULL AND actualizada_en < :corte
             """, nativeQuery = true)

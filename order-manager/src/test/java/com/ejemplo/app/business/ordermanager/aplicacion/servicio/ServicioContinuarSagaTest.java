@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,13 +33,15 @@ import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal
 
 /**
  * Bucle de ServicioContinuarSaga: reclamo del token con optimistic lock,
- * reintento con la escalera de backoff, concurrencia optimista ignorada y
- * lease vencido / takeover seguro entre pods (Fase 4 del refactor).
+ * reintento con la escalera de backoff, concurrencia optimista ignorada,
+ * lease vencido / takeover seguro entre pods (Fase 4 del refactor) y el
+ * pull de candidatas de los workers (continuarSiguiente / hayTrabajoPendiente).
  */
 class ServicioContinuarSagaTest {
 
     private static final Duration LEASE = Duration.ofMinutes(10);
     private static final PoliticaReintentos POLITICA = new PoliticaReintentos();
+    private static final int LOTE = 16;
 
     private RepositorioOrdenEnMemoria repo;
     private UnidadDeTrabajoInmediata tx;
@@ -58,7 +61,12 @@ class ServicioContinuarSagaTest {
     }
 
     private ServicioContinuarSaga servicio(OrquestadorSaga orquestador) {
-        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, orquestador), repo, tx, POLITICA, LEASE);
+        return servicio(orquestador, repo);
+    }
+
+    private ServicioContinuarSaga servicio(OrquestadorSaga orquestador, RepositorioOrden repositorio) {
+        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, orquestador), repositorio, tx, POLITICA,
+                LEASE, LOTE);
     }
 
     @Test
@@ -144,5 +152,112 @@ class ServicioContinuarSagaTest {
 
         // El estado que ganó es el de Pod B, intacto.
         assertThat(repo.estadoActual(id).version()).isEqualTo(2L);
+    }
+
+    @Test
+    void continuarSiguiente_sinCandidatas_devuelveFalse() {
+        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+                sagaId -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+
+        assertThat(servicio(orquestador).continuarSiguiente()).isFalse();
+    }
+
+    @Test
+    void continuarSiguiente_conCandidataElegible_reclamaElTokenEjecutaLosPasosYDevuelveTrue() {
+        var id = crearOrdenPrincipal();
+        var invocaciones = new AtomicInteger();
+        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, sagaId -> {
+            invocaciones.incrementAndGet();
+            return new SenalPaso.Aparcar(Duration.ofMinutes(5));
+        });
+
+        assertThat(servicio(orquestador).continuarSiguiente()).isTrue();
+
+        assertThat(invocaciones.get()).isEqualTo(1);
+        assertThat(repo.estadoActual(id).tokenTrabajador()).isNotNull(); // token reclamado
+    }
+
+    @Test
+    void continuarSiguiente_laPrimeraCandidataPierdeElOptimisticLock_saltaALaSegundaYDevuelveTrue() {
+        var idPerdida = crearOrdenPrincipal();
+        crearOrdenPrincipal();
+        var repoConCarrera = new RepositorioConCarrera(repo, List.of(idPerdida));
+        var procesadas = new ArrayList<SagaId>();
+        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, sagaId -> {
+            procesadas.add(sagaId);
+            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+        });
+
+        assertThat(servicio(orquestador, repoConCarrera).continuarSiguiente()).isTrue();
+
+        assertThat(procesadas).hasSize(1).doesNotContain(idPerdida);
+    }
+
+    @Test
+    void continuarSiguiente_todasLasCandidatasPierdenElReclamo_devuelveFalse() {
+        var ids = List.of(crearOrdenPrincipal(), crearOrdenPrincipal());
+        var repoConCarrera = new RepositorioConCarrera(repo, ids);
+        var invocaciones = new AtomicInteger();
+        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL, sagaId -> {
+            invocaciones.incrementAndGet();
+            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+        });
+
+        assertThat(servicio(orquestador, repoConCarrera).continuarSiguiente()).isFalse();
+        assertThat(invocaciones.get()).isZero();
+    }
+
+    @Test
+    void hayTrabajoPendiente_delegaEnElRepositorio() {
+        var orquestador = new OrquestadorFalso(TipoSaga.PRINCIPAL,
+                sagaId -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+        var servicio = servicio(orquestador);
+
+        assertThat(servicio.hayTrabajoPendiente()).isFalse();
+        crearOrdenPrincipal();
+        assertThat(servicio.hayTrabajoPendiente()).isTrue();
+    }
+
+    /**
+     * Decorador del repo en memoria que simula la carrera con otro worker/pod:
+     * a las órdenes marcadas les sube la versión justo después de cada
+     * {@code cargar}, de modo que el {@code guardar} del reclamo pierde el
+     * optimistic lock con {@link ConcurrenciaOptimistaException}.
+     */
+    private static final class RepositorioConCarrera implements RepositorioOrden {
+
+        private final RepositorioOrdenEnMemoria delegado;
+        private final List<SagaId> perdedoras;
+
+        RepositorioConCarrera(RepositorioOrdenEnMemoria delegado, List<SagaId> perdedoras) {
+            this.delegado = delegado;
+            this.perdedoras = perdedoras;
+        }
+
+        @Override
+        public OrdenRoot cargar(SagaId id) {
+            var orden = delegado.cargar(id);
+            if (perdedoras.contains(id)) {
+                delegado.guardar(delegado.cargar(id)); // otro worker escribe entre medias: sube la versión
+            }
+            return orden;
+        }
+
+        @Override
+        public void crear(OrdenRoot orden) { delegado.crear(orden); }
+
+        @Override
+        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+
+        @Override
+        public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+            return delegado.buscarEjecutables(ahora, limite);
+        }
+
+        @Override
+        public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
+
+        @Override
+        public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
     }
 }

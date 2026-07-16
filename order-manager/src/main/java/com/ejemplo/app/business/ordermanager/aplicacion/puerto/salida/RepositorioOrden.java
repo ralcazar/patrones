@@ -33,6 +33,9 @@ public interface RepositorioOrden {
      */
     List<CandidataOrden> buscarEjecutables(Instant ahora, int limite);
 
+    /** ¿Existe alguna candidata elegible? Mismo predicado que buscarEjecutables, sin cargar filas. */
+    boolean hayEjecutables(Instant ahora);
+
     /** Limpieza de datos: borra el agregado completo de las órdenes finalizadas antes del corte. */
     long purgarFinalizadasAntesDe(Instant corte);
 

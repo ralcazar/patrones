@@ -5,8 +5,10 @@ orden:
   # necesita cubrir la saga entera).
   lease: PT10M
   planificador:
-    intervalo-ms: 500   # cada cuánto el planificador de este pod busca candidatas
-    limite: 50           # nº máximo de órdenes candidatas por pasada
+    intervalo-ms: 500   # cada cuánto el planificador de este pod comprueba si hay trabajo
+    trabajadores: 4      # workers de continuación (pull) por pod
+    lote: 16             # candidatas que mira cada pull; regla: >= trabajadores, para que
+                         # los N workers recién despertados no agoten el lote solo con colisiones
     tamano-pool: 4        # pool de hilos compartido por los @Scheduled del módulo
 
 ordermanager:
@@ -25,7 +27,10 @@ spring:
     username: tu_usuario                                  # AJUSTA
     password: tu_password                                 # AJUSTA
     hikari:
-      maximum-pool-size: 15   # >= orden.planificador.tamano-pool + margen
+      # Debe cubrir orden.planificador.trabajadores (cada worker abre
+      # transacciones) + los otros @Scheduled + margen. Con los defaults
+      # (4 workers) 15 sigue valiendo.
+      maximum-pool-size: 15
 
   jpa:
     hibernate:

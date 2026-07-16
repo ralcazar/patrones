@@ -94,8 +94,9 @@ public class ConfiguracionAplicacion {
     @Bean
     ServicioContinuarSaga servicioContinuarSaga(Map<TipoSaga, OrquestadorSaga> orquestadores,
             RepositorioOrden repo, UnidadDeTrabajo tx, PoliticaReintentos politica,
-            @Value("${orden.lease}") Duration lease) {
-        return new ServicioContinuarSaga(orquestadores, repo, tx, politica, lease);
+            @Value("${orden.lease}") Duration lease,
+            @Value("${orden.planificador.lote:16}") int lote) {
+        return new ServicioContinuarSaga(orquestadores, repo, tx, politica, lease, lote);
     }
 
     @Bean

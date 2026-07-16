@@ -81,7 +81,7 @@ class ServicioSagaPrincipalTest {
         orquestador = new ServicioSagaPrincipal(repo, tx, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
         servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, orquestador), repo, tx,
-                new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE);
+                new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE, 16);
 
         when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
         when(puertoPaso2.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));

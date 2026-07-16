@@ -6,17 +6,21 @@ skinparam classAttributeIconSize 0
 
 class PlanificadorContinuacion <<@Component>> {
   -casoUso : CasoUsoContinuarSaga
-  -limite : int  «orden.planificador.limite, por defecto 50»
+  -trabajador : TrabajadorContinuacion
+  -trabajadores : int  «orden.planificador.trabajadores, por defecto 4»
   +ejecutar()  «@Scheduled fixedDelayString\norden.planificador.intervalo-ms (500 ms)»
 }
 note right of PlanificadorContinuacion
-  Un planificador por pod: cada pasada llama a
-  casoUso.continuarCandidatas(limite). El reclamo del token con
-  optimistic lock lo hace el propio caso de uso (ver 17): si dos
-  pods ven la misma candidata, solo uno gana.
+  Un planificador por pod: cada pasada comprueba
+  casoUso.hayTrabajoPendiente() (EXISTS barato) y, si hay,
+  despierta hasta N workers con trabajador.trabajar() (los envíos
+  que no caben en el pool se descartan — ver 24). El reclamo del
+  token con optimistic lock lo hace el propio caso de uso (ver
+  17): arbitra igual entre workers del pod que entre pods.
 end note
 
 interface "CasoUsoContinuarSaga\n(aplicación — ver 17)" as CasoUsoContinuarSaga
+class "TrabajadorContinuacion\n(ver 24)" as TrabajadorContinuacion
 
 class AdaptadorRepositorioOrden <<@Component>> {
   -ordenes : OrdenJpaRepository
@@ -25,6 +29,7 @@ class AdaptadorRepositorioOrden <<@Component>> {
   +cargar(SagaId) : OrdenRoot  «rehidrata despachando por SagaEntity.tipo»
   +guardar(OrdenRoot)  «sagas.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
   +buscarEjecutables(ahora, limite) : List<CandidataOrden>
+  +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
   +purgarFinalizadasAntesDe(corte) : long
 }
 note right of AdaptadorRepositorioOrden
@@ -38,6 +43,7 @@ end note
 
 interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository>> {
   +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
+  +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
   +idsFinalizadasAntesDe(corte) : List<String>
   +borrarPorIds(ids)
   +buscarTicketsPendientes() : List<TicketPendienteFila>
@@ -88,11 +94,14 @@ note right of OrdenJpa
   buscarCandidatas (SQL nativo): proximo_reintento_en <= :ahora
   AND resultado IS NULL AND (token_trabajador IS NULL OR
   token_expira_en <= :ahora) ORDER BY proximo_reintento_en
-  FETCH FIRST :limite ROWS ONLY. buscarTicketsPendientes: intentos
-  >= 8 AND ticket_abierto_en IS NULL AND resultado IS NULL.
+  FETCH FIRST :limite ROWS ONLY. existeCandidata: MISMO predicado
+  (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
+  sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
+  ticket_abierto_en IS NULL AND resultado IS NULL.
 end note
 
-PlanificadorContinuacion --> CasoUsoContinuarSaga : continuarCandidatas(limite)
+PlanificadorContinuacion --> CasoUsoContinuarSaga : hayTrabajoPendiente()
+PlanificadorContinuacion --> TrabajadorContinuacion : trabajar() ×N
 AdaptadorRepositorioOrden --> OrdenJpa
 AdaptadorRepositorioOrden --> SagaJpa
 OrdenJpa ..> CandidataFila

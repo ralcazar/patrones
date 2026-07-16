@@ -100,6 +100,11 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     @Override
+    public boolean hayEjecutables(Instant ahora) {
+        return ordenes.existeCandidata(ahora) > 0;
+    }
+
+    @Override
     public long purgarFinalizadasAntesDe(Instant corte) {
         var ids = ordenes.idsFinalizadasAntesDe(corte);
         if (ids.isEmpty()) {

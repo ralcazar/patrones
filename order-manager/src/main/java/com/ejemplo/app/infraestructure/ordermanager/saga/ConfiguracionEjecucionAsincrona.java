@@ -1,22 +1,36 @@
 package com.ejemplo.app.infraestructure.ordermanager.saga;
 
+import java.util.concurrent.ThreadPoolExecutor;
+
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
 /**
- * Pool simple para los {@code @Scheduled} del módulo (planificador de
- * continuación, de tickets y de limpieza): un pool pequeño evita que una
- * pasada lenta de uno bloquee a los demás. Ya no hay trabajador dedicado ni
- * cola: cada orden candidata se procesa en el propio hilo del planificador
- * que la reclamó, con el paralelismo acotado por cuántas puede reclamar
- * (orden.planificador.limite) cada pasada.
+ * Dos pools del módulo:
+ *
+ * <ul>
+ *   <li>El scheduler de los {@code @Scheduled} (planificador de continuación,
+ *       de tickets y de limpieza): un pool pequeño evita que una pasada lenta
+ *       de uno bloquee a los demás.</li>
+ *   <li>El pool de workers de continuación ("ejecutorContinuacion"): impone el
+ *       tope estructural de N workers pull por pod. Con
+ *       {@code corePoolSize = maxPoolSize = N}, {@code queueCapacity = 0} y
+ *       {@code DiscardPolicy}, los envíos del tick que no caben en el pool se
+ *       descartan en memoria (nanosegundos, cero queries): el cuerpo del
+ *       {@code @Async} descartado jamás se ejecuta, y una cola solo acumularía
+ *       envíos duplicados apuntando al mismo trabajo.</li>
+ * </ul>
  */
 @Configuration
 @EnableScheduling
+@EnableAsync
 public class ConfiguracionEjecucionAsincrona implements SchedulingConfigurer {
 
     private final int tamanoPool;
@@ -32,5 +46,17 @@ public class ConfiguracionEjecucionAsincrona implements SchedulingConfigurer {
         scheduler.setThreadNamePrefix("planificador-ordermanager-");
         scheduler.initialize();
         registrar.setTaskScheduler(scheduler);
+    }
+
+    @Bean("ejecutorContinuacion")
+    ThreadPoolTaskExecutor ejecutorContinuacion(
+            @Value("${orden.planificador.trabajadores:4}") int trabajadores) {
+        var ejecutor = new ThreadPoolTaskExecutor();
+        ejecutor.setCorePoolSize(trabajadores);
+        ejecutor.setMaxPoolSize(trabajadores);
+        ejecutor.setQueueCapacity(0);   // sin cola: lo que no cabe se descarta
+        ejecutor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        ejecutor.setThreadNamePrefix("trabajador-continuacion-");
+        return ejecutor;
     }
 }
