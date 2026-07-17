@@ -16,7 +16,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Fachada de la pantalla de soporte: cada intervención actúa directamente

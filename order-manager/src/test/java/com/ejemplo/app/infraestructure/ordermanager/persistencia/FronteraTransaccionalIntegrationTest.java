@@ -20,19 +20,19 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagaSecundaria3;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.sagasecundaria3.ServicioSagaSecundaria3;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria3.ServicioSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ContextoArranque;
+import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.RefPaso7;
+import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.ComandoPasoSecundaria3;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.RefEjecucion;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.ResultadoPasoSecundaria3;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ComandoPasoSecundaria3;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.RefEjecucion;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ResultadoPasoSecundaria3;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
  * Único test con contexto Spring real del proyecto: demuestra que la

@@ -9,10 +9,10 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.EstadoSagaPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Estado de EJECUCIÓN del agregado único (OrdenRoot): reintentos, lease del

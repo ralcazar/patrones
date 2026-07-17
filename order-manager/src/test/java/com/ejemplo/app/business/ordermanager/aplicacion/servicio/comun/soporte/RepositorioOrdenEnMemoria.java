@@ -11,10 +11,10 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimista
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria1.SagaSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria2.SagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.dominio.sagasecundaria3.SagaSecundaria3;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
  * Fake de RepositorioOrden para tests de la capa de aplicación: se comporta

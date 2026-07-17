@@ -22,9 +22,9 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.DatoNegocio3;
-import com.ejemplo.app.business.ordermanager.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Barrido de tickets: la marca es operativa (intentos &gt;= 8 sin
