@@ -77,7 +77,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     @Override
     public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
         return ordenes.buscarCandidatas(ahora, limite).stream()
-                .map(fila -> new CandidataOrden(OrdenId.de(fila.getSagaId()), new TipoOrden(fila.getTipo())))
+                .map(fila -> new CandidataOrden(OrdenId.de(fila.getOrdenId()), new TipoOrden(fila.getTipo())))
                 .toList();
     }
 
@@ -133,7 +133,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     private Proceso<?> procesoDesde(ProcesoEntity entity) {
-        var id = OrdenId.de(entity.getSagaId());
+        var id = OrdenId.de(entity.getOrdenId());
         var externalId = ExternalId.de(entity.getExternalId());
         var auditoria = entity.getAuditoria().stream()
                 .map(a -> new AuditoriaIntervencion(a.getCuando(), new UsuarioSoporte(a.getQuien()),

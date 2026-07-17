@@ -35,7 +35,7 @@ public class ConfiguracionEjecucionAsincrona implements SchedulingConfigurer {
 
     private final int tamanoPool;
 
-    public ConfiguracionEjecucionAsincrona(@Value("${orden.planificador.tamano-pool:4}") int tamanoPool) {
+    public ConfiguracionEjecucionAsincrona(@Value("${ordermanager.planificador.tamano-pool:4}") int tamanoPool) {
         this.tamanoPool = tamanoPool;
     }
 
@@ -50,7 +50,7 @@ public class ConfiguracionEjecucionAsincrona implements SchedulingConfigurer {
 
     @Bean("ejecutorContinuacion")
     ThreadPoolTaskExecutor ejecutorContinuacion(
-            @Value("${orden.planificador.trabajadores:2}") int trabajadores) {
+            @Value("${ordermanager.planificador.trabajadores:2}") int trabajadores) {
         var ejecutor = new ThreadPoolTaskExecutor();
         ejecutor.setCorePoolSize(trabajadores);
         ejecutor.setMaxPoolSize(trabajadores);

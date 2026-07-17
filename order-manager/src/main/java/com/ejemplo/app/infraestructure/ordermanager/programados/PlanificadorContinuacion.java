@@ -20,13 +20,13 @@ public class PlanificadorContinuacion {
     private final int trabajadores;
 
     public PlanificadorContinuacion(CasoUsoContinuarOrden casoUso, TrabajadorContinuacion trabajador,
-            @Value("${orden.planificador.trabajadores:2}") int trabajadores) {
+            @Value("${ordermanager.planificador.trabajadores:2}") int trabajadores) {
         this.casoUso = casoUso;
         this.trabajador = trabajador;
         this.trabajadores = trabajadores;
     }
 
-    @Scheduled(fixedDelayString = "${orden.planificador.intervalo-ms:5000}")
+    @Scheduled(fixedDelayString = "${ordermanager.planificador.intervalo-ms:5000}")
     public void ejecutar() {
         if (!casoUso.hayTrabajoPendiente()) {
             return;

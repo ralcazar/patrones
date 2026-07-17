@@ -23,12 +23,12 @@ import jakarta.persistence.Table;
  * {@code tipo} al (de)serializarlo.
  */
 @Entity
-@Table(name = "saga")
+@Table(name = "proceso")
 public class ProcesoEntity {
 
     @Id
-    @Column(name = "saga_id", length = 36)
-    private String sagaId;
+    @Column(name = "orden_id", length = 36)
+    private String ordenId;
 
     @Column(nullable = false, length = 20)
     private String tipo;
@@ -44,17 +44,17 @@ public class ProcesoEntity {
     private String contexto;
 
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "saga_auditoria", joinColumns = @JoinColumn(name = "saga_id"))
-    @OrderColumn(name = "orden_secuencia")
+    @CollectionTable(name = "proceso_auditoria", joinColumns = @JoinColumn(name = "orden_id"))
+    @OrderColumn(name = "secuencia")
     private List<AuditoriaEntity> auditoria = new ArrayList<>();
 
     protected ProcesoEntity() {
         // requerido por JPA
     }
 
-    public ProcesoEntity(String sagaId, String tipo, String externalId, String estado, String contexto,
+    public ProcesoEntity(String ordenId, String tipo, String externalId, String estado, String contexto,
             List<AuditoriaEntity> auditoria) {
-        this.sagaId = sagaId;
+        this.ordenId = ordenId;
         this.tipo = tipo;
         this.externalId = externalId;
         this.estado = estado;
@@ -62,7 +62,7 @@ public class ProcesoEntity {
         this.auditoria = auditoria;
     }
 
-    public String getSagaId() { return sagaId; }
+    public String getOrdenId() { return ordenId; }
     public String getTipo() { return tipo; }
     public String getExternalId() { return externalId; }
     public String getEstado() { return estado; }

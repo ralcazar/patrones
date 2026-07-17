@@ -48,8 +48,8 @@ public class ConfiguracionOrderManager {
     @Bean
     ServicioContinuarOrden servicioContinuarOrden(List<ProcesadorOrden> procesadores,
             RepositorioOrden repo, PoliticaReintentos politica,
-            @Value("${orden.lease}") Duration lease,
-            @Value("${orden.planificador.lote:16}") int lote,
+            @Value("${ordermanager.lease}") Duration lease,
+            @Value("${ordermanager.planificador.lote:16}") int lote,
             @Lazy ServicioContinuarOrden self) {
         var procesadoresPorTipo = procesadores.stream()
                 .collect(Collectors.toUnmodifiableMap(ProcesadorOrden::tipo, s -> s));

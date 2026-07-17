@@ -20,7 +20,7 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Modelo de lectura de la pantalla de soporte: queries SQL directas sobre
- * {@code orden}/{@code saga} (CQRS ligero), sin cargar agregados. El paso
+ * {@code orden}/{@code proceso} (CQRS ligero), sin cargar agregados. El paso
  * pendiente, si requiere datos manuales y si es cancelable se derivan de
  * (tipo, estado) a través de la SPI {@link DescriptorSoporteOrden} (una
  * implementación por tipo, indexadas por {@link DescriptorSoporteOrden#tipo()}).
@@ -42,18 +42,18 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
 
     @Override
     public List<OrdenResumen> ordenesBloqueadas() {
-        return ordenes.sagasBloqueadas().stream().map(AdaptadorConsultaOrdenesSoporte::resumenDe).toList();
+        return ordenes.ordenesBloqueadas().stream().map(AdaptadorConsultaOrdenesSoporte::resumenDe).toList();
     }
 
     @Override
     public List<OrdenResumen> ordenesEnEjecucion() {
-        return ordenes.sagasEnEjecucion(Instant.now()).stream()
+        return ordenes.ordenesEnEjecucion(Instant.now()).stream()
                 .map(AdaptadorConsultaOrdenesSoporte::resumenDe).toList();
     }
 
     @Override
     public List<OrdenResumen> ordenesConTicketPendiente() {
-        return ordenes.sagasConTicketPendiente().stream().map(AdaptadorConsultaOrdenesSoporte::resumenDe).toList();
+        return ordenes.ordenesConTicketPendiente().stream().map(AdaptadorConsultaOrdenesSoporte::resumenDe).toList();
     }
 
     @Override
@@ -67,7 +67,7 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
     public List<OrdenDetalle> porExternalId(ExternalId externalId) {
         var filas = ordenes.porExternalId(externalId.valor().toString());
         return filas.stream()
-                .map(fila -> detalle(new TipoOrden(fila.getTipo()), OrdenId.de(fila.getSagaId())))
+                .map(fila -> detalle(new TipoOrden(fila.getTipo()), OrdenId.de(fila.getOrdenId())))
                 .toList();
     }
 
@@ -94,7 +94,7 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
     }
 
     private static OrdenResumen resumenDe(OrdenResumenFila f) {
-        return new OrdenResumen(OrdenId.de(f.getSagaId()), new TipoOrden(f.getTipo()),
+        return new OrdenResumen(OrdenId.de(f.getOrdenId()), new TipoOrden(f.getTipo()),
                 ExternalId.de(f.getExternalId()), f.getEstado(), f.getIntentos(), f.getTicketAbiertoEn(),
                 f.getProximoReintentoEn(), f.getIniciadaEn(), f.getActualizadaEn());
     }

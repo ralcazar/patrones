@@ -12,7 +12,7 @@ import jakarta.persistence.Version;
 
 /**
  * Entidad JPA de OrdenRoot: la ÚNICA {@code @Version} del agregado (negocio +
- * ejecución en una sola fila). {@code sagaId} es también FK a {@code saga}.
+ * ejecución en una sola fila). {@code ordenId} es también FK a {@code proceso}.
  *
  * {@code creadaEn}/{@code actualizadaEn} son bookkeeping puro de infraestructura
  * (para el criterio de limpieza y el modelo de lectura de soporte): el dominio
@@ -23,8 +23,8 @@ import jakarta.persistence.Version;
 public class OrdenEntity {
 
     @Id
-    @Column(name = "saga_id", length = 36)
-    private String sagaId;
+    @Column(name = "orden_id", length = 36)
+    private String ordenId;
 
     @Column(nullable = false)
     private int intentos;
@@ -58,9 +58,9 @@ public class OrdenEntity {
         // requerido por JPA
     }
 
-    public OrdenEntity(String sagaId, int intentos, Instant proximoReintentoEn, String tokenTrabajador,
+    public OrdenEntity(String ordenId, int intentos, Instant proximoReintentoEn, String tokenTrabajador,
             Instant tokenExpiraEn, Instant ticketAbiertoEn, String resultado, long version) {
-        this.sagaId = sagaId;
+        this.ordenId = ordenId;
         this.intentos = intentos;
         this.proximoReintentoEn = proximoReintentoEn;
         this.tokenTrabajador = tokenTrabajador;
@@ -84,7 +84,7 @@ public class OrdenEntity {
         actualizadaEn = Instant.now();
     }
 
-    public String getSagaId() { return sagaId; }
+    public String getOrdenId() { return ordenId; }
     public int getIntentos() { return intentos; }
     public Instant getProximoReintentoEn() { return proximoReintentoEn; }
     public String getTokenTrabajador() { return tokenTrabajador; }

@@ -9,6 +9,6 @@ automáticamente: lo aplica un DBA a mano.
 
 Las FKs obligan este orden:
 
-1. `saga.sql` — tabla `saga` (sin dependencias).
-2. `saga_auditoria.sql` — tabla `saga_auditoria`, FK a `saga`.
-3. `orden.sql` — tabla `orden`, FK a `saga`.
+1. `proceso.sql` — tabla `proceso` (sin dependencias).
+2. `proceso_auditoria.sql` — tabla `proceso_auditoria`, FK a `proceso`.
+3. `orden.sql` — tabla `orden`, FK a `proceso`.

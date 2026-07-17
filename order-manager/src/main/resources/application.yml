@@ -1,8 +1,8 @@
-# --- Parámetros de la orden (agregado OrdenRoot: ejecución + saga) ---
-orden:
+# --- Parámetros del motor de órdenes (agregado OrdenRoot: ejecución + proceso) ---
+ordermanager:
   # Lease del token de ejecución: holgadamente mayor que el timeout REST más
   # largo de UN paso (se renueva en la tx de cada paso completado, no
-  # necesita cubrir la saga entera).
+  # necesita cubrir el proceso entero).
   lease: PT10M
   planificador:
     intervalo-ms: 5000   # cada cuánto el planificador de este pod comprueba si hay trabajo
@@ -10,16 +10,17 @@ orden:
     lote: 16             # candidatas que mira cada pull; regla: >= trabajadores, para que
                          # los N workers recién despertados no agoten el lote solo con colisiones
     tamano-pool: 4        # pool de hilos compartido por los @Scheduled del módulo
-
-ordermanager:
-  topics:
-    # Único uso de Kafka: la respuesta (diferida, puede tardar horas) de la saga secundaria 2
-    respuesta-secundaria2: respuesta.secundaria2
   limpieza:
     cron: "0 0 3 * * *"   # cada noche a las 03:00
     retencion-dias: 30    # solo se purga lo finalizado-bien más viejo que esto
   tickets:
     cron: "0 0 8-17/3 * * *"   # cada 3h en horario de soporte
+
+# --- Parámetros específicos de las sagas concretas ---
+sagas:
+  topics:
+    # Único uso de Kafka: la respuesta (diferida, puede tardar horas) de la saga secundaria 2
+    respuesta-secundaria2: respuesta.secundaria2
 
 spring:
   datasource:
@@ -27,7 +28,7 @@ spring:
     username: tu_usuario                                  # AJUSTA
     password: tu_password                                 # AJUSTA
     hikari:
-      # Debe cubrir orden.planificador.trabajadores (cada worker abre
+      # Debe cubrir ordermanager.planificador.trabajadores (cada worker abre
       # transacciones) + los otros @Scheduled + margen. Con los defaults
       # (2 workers) 15 sigue valiendo.
       maximum-pool-size: 15

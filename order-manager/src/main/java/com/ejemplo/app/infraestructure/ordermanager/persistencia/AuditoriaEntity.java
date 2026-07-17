@@ -5,7 +5,7 @@ import java.time.Instant;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 
-/** Fila de la tabla hija {@code saga_auditoria}: una intervención de soporte. */
+/** Fila de la tabla hija {@code proceso_auditoria}: una intervención de soporte. */
 @Embeddable
 class AuditoriaEntity {
 

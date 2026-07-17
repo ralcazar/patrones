@@ -22,7 +22,7 @@ public class AdaptadorOrdenesTicketPendiente implements PuertoOrdenesTicketPendi
     @Override
     public List<OrdenTicketPendiente> buscar() {
         return ordenes.buscarTicketsPendientes().stream()
-                .map(f -> new OrdenTicketPendiente(new TipoOrden(f.getTipo()), OrdenId.de(f.getSagaId()),
+                .map(f -> new OrdenTicketPendiente(new TipoOrden(f.getTipo()), OrdenId.de(f.getOrdenId()),
                         ExternalId.de(f.getExternalId()), f.getIntentos()))
                 .toList();
     }

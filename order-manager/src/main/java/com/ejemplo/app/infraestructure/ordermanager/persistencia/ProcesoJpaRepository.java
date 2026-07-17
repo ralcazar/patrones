@@ -10,6 +10,6 @@ import org.springframework.data.repository.query.Param;
 public interface ProcesoJpaRepository extends JpaRepository<ProcesoEntity, String> {
 
     @Modifying
-    @Query(value = "DELETE FROM saga WHERE saga_id IN :ids", nativeQuery = true)
+    @Query(value = "DELETE FROM proceso WHERE orden_id IN :ids", nativeQuery = true)
     void borrarPorIds(@Param("ids") List<String> ids);
 }

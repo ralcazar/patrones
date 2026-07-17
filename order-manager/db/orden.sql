@@ -1,11 +1,11 @@
--- Tabla de la OrdenRoot: raíz del agregado (ÚNICO agregado por saga). Añade
--- al negocio de "saga" el estado de EJECUCIÓN: reintentos, lease del token,
+-- Tabla de la OrdenRoot: raíz del agregado (ÚNICO agregado por orden). Añade
+-- al negocio del proceso el estado de EJECUCIÓN: reintentos, lease del token,
 -- marca de ticket y resultado final. Una única version protege el agregado
 -- completo (negocio + ejecución), porque varios flujos mutan ambos en la
 -- misma transacción.
 
 CREATE TABLE orden (
-    saga_id              VARCHAR2(36)   NOT NULL,
+    orden_id             VARCHAR2(36)   NOT NULL,
     intentos             NUMBER(10)     NOT NULL,
     proximo_reintento_en TIMESTAMP(6)   NOT NULL,
     token_trabajador     VARCHAR2(36),
@@ -15,8 +15,8 @@ CREATE TABLE orden (
     version              NUMBER(19)     NOT NULL,
     creada_en            TIMESTAMP(6)   NOT NULL,
     actualizada_en       TIMESTAMP(6)   NOT NULL,
-    CONSTRAINT pk_orden PRIMARY KEY (saga_id),
-    CONSTRAINT fk_orden_saga FOREIGN KEY (saga_id) REFERENCES saga (saga_id)
+    CONSTRAINT pk_orden PRIMARY KEY (orden_id),
+    CONSTRAINT fk_orden_proceso FOREIGN KEY (orden_id) REFERENCES proceso (orden_id)
 );
 
 -- Candidatas del planificador: proximo_reintento_en <= :ahora AND resultado

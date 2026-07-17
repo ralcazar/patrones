@@ -47,7 +47,7 @@ public class ConfiguracionSagas {
 
     @Bean
     ServicioSagaPrincipal servicioSagaPrincipal(RepositorioOrden repo,
-            @Value("${orden.lease}") Duration lease,
+            @Value("${ordermanager.lease}") Duration lease,
             PuertoPaso1 p1, PuertoPaso2 p2, PuertoPaso3 p3, PuertoPaso4 p4,
             PuertoPaso5 p5, PuertoPaso6 p6, PuertoPaso7 p7, PuertoPaso8 p8,
             @Lazy ServicioSagaPrincipal self) {
@@ -58,7 +58,7 @@ public class ConfiguracionSagas {
 
     @Bean
     ServicioSagaSecundaria1 servicioSagaSecundaria1(RepositorioOrden repo,
-            @Value("${orden.lease}") Duration lease, PuertoSagaSecundaria1 puerto,
+            @Value("${ordermanager.lease}") Duration lease, PuertoSagaSecundaria1 puerto,
             @Lazy ServicioSagaSecundaria1 self) {
         var servicio = new ServicioSagaSecundaria1(repo, lease, puerto);
         servicio.establecerSelf(self);

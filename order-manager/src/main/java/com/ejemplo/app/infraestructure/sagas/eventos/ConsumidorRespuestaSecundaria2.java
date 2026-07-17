@@ -33,7 +33,7 @@ public class ConsumidorRespuestaSecundaria2 {
         this.registro = registro;
     }
 
-    @KafkaListener(topics = "${ordermanager.topics.respuesta-secundaria2:respuesta.secundaria2}")
+    @KafkaListener(topics = "${sagas.topics.respuesta-secundaria2:respuesta.secundaria2}")
     public void onRespuesta(String mensaje,
                             @Header(name = "kafka_receivedMessageKey", required = false) String key) throws Exception {
         JsonNode n = mapper.readTree(mensaje);
