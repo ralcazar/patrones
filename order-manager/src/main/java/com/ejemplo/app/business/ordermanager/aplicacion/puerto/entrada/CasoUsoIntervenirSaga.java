@@ -3,7 +3,7 @@ package com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada;
 import java.util.Map;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -19,7 +19,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 public interface CasoUsoIntervenirSaga {
 
     /** Reintento manual del paso pendiente actual: resetea la escalera de intentos y lo relanza. */
-    void reintentarPaso(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien);
+    void reintentarPaso(TipoOrden tipo, SagaId id, String nombrePaso, UsuarioSoporte quien);
 
     /**
      * Soporte arregló a mano el paso pendiente actual en el sistema destino y
@@ -27,6 +27,6 @@ public interface CasoUsoIntervenirSaga {
      * algún paso posterior los consume (p. ej. INICIO de la secundaria 1 ->
      * "refInicio"). La saga continúa su FSM desde ahí.
      */
-    void marcarPasoOk(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien,
+    void marcarPasoOk(TipoOrden tipo, SagaId id, String nombrePaso, UsuarioSoporte quien,
                       String justificacion, Map<String, String> datosManuales);
 }

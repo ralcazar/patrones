@@ -18,7 +18,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -34,7 +34,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
 
     private final OrdenJpaRepository ordenes;
     private final SagaJpaRepository sagas;
-    private final Map<TipoSaga, MapeadorProceso> mapeadores;
+    private final Map<TipoOrden, MapeadorProceso> mapeadores;
 
     public AdaptadorRepositorioOrden(OrdenJpaRepository ordenes, SagaJpaRepository sagas,
             List<MapeadorProceso> mapeadores) {
@@ -77,7 +77,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     @Override
     public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
         return ordenes.buscarCandidatas(ahora, limite).stream()
-                .map(fila -> new CandidataOrden(SagaId.de(fila.getSagaId()), TipoSaga.valueOf(fila.getTipo())))
+                .map(fila -> new CandidataOrden(SagaId.de(fila.getSagaId()), new TipoOrden(fila.getTipo())))
                 .toList();
     }
 
@@ -128,7 +128,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         var sagaId = saga.id().valor().toString();
         var externalId = saga.externalId().valor().toString();
         var persistible = mapeadorDe(saga.tipo()).desarmar(saga);
-        return new SagaEntity(sagaId, saga.tipo().name(), externalId, persistible.estado(),
+        return new SagaEntity(sagaId, saga.tipo().valor(), externalId, persistible.estado(),
                 ContextoCodec.escribir(persistible.contexto()), auditoria);
     }
 
@@ -140,11 +140,11 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                         a.getAccion(), a.getDetalle()))
                 .toList();
         var contexto = ContextoCodec.leer(entity.getContexto());
-        var tipo = TipoSaga.valueOf(entity.getTipo());
+        var tipo = new TipoOrden(entity.getTipo());
         return mapeadorDe(tipo).rearmar(id, externalId, entity.getEstado(), contexto, auditoria);
     }
 
-    private MapeadorProceso mapeadorDe(TipoSaga tipo) {
+    private MapeadorProceso mapeadorDe(TipoOrden tipo) {
         var mapeador = mapeadores.get(tipo);
         if (mapeador == null) {
             throw new IllegalStateException("No hay MapeadorProceso registrado para el tipo " + tipo);

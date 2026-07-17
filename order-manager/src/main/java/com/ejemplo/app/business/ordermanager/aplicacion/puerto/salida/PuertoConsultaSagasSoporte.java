@@ -7,7 +7,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte.SagaResumen;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * Modelo de lectura para la pantalla de soporte: el adaptador lo implementa
@@ -25,5 +25,5 @@ public interface PuertoConsultaSagasSoporte {
     List<SagaResumen> buscar(FiltroSagas filtro);
     /** Todas las sagas de una tramitación, correlacionadas por externalId, sin componer la vista. */
     List<SagaDetalle> porExternalId(ExternalId externalId);
-    SagaDetalle detalle(TipoSaga tipo, SagaId id);
+    SagaDetalle detalle(TipoOrden tipo, SagaId id);
 }

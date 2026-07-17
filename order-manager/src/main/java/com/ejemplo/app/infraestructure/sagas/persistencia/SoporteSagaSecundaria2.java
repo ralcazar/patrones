@@ -13,7 +13,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
@@ -26,8 +26,8 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso
 public class SoporteSagaSecundaria2 implements MapeadorProceso, DescriptorSoporteOrden {
 
     @Override
-    public TipoSaga tipo() {
-        return TipoSaga.SECUNDARIA2;
+    public TipoOrden tipo() {
+        return SagaSecundaria2.TIPO;
     }
 
     @Override

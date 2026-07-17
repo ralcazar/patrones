@@ -21,7 +21,6 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;

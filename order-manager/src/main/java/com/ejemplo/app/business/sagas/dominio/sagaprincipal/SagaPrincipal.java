@@ -20,7 +20,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -39,6 +39,8 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  */
 @Entity
 public final class SagaPrincipal extends Saga<EstadoSagaPrincipal> {
+
+    public static final TipoOrden TIPO = new TipoOrden("PRINCIPAL");
 
     private ContextoTramitacion ctx;
 
@@ -70,7 +72,7 @@ public final class SagaPrincipal extends Saga<EstadoSagaPrincipal> {
     // Especialización del ciclo de vida común de Saga
     // ------------------------------------------------------------------
 
-    @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
+    @Override public TipoOrden tipo() { return TIPO; }
 
     @Override
     public ComandoPaso comandoActual() {

@@ -1,5 +1,10 @@
 package com.ejemplo.app;
 
+import org.junit.jupiter.api.Test;
+
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
@@ -63,4 +68,29 @@ class ReglasArquitecturaTest {
             .that().areAnnotatedWith(jakarta.persistence.Entity.class)
             .should().resideInAPackage("com.ejemplo.app.infraestructure..")
             .because("las entidades JPA son infraestructura; el dominio (OrdenRoot/Saga) es Java puro + jMolecules");
+
+    /**
+     * El motor de órdenes (ordermanager) es genérico en el tipo de orden: no
+     * conoce las sagas concretas. La dirección legal es sagas -> ordermanager,
+     * nunca al revés.
+     *
+     * Se comprueba solo sobre producción ({@code DO_NOT_INCLUDE_TESTS}): hoy
+     * varios tests de ordermanager (p. ej. ServicioContinuarSagaTest,
+     * OrdenRootTest, RepositorioOrdenEnMemoria, FronteraTransaccionalIntegrationTest)
+     * todavía construyen sagas concretas para montar sus fixtures. Ese
+     * desacoplo de tests (dobles genéricos, mover FronteraTransaccionalIntegrationTest
+     * a infraestructure.sagas) es trabajo del Paso 5 del plan de separación,
+     * no de este paso.
+     */
+    @Test
+    void ordermanagerNoDependeDeSagasEnProduccion() {
+        JavaClasses clasesDeProduccion = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.ejemplo.app");
+        ArchRule regla = noClasses()
+                .that().resideInAnyPackage("..business.ordermanager..", "..infraestructure.ordermanager..")
+                .should().dependOnClassesThat().resideInAnyPackage("..business.sagas..", "..infraestructure.sagas..")
+                .because("el motor (ordermanager) debe poder reutilizarse con otros tipos de orden sin conocer las sagas");
+        regla.check(clasesDeProduccion);
+    }
 }

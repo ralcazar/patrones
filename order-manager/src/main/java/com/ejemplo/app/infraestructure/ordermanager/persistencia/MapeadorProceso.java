@@ -7,7 +7,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * SPI de persistencia por tipo de saga: {@link AdaptadorRepositorioOrden}
@@ -18,7 +18,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  */
 public interface MapeadorProceso {
 
-    TipoSaga tipo();
+    TipoOrden tipo();
 
     ProcesoPersistible desarmar(Saga<?> saga);
 

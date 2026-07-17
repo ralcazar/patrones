@@ -7,7 +7,7 @@ import org.jmolecules.ddd.annotation.Repository;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * ÚNICO puerto de persistencia de escritura del agregado: OrdenRoot, que
@@ -39,5 +39,5 @@ public interface RepositorioOrden {
     /** Limpieza de datos: borra el agregado completo de las órdenes finalizadas antes del corte. */
     long purgarFinalizadasAntesDe(Instant corte);
 
-    record CandidataOrden(SagaId sagaId, TipoSaga tipo) {}
+    record CandidataOrden(SagaId sagaId, TipoOrden tipo) {}
 }

@@ -15,7 +15,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoCons
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -30,7 +30,7 @@ public class AdaptadorConsultaSagasSoporte implements PuertoConsultaSagasSoporte
 
     private final OrdenJpaRepository ordenes;
     private final SagaJpaRepository sagas;
-    private final Map<TipoSaga, DescriptorSoporteOrden> descriptores;
+    private final Map<TipoOrden, DescriptorSoporteOrden> descriptores;
 
     public AdaptadorConsultaSagasSoporte(OrdenJpaRepository ordenes, SagaJpaRepository sagas,
             List<DescriptorSoporteOrden> descriptores) {
@@ -67,14 +67,14 @@ public class AdaptadorConsultaSagasSoporte implements PuertoConsultaSagasSoporte
     public List<SagaDetalle> porExternalId(ExternalId externalId) {
         var filas = ordenes.porExternalId(externalId.valor().toString());
         return filas.stream()
-                .map(fila -> detalle(TipoSaga.valueOf(fila.getTipo()), SagaId.de(fila.getSagaId())))
+                .map(fila -> detalle(new TipoOrden(fila.getTipo()), SagaId.de(fila.getSagaId())))
                 .toList();
     }
 
     @Override
-    public SagaDetalle detalle(TipoSaga tipo, SagaId id) {
+    public SagaDetalle detalle(TipoOrden tipo, SagaId id) {
         var sagaId = id.valor().toString();
-        var fila = ordenes.resumenDe(tipo.name(), sagaId)
+        var fila = ordenes.resumenDe(tipo.valor(), sagaId)
                 .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + sagaId));
         var resumen = resumenDe(fila);
         var descriptor = descriptorDe(tipo);
@@ -85,7 +85,7 @@ public class AdaptadorConsultaSagasSoporte implements PuertoConsultaSagasSoporte
         return new SagaDetalle(resumen, descriptor.cancelable(fila.getEstado()), pasos, auditoria);
     }
 
-    private DescriptorSoporteOrden descriptorDe(TipoSaga tipo) {
+    private DescriptorSoporteOrden descriptorDe(TipoOrden tipo) {
         var descriptor = descriptores.get(tipo);
         if (descriptor == null) {
             throw new IllegalStateException("No hay DescriptorSoporteOrden registrado para el tipo " + tipo);
@@ -94,7 +94,7 @@ public class AdaptadorConsultaSagasSoporte implements PuertoConsultaSagasSoporte
     }
 
     private static SagaResumen resumenDe(SagaResumenFila f) {
-        return new SagaResumen(SagaId.de(f.getSagaId()), TipoSaga.valueOf(f.getTipo()),
+        return new SagaResumen(SagaId.de(f.getSagaId()), new TipoOrden(f.getTipo()),
                 ExternalId.de(f.getExternalId()), f.getEstado(), f.getIntentos(), f.getTicketAbiertoEn(),
                 f.getProximoReintentoEn(), f.getIniciadaEn(), f.getActualizadaEn());
     }

@@ -16,7 +16,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -30,6 +30,8 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  */
 @Entity
 public final class SagaSecundaria1 extends Saga<EstadoSagaSecundaria1> {
+
+    public static final TipoOrden TIPO = new TipoOrden("SECUNDARIA1");
 
     private final RefPaso1 refPaso1;
     private RefInicio refInicio;   // lo produce INICIO, lo consume CONFIRMACION
@@ -62,7 +64,7 @@ public final class SagaSecundaria1 extends Saga<EstadoSagaSecundaria1> {
                 estado, auditoria);
     }
 
-    @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA1; }
+    @Override public TipoOrden tipo() { return TIPO; }
 
     @Override
     public ComandoPaso comandoActual() {

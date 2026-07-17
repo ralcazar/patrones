@@ -36,7 +36,7 @@ public abstract class Saga<E extends Enum<E>> {
         this.auditoria = new ArrayList<>(auditoria);
     }
 
-    public abstract TipoSaga tipo();
+    public abstract TipoOrden tipo();
 
     /** Comando del paso en el que está ahora la FSM de negocio. */
     public abstract ComandoPaso comandoActual();

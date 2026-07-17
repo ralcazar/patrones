@@ -13,7 +13,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ComandoPasoSecundaria1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
@@ -48,7 +48,7 @@ public class ServicioSagaSecundaria1 implements ServicioSaga {
         this.self = self;
     }
 
-    @Override public TipoSaga tipo() { return TipoSaga.SECUNDARIA1; }
+    @Override public TipoOrden tipo() { return SagaSecundaria1.TIPO; }
 
     /**
      * Recibe el agregado ya cargado por el llamante (una única carga por paso,

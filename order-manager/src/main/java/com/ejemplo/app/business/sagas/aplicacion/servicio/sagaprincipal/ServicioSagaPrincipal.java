@@ -23,7 +23,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ComandoPasoPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ResultadoPasoPrincipal;
@@ -86,7 +86,7 @@ public class ServicioSagaPrincipal implements ServicioSaga {
         this.self = self;
     }
 
-    @Override public TipoSaga tipo() { return TipoSaga.PRINCIPAL; }
+    @Override public TipoOrden tipo() { return SagaPrincipal.TIPO; }
 
     /**
      * Recibe el agregado ya cargado por el llamante (una única carga por paso,

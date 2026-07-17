@@ -1,7 +1,7 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * Ejecuta UN paso de una saga concreta: recibe el agregado ya cargado por el
@@ -11,11 +11,11 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  * instancia) y, en UNA sola transacción, aplica el resultado a la saga y la
  * parte operativa de la señal devuelta (reset de intentos + renovación de
  * lease, o aparcar, o finalizar), y guarda esa misma instancia una única vez.
- * Una implementación por TipoSaga.
+ * Una implementación por TipoOrden.
  */
 public interface ServicioSaga {
 
-    TipoSaga tipo();
+    TipoOrden tipo();
 
     SenalPaso ejecutarPaso(OrdenRoot orden);
 }

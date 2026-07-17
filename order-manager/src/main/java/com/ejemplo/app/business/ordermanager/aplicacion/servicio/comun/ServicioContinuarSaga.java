@@ -15,7 +15,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimista
 import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * Bucle de ejecución de una saga: reclama el token bajo optimistic lock y
@@ -36,14 +36,14 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 @Service
 public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
 
-    private final Map<TipoSaga, ServicioSaga> serviciosSaga;
+    private final Map<TipoOrden, ServicioSaga> serviciosSaga;
     private final RepositorioOrden repo;
     private final PoliticaReintentos politica;
     private final Duration lease;
     private final int lote;
     private ServicioContinuarSaga self;
 
-    public ServicioContinuarSaga(Map<TipoSaga, ServicioSaga> serviciosSaga, RepositorioOrden repo,
+    public ServicioContinuarSaga(Map<TipoOrden, ServicioSaga> serviciosSaga, RepositorioOrden repo,
             PoliticaReintentos politica, Duration lease, int lote) {
         this.serviciosSaga = serviciosSaga;
         this.repo = repo;
@@ -59,7 +59,7 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
     }
 
     /** Reclama el token y, si gana, encadena los pasos; devuelve si llegó a reclamar. */
-    private boolean reclamarYEjecutar(SagaId id, TipoSaga tipo) {
+    private boolean reclamarYEjecutar(SagaId id, TipoOrden tipo) {
         // Reclamo con optimistic lock: si otro pod ya la tomó (o venció el
         // conflicto contra el guardado), nos retiramos en silencio.
         boolean reclamada;

@@ -6,7 +6,7 @@ import java.util.List;
 import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * Consultas para la pantalla de soporte. Es un modelo de lectura puro CQRS:
@@ -29,7 +29,7 @@ public interface CasoUsoConsultarSagasSoporte {
     /** Búsqueda con filtros combinables; los criterios a null no aplican. */
     List<SagaResumen> buscar(FiltroSagas filtro);
 
-    SagaDetalle detalle(TipoSaga tipo, SagaId id);
+    SagaDetalle detalle(TipoOrden tipo, SagaId id);
 
     /** Criterios de la pantalla de soporte: estado (nombre del enum), fecha de inicio y de última actualización. */
     record FiltroSagas(String estado,
@@ -56,7 +56,7 @@ public interface CasoUsoConsultarSagasSoporte {
      * - ticketAbiertoEn: null si no hay ticket abierto.
      * - proximoReintentoEn: próxima vez que el planificador la recogerá.
      */
-    record SagaResumen(SagaId id, TipoSaga tipo, ExternalId externalId,
+    record SagaResumen(SagaId id, TipoOrden tipo, ExternalId externalId,
                        String estado, int intentos,
                        Instant ticketAbiertoEn, Instant proximoReintentoEn,
                        Instant iniciadaEn, Instant actualizadaEn) {}

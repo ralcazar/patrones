@@ -116,7 +116,7 @@ public final class OrdenRoot {
     }
 
     public Saga<?> saga() { return saga; }
-    public TipoSaga tipo() { return saga.tipo(); }
+    public TipoOrden tipo() { return saga.tipo(); }
 
     public SagaId sagaId() { return sagaId; }
     public int intentos() { return intentos; }

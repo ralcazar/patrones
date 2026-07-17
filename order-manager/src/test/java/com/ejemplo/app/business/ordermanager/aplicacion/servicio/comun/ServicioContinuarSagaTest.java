@@ -25,7 +25,6 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
@@ -63,7 +62,7 @@ class ServicioContinuarSagaTest {
     }
 
     private ServicioContinuarSaga servicio(ServicioSaga servicioSaga, RepositorioOrden repositorio) {
-        return new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repositorio, POLITICA,
+        return new ServicioContinuarSaga(Map.of(SagaPrincipal.TIPO, servicioSaga), repositorio, POLITICA,
                 LEASE, LOTE);
     }
 
@@ -77,7 +76,7 @@ class ServicioContinuarSagaTest {
     @Test
     void reintentoConEscalera_incrementaIntentosYProgramaElProximoSegunLaEscaleraTrasCadaFallo() {
         var id = crearOrdenPrincipal();
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO,
                 orden -> { throw new ExcepcionServicioExterno(MotivoFallo.timeout(), null); });
         var servicio = servicio(servicioSaga);
 
@@ -98,7 +97,7 @@ class ServicioContinuarSagaTest {
     @Test
     void concurrenciaOptimista_seIgnoraSilenciosamenteYElPodSeRetira() {
         var id = crearOrdenPrincipal();
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO,
                 orden -> { throw new ConcurrenciaOptimistaException(orden.sagaId(), 0); });
         var servicio = servicio(servicioSaga);
 
@@ -123,7 +122,7 @@ class ServicioContinuarSagaTest {
 
         // Pod B la reclama de verdad y ejecuta.
         var invocaciones = new AtomicInteger();
-        var servicioSagaPodB = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSagaPodB = new ServicioSagaFalso(SagaPrincipal.TIPO, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
@@ -162,7 +161,7 @@ class ServicioContinuarSagaTest {
 
     @Test
     void continuarSiguiente_sinCandidatas_devuelveFalse() {
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO,
                 orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
 
         assertThat(servicio(servicioSaga).continuarSiguiente()).isFalse();
@@ -172,7 +171,7 @@ class ServicioContinuarSagaTest {
     void continuarSiguiente_conCandidataElegible_reclamaElTokenEjecutaLosPasosYDevuelveTrue() {
         var id = crearOrdenPrincipal();
         var invocaciones = new AtomicInteger();
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Aparcar(Duration.ofMinutes(5));
         });
@@ -189,7 +188,7 @@ class ServicioContinuarSagaTest {
         crearOrdenPrincipal();
         var repoConCarrera = new RepositorioConCarrera(repo, List.of(idPerdida));
         var procesadas = new ArrayList<SagaId>();
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO, orden -> {
             procesadas.add(orden.sagaId());
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
@@ -204,7 +203,7 @@ class ServicioContinuarSagaTest {
         var ids = List.of(crearOrdenPrincipal(), crearOrdenPrincipal());
         var repoConCarrera = new RepositorioConCarrera(repo, ids);
         var invocaciones = new AtomicInteger();
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL, orden -> {
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO, orden -> {
             invocaciones.incrementAndGet();
             return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
         });
@@ -215,7 +214,7 @@ class ServicioContinuarSagaTest {
 
     @Test
     void hayTrabajoPendiente_delegaEnElRepositorio() {
-        var servicioSaga = new ServicioSagaFalso(TipoSaga.PRINCIPAL,
+        var servicioSaga = new ServicioSagaFalso(SagaPrincipal.TIPO,
                 orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
         var servicio = servicio(servicioSaga);
 

@@ -13,7 +13,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoIn
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 
 /**
@@ -37,7 +37,7 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
 
     @Override
     @Transactional
-    public void reintentarPaso(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien) {
+    public void reintentarPaso(TipoOrden tipo, SagaId id, String nombrePaso, UsuarioSoporte quien) {
         var orden = repo.cargar(id);
         orden.resetearIntentos();
         orden.despertar(Instant.now());
@@ -46,7 +46,7 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
 
     @Override
     @Transactional
-    public void marcarPasoOk(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien,
+    public void marcarPasoOk(TipoOrden tipo, SagaId id, String nombrePaso, UsuarioSoporte quien,
                              String justificacion, Map<String, String> datosManuales) {
         var orden = repo.cargar(id);
         orden.saga().marcarPasoActualOkManual(quien, justificacion, datosManuales);
@@ -77,7 +77,7 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     }
 
     @Override
-    public SagaDetalle detalle(TipoSaga tipo, SagaId id) {
+    public SagaDetalle detalle(TipoOrden tipo, SagaId id) {
         return consultas.detalle(tipo, id);
     }
 }

@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * Modelo de lectura del planificador de tickets: órdenes con la escalera de
@@ -18,5 +18,5 @@ public interface PuertoSagasTicketPendiente {
 
     List<SagaTicketPendiente> buscar();
 
-    record SagaTicketPendiente(TipoSaga tipo, SagaId sagaId, ExternalId externalId, int intentos) {}
+    record SagaTicketPendiente(TipoOrden tipo, SagaId sagaId, ExternalId externalId, int intentos) {}
 }

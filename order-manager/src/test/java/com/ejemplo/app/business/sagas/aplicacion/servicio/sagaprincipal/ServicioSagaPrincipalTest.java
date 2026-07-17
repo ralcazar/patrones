@@ -31,7 +31,6 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
@@ -43,6 +42,9 @@ import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso6;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso8;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ResultadoPasoPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
  * Orquestación real de la saga principal a través de ServicioContinuarSaga:
@@ -78,7 +80,7 @@ class ServicioSagaPrincipalTest {
         puertoPaso8 = mock(PuertoPaso8.class);
         servicioSaga = new ServicioSagaPrincipal(repo, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
-        servicioContinuar = new ServicioContinuarSaga(Map.of(TipoSaga.PRINCIPAL, servicioSaga), repo,
+        servicioContinuar = new ServicioContinuarSaga(Map.of(SagaPrincipal.TIPO, servicioSaga), repo,
                 new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE, 16);
 
         when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
@@ -110,10 +112,10 @@ class ServicioSagaPrincipalTest {
         assertThat(ordenFinal.estaViva()).isFalse();
         assertThat(((SagaPrincipal) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
 
-        var hijas = repo.todas().stream().filter(o -> o.tipo() != TipoSaga.PRINCIPAL).toList();
+        var hijas = repo.todas().stream().filter(o -> !SagaPrincipal.TIPO.equals(o.tipo())).toList();
         assertThat(hijas).hasSize(3);
         assertThat(hijas).extracting(OrdenRoot::tipo)
-                .containsExactlyInAnyOrder(TipoSaga.SECUNDARIA1, TipoSaga.SECUNDARIA2, TipoSaga.SECUNDARIA3);
+                .containsExactlyInAnyOrder(SagaSecundaria1.TIPO, SagaSecundaria2.TIPO, SagaSecundaria3.TIPO);
         assertThat(hijas).allSatisfy(h -> assertThat(h.estaViva()).isTrue());
     }
 

@@ -186,7 +186,7 @@ class OrdenRootTest {
         assertThat(orden.intentos()).isEqualTo(4);
         assertThat(orden.tokenTrabajador()).isEqualTo(token);
         assertThat(orden.version()).isEqualTo(7L);
-        assertThat(orden.tipo()).isEqualTo(TipoSaga.PRINCIPAL);
+        assertThat(orden.tipo()).isEqualTo(SagaPrincipal.TIPO);
         assertThat(orden.saga().estado()).isEqualTo(EstadoSagaPrincipal.INICIAL);
     }
 }

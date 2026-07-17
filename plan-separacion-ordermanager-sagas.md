@@ -8,7 +8,7 @@
 - [x] Paso 1 — Mover sagas a sus paquetes (git mv + imports, sin renombrar)
 - [x] Paso 2 — SPI de persistencia `MapeadorProceso` + partir la configuración
 - [x] Paso 3 — Extraer soporte saga-específico (cancelación, vista, `DescriptorSoporteOrden`)
-- [ ] Paso 4 — `TipoSaga` (enum) → `TipoOrden` (record) + regla ArchUnit de frontera
+- [x] Paso 4 — `TipoSaga` (enum) → `TipoOrden` (record) + regla ArchUnit de frontera
 - [ ] Paso 5 — Renombrados neutros del motor + aplanar paquetes
 - [ ] Paso 6 — BD/SQL y claves de configuración
 - [ ] Paso 7 — Diagramas, PNG, READMEs y CLAUDE.md + push
@@ -168,6 +168,7 @@ Impacto: anotaciones `@Table`/`@Column` de las 3 entidades, queries nativas de `
 3. **Extraer soporte saga-específico**: `ServicioCancelarTramitacion`, `ServicioVistaTramitacion`, SPI `DescriptorSoporteOrden` + implementaciones; limpiar adaptador de consulta y casos de uso.
 4. **`TipoSaga` → `TipoOrden`**: record en el motor, constantes `TIPO` en cada saga, sustituir usos, borrar el enum. **Activar aquí la regla ArchUnit de frontera** para que vigile el resto.
 5. **Renombrados neutros del motor** por lotes: (a) `OrdenId`, `Proceso`, `OrdenYaCompletadaException`; (b) servicios/casos de uso/puertos (`ServicioContinuarOrden`, `ProcesadorOrden`, `ServicioSoporteOrdenes`, …); (c) infra (`ProcesoEntity`, `ProcesoJpaRepository`, `OrdenResumenFila`, adaptadores, fakes). Aplanar `dominio/comun`→`dominio` y `servicio/comun`→`servicio`. Actualizar reglas ArchUnit de nombres + regla de vocabulario.
+   **Pendiente de Paso 4**: la regla de frontera `ordermanagerNoDependeDeSagas` hoy solo analiza producción (`ImportOption.DO_NOT_INCLUDE_TESTS`) porque `ServicioContinuarSagaTest`, `OrdenRootTest`, `ServicioTicketsSoporteTest`, `RepositorioOrdenEnMemoria` y `FronteraTransaccionalIntegrationTest` (todos bajo paquetes `ordermanager`) todavía construyen sagas concretas para sus fixtures. Al introducir aquí los dobles genéricos (`ProcesadorOrdenFalso` con `TipoOrden("FALSO")`, una `Saga` de test genérica) y mover `FronteraTransaccionalIntegrationTest` a `infraestructure.sagas`, volver la regla a un `@ArchTest` de campo normal (sin el `@Test` manual ni el `DO_NOT_INCLUDE_TESTS`) para que también vigile los tests.
 6. **BD y claves de configuración**: scripts `db/*.sql`, anotaciones JPA, queries nativas, proyecciones; claves `ordermanager.*`/`sagas.*` en yml + `@Value`.
 7. **Docs**: `.puml` + regenerar PNG (skill `puml-to-png`) + `docs/README.md` + `CLAUDE.md` + READMEs. Commit y push final.
 

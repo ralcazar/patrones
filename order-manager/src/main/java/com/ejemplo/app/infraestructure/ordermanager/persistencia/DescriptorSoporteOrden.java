@@ -1,6 +1,6 @@
 package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
 
 /**
  * SPI de lectura por tipo de saga: {@link AdaptadorConsultaSagasSoporte}
@@ -11,7 +11,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  */
 public interface DescriptorSoporteOrden {
 
-    TipoSaga tipo();
+    TipoOrden tipo();
 
     /** El paso pendiente (null si la saga ya no avanza: terminada o en compensación). */
     String pasoPendiente(String estado);
