@@ -93,12 +93,18 @@ public class ServicioSagaPrincipal implements ServicioSaga {
      * antes del REST): la transacción guarda esa misma instancia (con su
      * version), de modo que si otro actor escribió entre medias (takeover tras
      * lease vencido, soporte, ...) el guardar falla por version y este pod se
-     * retira.
+     * retira. Despacha por estado: CANCELADA finaliza sin REST, COMPENSAR_*
+     * compensa el paso correspondiente, el resto son los pasos normales
+     * PASO1..PASO8.
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
         var saga = (SagaPrincipal) orden.saga();
-        return esCompensacion(saga.estado()) ? ejecutarCompensacion(orden, saga) : ejecutarPasoNormal(orden, saga);
+        return switch (saga.estado()) {
+            case CANCELADA -> self.aplicarCancelacion(orden, saga); // via proxy -> @Transactional (sin REST)
+            case COMPENSAR_PASO1, COMPENSAR_PASO2 -> ejecutarCompensacion(orden, saga);
+            default -> ejecutarPasoNormal(orden, saga);
+        };
     }
 
     private SenalPaso ejecutarPasoNormal(OrdenRoot orden, SagaPrincipal saga) {
@@ -122,10 +128,6 @@ public class ServicioSagaPrincipal implements ServicioSaga {
     }
 
     private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
-        if (saga.estado() == EstadoSagaPrincipal.CANCELADA) {
-            return self.aplicarCancelacion(orden, saga); // via proxy -> @Transactional (sin REST)
-        }
-
         var ctx = saga.contexto();
         if (saga.estado() == EstadoSagaPrincipal.COMPENSAR_PASO2) {
             puertoPaso2.compensar(new ComandoPasoPrincipal.CompensarPaso2(ctx.refPaso2())); // REST fuera de tx
@@ -181,11 +183,5 @@ public class ServicioSagaPrincipal implements ServicioSaga {
             case ComandoPasoPrincipal.CompensarPaso2 c -> throw new IllegalStateException(
                     "Las compensaciones no se ejecutan por esta vía: " + c);
         };
-    }
-
-    private static boolean esCompensacion(EstadoSagaPrincipal estado) {
-        return estado == EstadoSagaPrincipal.COMPENSAR_PASO2
-                || estado == EstadoSagaPrincipal.COMPENSAR_PASO1
-                || estado == EstadoSagaPrincipal.CANCELADA;
     }
 }

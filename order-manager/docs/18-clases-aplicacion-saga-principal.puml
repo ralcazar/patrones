@@ -23,17 +23,21 @@ class ServicioSagaPrincipal <<@Service>> {
 }
 note right of ServicioSagaPrincipal
   ejecutarPaso: recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17); decide compensación vs. normal y
-  pasa orden+saga. ejecutarPasoNormal: comandoActual() + REST fuera
-  de tx, luego self.aplicarPasoNormal(...) -- vía proxy, para que
-  @Transactional no se ignore por auto-invocación --: aplicarYAvanzar
-  + si terminada() crea las 3 hijas y finaliza (FINALIZADA_OK) — ver
-  03 —, si no resetearIntentos()+renovarLease(). Si otro actor
-  escribió con el REST en vuelo, guardar falla por version (takeover
-  seguro). ejecutarCompensacion: si CANCELADA, self.aplicarCancelacion
-  (sin REST) solo finaliza (FINALIZADA_COMPENSADA); si no, compensa
-  el paso (REST fuera de tx) y self.aplicarCompensacion
-  (compensacionCompletada() en tx) — ver 08.
+  ServicioContinuarSaga (ver 17); despacha por saga.estado() con un
+  switch de 3 ramas: CANCELADA -> self.aplicarCancelacion (sin REST,
+  directo, sin pasar por ejecutarCompensacion); COMPENSAR_PASO1/2 ->
+  ejecutarCompensacion; el resto (PASO1_HECHO..PASO7_HECHO/INICIAL)
+  -> ejecutarPasoNormal. ejecutarPasoNormal: comandoActual() + REST
+  fuera de tx, luego self.aplicarPasoNormal(...) -- vía proxy, para
+  que @Transactional no se ignore por auto-invocación --:
+  aplicarYAvanzar + si terminada() crea las 3 hijas y finaliza
+  (FINALIZADA_OK) — ver 03 —, si no
+  resetearIntentos()+renovarLease(). Si otro actor escribió con el
+  REST en vuelo, guardar falla por version (takeover seguro).
+  ejecutarCompensacion: compensa el paso actual (REST fuera de tx,
+  PuertoPaso2 o PuertoPaso1 según el estado) y self.aplicarCompensacion
+  (compensacionCompletada() en tx) — ver 08. aplicarCancelacion: solo
+  orden.finalizar(saga.resultadoFinal()) (FINALIZADA_COMPENSADA).
 end note
 
 package "puerto.salida" {
