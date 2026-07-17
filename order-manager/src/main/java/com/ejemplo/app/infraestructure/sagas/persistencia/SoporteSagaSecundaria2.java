@@ -18,15 +18,31 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.DescriptorSoporteOrden;
 import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso;
 
-/** {@link MapeadorProceso} de la saga secundaria 2. */
+/** {@link MapeadorProceso} y {@link DescriptorSoporteOrden} de la saga secundaria 2. */
 @Component
-public class SoporteSagaSecundaria2 implements MapeadorProceso {
+public class SoporteSagaSecundaria2 implements MapeadorProceso, DescriptorSoporteOrden {
 
     @Override
     public TipoSaga tipo() {
         return TipoSaga.SECUNDARIA2;
+    }
+
+    @Override
+    public String pasoPendiente(String estado) {
+        return "INICIAL".equals(estado) || "ESPERANDO_RESPUESTA".equals(estado) ? "SOLICITUD" : null;
+    }
+
+    @Override
+    public boolean datosManualesObligatorios(String estado) {
+        return false;
+    }
+
+    @Override
+    public boolean cancelable(String estado) {
+        return false;
     }
 
     @Override

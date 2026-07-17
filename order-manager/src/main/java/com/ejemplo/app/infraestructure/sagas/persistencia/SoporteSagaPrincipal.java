@@ -27,15 +27,48 @@ import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.DescriptorSoporteOrden;
 import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso;
 
-/** {@link MapeadorProceso} de la saga principal. */
+/** {@link MapeadorProceso} y {@link DescriptorSoporteOrden} de la saga principal. */
 @Component
-public class SoporteSagaPrincipal implements MapeadorProceso {
+public class SoporteSagaPrincipal implements MapeadorProceso, DescriptorSoporteOrden {
 
     @Override
     public TipoSaga tipo() {
         return TipoSaga.PRINCIPAL;
+    }
+
+    @Override
+    public String pasoPendiente(String estado) {
+        return switch (estado) {
+            case "INICIAL" -> "PASO1";
+            case "PASO1_HECHO" -> "PASO2";
+            case "PASO2_HECHO" -> "PASO3";
+            case "PASO3_HECHO" -> "PASO4";
+            case "PASO4_HECHO" -> "PASO5";
+            case "PASO5_HECHO" -> "PASO6";
+            case "PASO6_HECHO" -> "PASO7";
+            case "PASO7_HECHO" -> "PASO8";
+            default -> null;
+        };
+    }
+
+    @Override
+    public boolean datosManualesObligatorios(String estado) {
+        return switch (estado) {
+            case "INICIAL", "PASO1_HECHO", "PASO3_HECHO", "PASO4_HECHO", "PASO6_HECHO" -> true;
+            default -> false;
+        };
+    }
+
+    @Override
+    public boolean cancelable(String estado) {
+        return switch (estado) {
+            case "INICIAL", "PASO1_HECHO", "PASO2_HECHO", "PASO3_HECHO",
+                    "PASO4_HECHO", "PASO5_HECHO", "PASO6_HECHO" -> true;
+            default -> false;
+        };
     }
 
     @Override

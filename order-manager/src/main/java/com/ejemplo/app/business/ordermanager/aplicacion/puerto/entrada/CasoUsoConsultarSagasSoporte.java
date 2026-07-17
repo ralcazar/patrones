@@ -29,9 +29,6 @@ public interface CasoUsoConsultarSagasSoporte {
     /** Búsqueda con filtros combinables; los criterios a null no aplican. */
     List<SagaResumen> buscar(FiltroSagas filtro);
 
-    /** Vista de conjunto de una tramitación: sus 4 sagas, correlacionadas por externalId. */
-    VistaTramitacion vistaTramitacion(ExternalId externalId);
-
     SagaDetalle detalle(TipoSaga tipo, SagaId id);
 
     /** Criterios de la pantalla de soporte: estado (nombre del enum), fecha de inicio y de última actualización. */
@@ -69,7 +66,4 @@ public interface CasoUsoConsultarSagasSoporte {
 
     record SagaDetalle(SagaResumen resumen, boolean cancelable,
                        List<PasoDetalle> pasos, List<AuditoriaIntervencion> auditoria) {}
-
-    record VistaTramitacion(ExternalId externalId, SagaDetalle principal,
-                            List<SagaDetalle> secundarias) {}
 }

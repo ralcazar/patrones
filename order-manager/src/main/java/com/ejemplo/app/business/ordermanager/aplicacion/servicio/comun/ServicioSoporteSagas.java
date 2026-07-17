@@ -12,11 +12,9 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoIntervenirSaga;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
 import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Fachada de la pantalla de soporte: cada intervención actúa directamente
@@ -36,18 +34,6 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     }
 
     // --- intervenciones ---
-
-    @Override
-    @Transactional
-    public void cancelarPrincipal(SagaId id, UsuarioSoporte quien, String motivo) {
-        // El agregado valida el punto de no retorno; las excepciones
-        // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
-        var orden = repo.cargar(id);
-        var saga = (SagaPrincipal) orden.saga();
-        saga.cancelar(quien, motivo);
-        orden.despertar(Instant.now());
-        repo.guardar(orden);
-    }
 
     @Override
     @Transactional
@@ -88,11 +74,6 @@ public class ServicioSoporteSagas implements CasoUsoIntervenirSaga, CasoUsoConsu
     @Override
     public List<SagaResumen> buscar(FiltroSagas filtro) {
         return consultas.buscar(filtro);
-    }
-
-    @Override
-    public VistaTramitacion vistaTramitacion(ExternalId externalId) {
-        return consultas.vistaTramitacion(externalId);
     }
 
     @Override

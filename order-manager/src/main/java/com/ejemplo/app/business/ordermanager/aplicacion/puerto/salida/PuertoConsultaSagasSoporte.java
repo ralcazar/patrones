@@ -5,7 +5,6 @@ import java.util.List;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte.FiltroSagas;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte.SagaDetalle;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte.SagaResumen;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarSagasSoporte.VistaTramitacion;
 import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
 import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
@@ -24,6 +23,7 @@ public interface PuertoConsultaSagasSoporte {
     List<SagaResumen> sagasConTicketPendiente();
     /** WHERE dinámico sobre las tablas de sagas/órdenes; los criterios a null no aplican. */
     List<SagaResumen> buscar(FiltroSagas filtro);
-    VistaTramitacion vistaTramitacion(ExternalId externalId);
+    /** Todas las sagas de una tramitación, correlacionadas por externalId, sin componer la vista. */
+    List<SagaDetalle> porExternalId(ExternalId externalId);
     SagaDetalle detalle(TipoSaga tipo, SagaId id);
 }

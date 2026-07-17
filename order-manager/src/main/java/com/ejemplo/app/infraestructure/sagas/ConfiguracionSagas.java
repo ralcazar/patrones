@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
@@ -22,8 +23,10 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria1;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria1.ServicioSagaSecundaria1;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioSagaSecundaria2;
@@ -88,5 +91,15 @@ public class ConfiguracionSagas {
     ServicioRegistrarRespuestaSecundaria2 servicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
             PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
         return new ServicioRegistrarRespuestaSecundaria2(repo, dedup, politica);
+    }
+
+    @Bean
+    ServicioCancelarTramitacion servicioCancelarTramitacion(RepositorioOrden repo) {
+        return new ServicioCancelarTramitacion(repo);
+    }
+
+    @Bean
+    ServicioVistaTramitacion servicioVistaTramitacion(PuertoConsultaSagasSoporte consultas) {
+        return new ServicioVistaTramitacion(consultas);
     }
 }

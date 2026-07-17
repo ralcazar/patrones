@@ -7,7 +7,7 @@
 
 - [x] Paso 1 — Mover sagas a sus paquetes (git mv + imports, sin renombrar)
 - [x] Paso 2 — SPI de persistencia `MapeadorProceso` + partir la configuración
-- [ ] Paso 3 — Extraer soporte saga-específico (cancelación, vista, `DescriptorSoporteOrden`)
+- [x] Paso 3 — Extraer soporte saga-específico (cancelación, vista, `DescriptorSoporteOrden`)
 - [ ] Paso 4 — `TipoSaga` (enum) → `TipoOrden` (record) + regla ArchUnit de frontera
 - [ ] Paso 5 — Renombrados neutros del motor + aplanar paquetes
 - [ ] Paso 6 — BD/SQL y claves de configuración

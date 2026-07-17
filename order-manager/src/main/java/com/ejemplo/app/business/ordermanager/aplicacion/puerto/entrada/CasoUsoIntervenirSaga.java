@@ -18,13 +18,6 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  */
 public interface CasoUsoIntervenirSaga {
 
-    /**
-     * Cancela la saga principal (dispara la compensación de PASO2 y PASO1).
-     * Solo posible antes de alcanzar PASO7_HECHO; después lanza
-     * PuntoNoRetornoSuperadoException.
-     */
-    void cancelarPrincipal(SagaId id, UsuarioSoporte quien, String motivo);
-
     /** Reintento manual del paso pendiente actual: resetea la escalera de intentos y lo relanza. */
     void reintentarPaso(TipoSaga tipo, SagaId id, String nombrePaso, UsuarioSoporte quien);
 
