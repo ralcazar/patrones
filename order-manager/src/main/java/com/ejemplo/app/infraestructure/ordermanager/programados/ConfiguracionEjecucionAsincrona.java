@@ -50,7 +50,7 @@ public class ConfiguracionEjecucionAsincrona implements SchedulingConfigurer {
 
     @Bean("ejecutorContinuacion")
     ThreadPoolTaskExecutor ejecutorContinuacion(
-            @Value("${orden.planificador.trabajadores:4}") int trabajadores) {
+            @Value("${orden.planificador.trabajadores:2}") int trabajadores) {
         var ejecutor = new ThreadPoolTaskExecutor();
         ejecutor.setCorePoolSize(trabajadores);
         ejecutor.setMaxPoolSize(trabajadores);
