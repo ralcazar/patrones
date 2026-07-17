@@ -43,7 +43,7 @@ package "puerto.entrada" {
   }
 }
 
-package "servicio" {
+package "servicio.comun" {
   class ServicioSoporteSagas <<@Service>> {
     -repo : RepositorioOrden
     -consultas : PuertoConsultaSagasSoporte

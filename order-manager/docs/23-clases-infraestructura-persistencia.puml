@@ -1,105 +1,109 @@
 @startuml 23-clases-infraestructura-persistencia
-title Infraestructura — persistencia del agregado y el planificador de continuación (infraestructure.ordermanager.saga)
+title Infraestructura — persistencia del agregado (infraestructure.ordermanager.persistencia) y el planificador de continuación (...programados)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-class PlanificadorContinuacion <<@Component>> {
-  -casoUso : CasoUsoContinuarSaga
-  -trabajador : TrabajadorContinuacion
-  -trabajadores : int  «orden.planificador.trabajadores, por defecto 4»
-  +ejecutar()  «@Scheduled fixedDelayString\norden.planificador.intervalo-ms (500 ms)»
+package "programados" {
+  class PlanificadorContinuacion <<@Component>> {
+    -casoUso : CasoUsoContinuarSaga
+    -trabajador : TrabajadorContinuacion
+    -trabajadores : int  «orden.planificador.trabajadores, por defecto 4»
+    +ejecutar()  «@Scheduled fixedDelayString\norden.planificador.intervalo-ms (500 ms)»
+  }
+  note right of PlanificadorContinuacion
+    Un planificador por pod: cada pasada comprueba
+    casoUso.hayTrabajoPendiente() (EXISTS barato) y, si hay,
+    despierta hasta N workers con trabajador.trabajar() (los envíos
+    que no caben en el pool se descartan — ver 24). El reclamo del
+    token con optimistic lock lo hace el propio caso de uso (ver
+    17): arbitra igual entre workers del pod que entre pods.
+  end note
 }
-note right of PlanificadorContinuacion
-  Un planificador por pod: cada pasada comprueba
-  casoUso.hayTrabajoPendiente() (EXISTS barato) y, si hay,
-  despierta hasta N workers con trabajador.trabajar() (los envíos
-  que no caben en el pool se descartan — ver 24). El reclamo del
-  token con optimistic lock lo hace el propio caso de uso (ver
-  17): arbitra igual entre workers del pod que entre pods.
-end note
 
 interface "CasoUsoContinuarSaga\n(aplicación — ver 17)" as CasoUsoContinuarSaga
 class "TrabajadorContinuacion\n(ver 24)" as TrabajadorContinuacion
 
-class AdaptadorRepositorioOrden <<@Component>> {
-  -ordenes : OrdenJpaRepository
-  -sagas : SagaJpaRepository
-  +crear(OrdenRoot)  «sagas.save(...); ordenes.save(...)»
-  +cargar(SagaId) : OrdenRoot  «rehidrata despachando por SagaEntity.tipo»
-  +guardar(OrdenRoot)  «sagas.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
-  +buscarEjecutables(ahora, limite) : List<CandidataOrden>
-  +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
-  +purgarFinalizadasAntesDe(corte) : long
-}
-note right of AdaptadorRepositorioOrden
-  ÚNICO adaptador de escritura del agregado. entidadSagaDe()/
-  sagaDesde() despachan por TipoSaga (switch sobre la subclase de
-  Saga) y (de)serializan el contexto propio de cada saga con
-  ContextoCodec (JSON plano: todas las refs son wrappers de un
-  único String). ordenes.flush() fuerza el chequeo de version
-  aquí, no en el commit de fuera.
-end note
+package "persistencia" {
+  class AdaptadorRepositorioOrden <<@Component>> {
+    -ordenes : OrdenJpaRepository
+    -sagas : SagaJpaRepository
+    +crear(OrdenRoot)  «sagas.save(...); ordenes.save(...)»
+    +cargar(SagaId) : OrdenRoot  «rehidrata despachando por SagaEntity.tipo»
+    +guardar(OrdenRoot)  «sagas.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
+    +buscarEjecutables(ahora, limite) : List<CandidataOrden>
+    +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
+    +purgarFinalizadasAntesDe(corte) : long
+  }
+  note right of AdaptadorRepositorioOrden
+    ÚNICO adaptador de escritura del agregado. entidadSagaDe()/
+    sagaDesde() despachan por TipoSaga (switch sobre la subclase de
+    Saga) y (de)serializan el contexto propio de cada saga con
+    ContextoCodec (JSON plano: todas las refs son wrappers de un
+    único String). ordenes.flush() fuerza el chequeo de version
+    aquí, no en el commit de fuera.
+  end note
 
-interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository>> {
-  +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
-  +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
-  +idsFinalizadasAntesDe(corte) : List<String>
-  +borrarPorIds(ids)
-  +buscarTicketsPendientes() : List<TicketPendienteFila>
-  +sagasBloqueadas() / sagasEnEjecucion(ahora)
-  +sagasConTicketPendiente() / buscar(...) / porExternalId(...)
-  +resumenDe(tipo, sagaId) : Optional<SagaResumenFila>
-}
-interface "SagaJpaRepository" as SagaJpa <<JpaRepository>> {
-  +borrarPorIds(ids)
-}
-interface CandidataFila <<projection>> {
-  getSagaId() / getTipo()
-}
+  interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository, package-private>> {
+    +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
+    +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
+    +idsFinalizadasAntesDe(corte) : List<String>
+    +borrarPorIds(ids)
+    +buscarTicketsPendientes() : List<TicketPendienteFila>
+    +sagasBloqueadas() / sagasEnEjecucion(ahora)
+    +sagasConTicketPendiente() / buscar(...) / porExternalId(...)
+    +resumenDe(tipo, sagaId) : Optional<SagaResumenFila>
+  }
+  interface "SagaJpaRepository" as SagaJpa <<JpaRepository, package-private>> {
+    +borrarPorIds(ids)
+  }
+  interface CandidataFila <<projection, package-private>> {
+    getSagaId() / getTipo()
+  }
 
-class OrdenEntity <<@Entity orden>> {
-  @Id sagaId : String  «FK a saga»
-  intentos : int
-  proximoReintentoEn : Instant
-  tokenTrabajador : String
-  tokenExpiraEn : Instant
-  ticketAbiertoEn : Instant
-  resultado : String
-  @Version version : long  «ÚNICA del agregado»
-  creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
-}
-class SagaEntity <<@Entity saga>> {
-  @Id sagaId : String
-  tipo / externalId / estado : String
-  @Lob contexto : String  «JSON plano (ContextoCodec)»
-  auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla saga_auditoria»
-}
-class AuditoriaEntity <<@Embeddable>> {
-  cuando / quien / accion / detalle
-}
+  class OrdenEntity <<@Entity orden>> {
+    @Id sagaId : String  «FK a saga»
+    intentos : int
+    proximoReintentoEn : Instant
+    tokenTrabajador : String
+    tokenExpiraEn : Instant
+    ticketAbiertoEn : Instant
+    resultado : String
+    @Version version : long  «ÚNICA del agregado»
+    creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
+  }
+  class SagaEntity <<@Entity saga>> {
+    @Id sagaId : String
+    tipo / externalId / estado : String
+    @Lob contexto : String  «JSON plano (ContextoCodec)»
+    auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla saga_auditoria»
+  }
+  class AuditoriaEntity <<@Embeddable>> {
+    cuando / quien / accion / detalle
+  }
 
-note bottom of OrdenEntity
-  Tablas Oracle: DDL manual en order-manager/db/ (saga.sql,
-  saga_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
-  Flyway ni ddl-auto: none). saga (saga_id PK, tipo, external_id,
-  estado, contexto CLOB) + orden (saga_id PK/FK a saga, intentos,
-  proximo_reintento_en, token_trabajador, token_expira_en,
-  ticket_abierto_en, resultado, version, creada_en, actualizada_en).
-  Sin índices parciales en Oracle: idx_orden_candidatas es funcional
-  sobre CASE WHEN resultado IS NULL THEN proximo_reintento_en END;
-  idx_orden_intentos indexa la bandeja de trabajo/tickets.
-end note
+  note bottom of OrdenEntity
+    Tablas Oracle: DDL manual en order-manager/db/ (saga.sql,
+    saga_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
+    Flyway ni ddl-auto: none). saga (saga_id PK, tipo, external_id,
+    estado, contexto CLOB) + orden (saga_id PK/FK a saga, intentos,
+    proximo_reintento_en, token_trabajador, token_expira_en,
+    ticket_abierto_en, resultado, version, creada_en, actualizada_en).
+    Sin índices parciales en Oracle: idx_orden_candidatas es funcional
+    sobre CASE WHEN resultado IS NULL THEN proximo_reintento_en END;
+    idx_orden_intentos indexa la bandeja de trabajo/tickets.
+  end note
 
-note right of OrdenJpa
-  buscarCandidatas (SQL nativo): proximo_reintento_en <= :ahora
-  AND resultado IS NULL AND (token_trabajador IS NULL OR
-  token_expira_en <= :ahora) ORDER BY proximo_reintento_en
-  FETCH FIRST :limite ROWS ONLY. existeCandidata: MISMO predicado
-  (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
-  sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
-  ticket_abierto_en IS NULL AND resultado IS NULL.
-end note
+  note right of OrdenJpa
+    buscarCandidatas (SQL nativo): proximo_reintento_en <= :ahora
+    AND resultado IS NULL AND (token_trabajador IS NULL OR
+    token_expira_en <= :ahora) ORDER BY proximo_reintento_en
+    FETCH FIRST :limite ROWS ONLY. existeCandidata: MISMO predicado
+    (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
+    sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
+    ticket_abierto_en IS NULL AND resultado IS NULL.
+  end note
+}
 
 PlanificadorContinuacion --> CasoUsoContinuarSaga : hayTrabajoPendiente()
 PlanificadorContinuacion --> TrabajadorContinuacion : trabajar() ×N
