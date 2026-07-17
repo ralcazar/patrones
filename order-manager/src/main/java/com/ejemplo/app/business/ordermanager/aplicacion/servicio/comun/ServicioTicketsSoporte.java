@@ -25,7 +25,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
  *
  * El marcado de cada orden va en {@code @Transactional}. Como este servicio
  * es un POJO creado por {@code @Bean}, se invoca a través de {@code self}
- * (el propio proxy, inyectado por ConfiguracionAplicacion) para que la
+ * (el propio proxy, inyectado por ConfiguracionOrderManager) para que la
  * anotación no se ignore por auto-invocación.
  */
 @Service
@@ -41,10 +41,10 @@ public class ServicioTicketsSoporte implements CasoUsoAbrirTicketsPendientes {
         this.pendientes = pendientes;
         this.tickets = tickets;
         this.repo = repo;
-        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionOrderManager lo sustituye por el proxy
     }
 
-    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionOrderManager). */
     public void establecerSelf(ServicioTicketsSoporte self) {
         this.self = self;
     }

@@ -33,6 +33,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ComandoPasoSecunda
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.RefEjecucion;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ResultadoPasoSecundaria3;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
+import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria3;
 
 /**
  * Único test con contexto Spring real del proyecto: demuestra que la
@@ -174,10 +175,10 @@ class FronteraTransaccionalIntegrationTest {
     /**
      * Contexto Spring mínimo: solo persistencia real (JPA sobre H2) + UN
      * ServicioSaga (el más simple) con su self-inyección vía {@code @Lazy},
-     * igual que en ConfiguracionAplicacion. Deliberadamente NO reutiliza
-     * ConfiguracionAplicacion completa: los demás servicios necesitan
-     * adaptadores (Kafka, más puertos REST) que este esqueleto aún no
-     * implementa.
+     * igual que en ConfiguracionSagas. Deliberadamente NO reutiliza
+     * ConfiguracionOrderManager/ConfiguracionSagas completas: los demás
+     * servicios necesitan adaptadores (Kafka, más puertos REST) que este
+     * esqueleto aún no implementa.
      */
     @Configuration
     @EnableAutoConfiguration
@@ -187,7 +188,8 @@ class FronteraTransaccionalIntegrationTest {
 
         @Bean
         RepositorioOrdenEspiaTx repositorioOrden(OrdenJpaRepository ordenes, SagaJpaRepository sagas) {
-            return new RepositorioOrdenEspiaTx(new AdaptadorRepositorioOrden(ordenes, sagas));
+            return new RepositorioOrdenEspiaTx(
+                    new AdaptadorRepositorioOrden(ordenes, sagas, List.of(new SoporteSagaSecundaria3())));
         }
 
         @Bean

@@ -21,7 +21,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
  * El REST ocurre fuera de transacción; aplicar el resultado y guardar van en
  * {@code @Transactional}. Como este servicio es un POJO creado por
  * {@code @Bean}, se invoca a través de {@code self} (el propio proxy,
- * inyectado por ConfiguracionAplicacion) para que la anotación no se ignore
+ * inyectado por ConfiguracionSagas) para que la anotación no se ignore
  * por auto-invocación.
  */
 @Service
@@ -34,10 +34,10 @@ public class ServicioSagaSecundaria3 implements ServicioSaga {
     public ServicioSagaSecundaria3(RepositorioOrden repo, PuertoSagaSecundaria3 puerto) {
         this.repo = repo;
         this.puerto = puerto;
-        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionSagas lo sustituye por el proxy
     }
 
-    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionSagas). */
     public void establecerSelf(ServicioSagaSecundaria3 self) {
         this.self = self;
     }

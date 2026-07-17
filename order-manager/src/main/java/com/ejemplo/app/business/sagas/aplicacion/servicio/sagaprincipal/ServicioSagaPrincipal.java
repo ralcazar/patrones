@@ -47,7 +47,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
  * POJO creado por {@code @Bean}, una llamada interna (this.aplicarX(...)) NO
  * pasaría por el proxy transaccional de Spring, así que se invoca a través de
  * {@code self}: la referencia al propio proxy, inyectada por
- * ConfiguracionAplicacion (ver {@link #establecerSelf}).
+ * ConfiguracionSagas (ver {@link #establecerSelf}).
  */
 @Service
 public class ServicioSagaPrincipal implements ServicioSaga {
@@ -78,10 +78,10 @@ public class ServicioSagaPrincipal implements ServicioSaga {
         this.puertoPaso6 = puertoPaso6;
         this.puertoPaso7 = puertoPaso7;
         this.puertoPaso8 = puertoPaso8;
-        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionSagas lo sustituye por el proxy
     }
 
-    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionSagas). */
     public void establecerSelf(ServicioSagaPrincipal self) {
         this.self = self;
     }

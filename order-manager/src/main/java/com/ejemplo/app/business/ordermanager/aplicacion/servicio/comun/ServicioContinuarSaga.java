@@ -30,7 +30,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
  * ({@code @Transactional}); entre medias corre el REST del paso (a través de
  * {@code servicioSaga.ejecutarPaso}, otro bean). Como este servicio es un
  * POJO creado por {@code @Bean}, esas dos transacciones se invocan a través
- * de {@code self} (el propio proxy, inyectado por ConfiguracionAplicacion)
+ * de {@code self} (el propio proxy, inyectado por ConfiguracionOrderManager)
  * para que la anotación no se ignore por auto-invocación.
  */
 @Service
@@ -50,10 +50,10 @@ public class ServicioContinuarSaga implements CasoUsoContinuarSaga {
         this.politica = politica;
         this.lease = lease;
         this.lote = lote;
-        this.self = this; // valor por defecto (tests unitarios); ConfiguracionAplicacion lo sustituye por el proxy
+        this.self = this; // valor por defecto (tests unitarios); ConfiguracionOrderManager lo sustituye por el proxy
     }
 
-    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionAplicacion). */
+    /** Referencia al proxy transaccional de Spring de este mismo bean (ver ConfiguracionOrderManager). */
     public void establecerSelf(ServicioContinuarSaga self) {
         this.self = self;
     }

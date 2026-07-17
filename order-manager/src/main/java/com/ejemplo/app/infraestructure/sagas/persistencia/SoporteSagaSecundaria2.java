@@ -1,0 +1,48 @@
+package com.ejemplo.app.infraestructure.sagas.persistencia;
+
+import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.ponerSiNoNulo;
+import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.refONull;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.stereotype.Component;
+
+import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
+import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.comun.TipoSaga;
+import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso;
+
+/** {@link MapeadorProceso} de la saga secundaria 2. */
+@Component
+public class SoporteSagaSecundaria2 implements MapeadorProceso {
+
+    @Override
+    public TipoSaga tipo() {
+        return TipoSaga.SECUNDARIA2;
+    }
+
+    @Override
+    public ProcesoPersistible desarmar(Saga<?> saga) {
+        var s = (SagaSecundaria2) saga;
+        var m = new LinkedHashMap<String, String>();
+        m.put("refPaso5", s.refPaso5().valor());
+        ponerSiNoNulo(m, "refRespuesta", s.refRespuesta() == null ? null : s.refRespuesta().valor());
+        return new ProcesoPersistible(s.estado().name(), m);
+    }
+
+    @Override
+    public Saga<?> rearmar(SagaId id, ExternalId externalId, String estado, Map<String, String> contexto,
+            List<AuditoriaIntervencion> auditoria) {
+        return SagaSecundaria2.rehidratar(id, externalId, new RefPaso5(contexto.get("refPaso5")),
+                refONull(contexto, "refRespuesta", RefRespuesta::new),
+                EstadoSagaSecundaria2.valueOf(estado), auditoria);
+    }
+}
