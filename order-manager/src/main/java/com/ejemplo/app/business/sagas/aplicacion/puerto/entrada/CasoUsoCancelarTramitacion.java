@@ -1,7 +1,7 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.entrada;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /** Lo invoca la pantalla de soporte. Específico de la saga principal: solo ella es cancelable. */
 public interface CasoUsoCancelarTramitacion {
@@ -11,5 +11,5 @@ public interface CasoUsoCancelarTramitacion {
      * Solo posible antes de alcanzar PASO7_HECHO; después lanza
      * PuntoNoRetornoSuperadoException.
      */
-    void cancelarPrincipal(SagaId id, UsuarioSoporte quien, String motivo);
+    void cancelarPrincipal(OrdenId id, UsuarioSoporte quien, String motivo);
 }

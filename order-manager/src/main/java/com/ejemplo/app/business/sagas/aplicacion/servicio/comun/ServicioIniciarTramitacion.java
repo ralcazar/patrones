@@ -8,8 +8,8 @@ import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
@@ -29,8 +29,8 @@ public class ServicioIniciarTramitacion implements CasoUsoIniciarTramitacion {
 
     @Override
     @Transactional
-    public SagaId iniciar(ComandoIniciarTramitacion cmd) {
-        var sagaId = SagaId.nuevo();
+    public OrdenId iniciar(ComandoIniciarTramitacion cmd) {
+        var sagaId = OrdenId.nuevo();
         var saga = SagaPrincipal.crear(sagaId, cmd.externalId(), cmd.datoNegocio3(), cmd.datoNegocio2());
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         return sagaId;

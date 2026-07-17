@@ -8,12 +8,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoNoIntervenibleException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Saga secundaria 2: INICIAL -&gt; ESPERANDO_RESPUESTA -&gt; TERMINADA, con la
@@ -25,7 +25,7 @@ class SagaSecundaria2Test {
     private static SagaSecundaria2 nueva() {
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
-        return SagaSecundaria2.crear(SagaId.nuevo(), ctx);
+        return SagaSecundaria2.crear(OrdenId.nuevo(), ctx);
     }
 
     @Test

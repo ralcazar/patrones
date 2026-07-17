@@ -8,14 +8,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.PuntoNoRetornoSuperadoException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaException;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenYaCompletadaException;
 
 /**
  * Saga principal: PASO1..PASO8 síncronos, punto de no retorno en PASO7_HECHO
@@ -24,7 +24,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaExcep
 class SagaPrincipalTest {
 
     private static SagaPrincipal nueva() {
-        return SagaPrincipal.crear(SagaId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
+        return SagaPrincipal.crear(OrdenId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
     }
 
@@ -86,7 +86,7 @@ class SagaPrincipalTest {
     void cancelar_antesDePaso1Hecho_vaDirectaACancelada() {
         var saga = nueva();
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana"), "motivo");
+        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
     }
@@ -98,7 +98,7 @@ class SagaPrincipalTest {
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana"), "motivo");
+        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO2);
 
         saga.compensacionCompletada();
@@ -115,7 +115,7 @@ class SagaPrincipalTest {
         var saga = nueva();
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana"), "motivo");
+        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
     }
@@ -124,7 +124,7 @@ class SagaPrincipalTest {
     void cancelar_esIdempotenteMientrasSeEstaCompensando() {
         var saga = nueva();
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        var quien = new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana");
+        var quien = new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana");
         saga.cancelar(quien, "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
 
@@ -139,8 +139,8 @@ class SagaPrincipalTest {
         avanzarHastaTerminada(saga);
 
         assertThatThrownBy(() -> saga.cancelar(
-                new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana"), "motivo"))
-                .isInstanceOf(SagaYaCompletadaException.class);
+                new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo"))
+                .isInstanceOf(OrdenYaCompletadaException.class);
     }
 
     @Test
@@ -157,7 +157,7 @@ class SagaPrincipalTest {
         assertThat(saga.esCancelable()).isFalse();
 
         assertThatThrownBy(() -> saga.cancelar(
-                new com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte("ana"), "motivo"))
+                new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo"))
                 .isInstanceOf(PuntoNoRetornoSuperadoException.class);
     }
 }

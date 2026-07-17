@@ -10,11 +10,11 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ExcepcionServicioExterno;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.ComandoPasoSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
@@ -39,7 +39,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
  * no se ignore por auto-invocación.
  */
 @Service
-public class ServicioSagaSecundaria2 implements ServicioSaga {
+public class ServicioSagaSecundaria2 implements ProcesadorOrden {
 
     /** La respuesta puede tardar: ventana de espera entre reconciliaciones. */
     static final Duration VENTANA_ESPERA = Duration.ofHours(3);
@@ -72,7 +72,7 @@ public class ServicioSagaSecundaria2 implements ServicioSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria2) orden.saga();
+        var saga = (SagaSecundaria2) orden.proceso();
         return switch (saga.estado()) {
             case INICIAL -> solicitar(orden, saga);
             case ESPERANDO_RESPUESTA -> conciliar(orden, saga);

@@ -6,10 +6,10 @@ import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ComandoPasoSecundaria3;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.ResultadoPasoSecundaria3;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
@@ -25,7 +25,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
  * por auto-invocación.
  */
 @Service
-public class ServicioSagaSecundaria3 implements ServicioSaga {
+public class ServicioSagaSecundaria3 implements ProcesadorOrden {
 
     private final RepositorioOrden repo;
     private final PuertoSagaSecundaria3 puerto;
@@ -51,7 +51,7 @@ public class ServicioSagaSecundaria3 implements ServicioSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria3) orden.saga();
+        var saga = (SagaSecundaria3) orden.proceso();
         var resultado = puerto.ejecutar((ComandoPasoSecundaria3.Ejecutar) saga.comandoActual()); // REST fuera de tx
         return self.aplicar(orden, saga, resultado); // via proxy -> @Transactional
     }

@@ -5,19 +5,19 @@ import java.util.Map;
 
 import org.jmolecules.ddd.annotation.Entity;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.DatosManualesRequeridosException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoNoIntervenibleException;
+import com.ejemplo.app.business.ordermanager.dominio.DatosManualesRequeridosException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Saga SECUNDARIA1: dos pasos síncronos encadenados, INICIO -> CONFIRMACION,
@@ -29,7 +29,7 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * retorno): nunca se cancela ni compensa.
  */
 @Entity
-public final class SagaSecundaria1 extends Saga<EstadoSagaSecundaria1> {
+public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
 
     public static final TipoOrden TIPO = new TipoOrden("SECUNDARIA1");
 
@@ -37,13 +37,13 @@ public final class SagaSecundaria1 extends Saga<EstadoSagaSecundaria1> {
     private RefInicio refInicio;   // lo produce INICIO, lo consume CONFIRMACION
     private RefConfirmacion refConfirmacion;
 
-    private SagaSecundaria1(SagaId id, ExternalId externalId, RefPaso1 refPaso1,
+    private SagaSecundaria1(OrdenId id, ExternalId externalId, RefPaso1 refPaso1,
             EstadoSagaSecundaria1 estado) {
         super(id, externalId, estado);
         this.refPaso1 = refPaso1;
     }
 
-    private SagaSecundaria1(SagaId id, ExternalId externalId, RefPaso1 refPaso1,
+    private SagaSecundaria1(OrdenId id, ExternalId externalId, RefPaso1 refPaso1,
             RefInicio refInicio, RefConfirmacion refConfirmacion, EstadoSagaSecundaria1 estado,
             List<AuditoriaIntervencion> auditoria) {
         super(id, externalId, estado, auditoria);
@@ -52,12 +52,12 @@ public final class SagaSecundaria1 extends Saga<EstadoSagaSecundaria1> {
         this.refConfirmacion = refConfirmacion;
     }
 
-    public static SagaSecundaria1 crear(SagaId id, ContextoArranque.ArranqueSecundaria1 ctx) {
+    public static SagaSecundaria1 crear(OrdenId id, ContextoArranque.ArranqueSecundaria1 ctx) {
         return new SagaSecundaria1(id, ctx.externalId(), ctx.refPaso1(), EstadoSagaSecundaria1.INICIAL);
     }
 
     /** Para el adaptador de persistencia. */
-    public static SagaSecundaria1 rehidratar(SagaId id, ExternalId externalId, RefPaso1 refPaso1,
+    public static SagaSecundaria1 rehidratar(OrdenId id, ExternalId externalId, RefPaso1 refPaso1,
             RefInicio refInicio, RefConfirmacion refConfirmacion, EstadoSagaSecundaria1 estado,
             List<AuditoriaIntervencion> auditoria) {
         return new SagaSecundaria1(id, externalId, refPaso1, refInicio, refConfirmacion,

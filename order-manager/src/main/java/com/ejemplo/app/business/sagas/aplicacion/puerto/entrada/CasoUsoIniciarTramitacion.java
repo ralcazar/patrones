@@ -1,14 +1,14 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.entrada;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
 
 /** Lo invoca el adaptador de entrada que inicia la tramitación (REST, consumer, etc.). */
 public interface CasoUsoIniciarTramitacion {
 
-    SagaId iniciar(ComandoIniciarTramitacion cmd);
+    OrdenId iniciar(ComandoIniciarTramitacion cmd);
 
     record ComandoIniciarTramitacion(ExternalId externalId,
                                      DatoNegocio3 datoNegocio3,

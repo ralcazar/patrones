@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
 
 /**
  * Bucle del worker pull (sin Spring: aquí no hay @Async ni pool, solo el
@@ -17,7 +17,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 class TrabajadorContinuacionTest {
 
     /** Fake del caso de uso: cada llamada a continuarSiguiente consume la siguiente respuesta. */
-    private static class CasoUsoFalso implements CasoUsoContinuarSaga {
+    private static class CasoUsoFalso implements CasoUsoContinuarOrden {
 
         private final boolean[] respuestas;
         private final AtomicInteger llamadas = new AtomicInteger();
@@ -36,7 +36,7 @@ class TrabajadorContinuacionTest {
     }
 
     @Test
-    void trabajar_encadenaSagasHastaQueNoQuedaTrabajo() {
+    void trabajar_encadenaOrdenesHastaQueNoQuedaTrabajo() {
         var casoUso = new CasoUsoFalso(true, true, false);
 
         new TrabajadorContinuacion(casoUso).trabajar();

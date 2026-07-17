@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
 
 /**
  * Worker pull: encadena sagas (al acabar una, va a la BD a por la siguiente)
@@ -18,9 +18,9 @@ public class TrabajadorContinuacion {
 
     private static final Logger log = LoggerFactory.getLogger(TrabajadorContinuacion.class);
 
-    private final CasoUsoContinuarSaga casoUso;
+    private final CasoUsoContinuarOrden casoUso;
 
-    public TrabajadorContinuacion(CasoUsoContinuarSaga casoUso) {
+    public TrabajadorContinuacion(CasoUsoContinuarOrden casoUso) {
         this.casoUso = casoUso;
     }
 

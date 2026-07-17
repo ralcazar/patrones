@@ -22,16 +22,16 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso5;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioContinuarSaga;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.soporte.RepositorioOrdenEnMemoria;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
+import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
@@ -47,7 +47,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
 
 /**
- * Orquestación real de la saga principal a través de ServicioContinuarSaga:
+ * Orquestación real de la saga principal a través de ServicioContinuarOrden:
  * flujo feliz de los 8 pasos con arranque de las 3 secundarias, y
  * cancelación -&gt; compensación -&gt; FINALIZADA_COMPENSADA (Fase 4 del refactor).
  */
@@ -65,7 +65,7 @@ class ServicioSagaPrincipalTest {
     private PuertoPaso7 puertoPaso7;
     private PuertoPaso8 puertoPaso8;
     private ServicioSagaPrincipal servicioSaga;
-    private ServicioContinuarSaga servicioContinuar;
+    private ServicioContinuarOrden servicioContinuar;
 
     @BeforeEach
     void init() {
@@ -80,8 +80,8 @@ class ServicioSagaPrincipalTest {
         puertoPaso8 = mock(PuertoPaso8.class);
         servicioSaga = new ServicioSagaPrincipal(repo, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
-        servicioContinuar = new ServicioContinuarSaga(Map.of(SagaPrincipal.TIPO, servicioSaga), repo,
-                new com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos(), LEASE, 16);
+        servicioContinuar = new ServicioContinuarOrden(Map.of(SagaPrincipal.TIPO, servicioSaga), repo,
+                new com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos(), LEASE, 16);
 
         when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
         when(puertoPaso2.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
@@ -93,8 +93,8 @@ class ServicioSagaPrincipalTest {
         when(puertoPaso8.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
     }
 
-    private SagaId crearOrdenPrincipal() {
-        var id = SagaId.nuevo();
+    private OrdenId crearOrdenPrincipal() {
+        var id = OrdenId.nuevo();
         var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
@@ -110,7 +110,7 @@ class ServicioSagaPrincipalTest {
         var ordenFinal = repo.estadoActual(id);
         assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
         assertThat(ordenFinal.estaViva()).isFalse();
-        assertThat(((SagaPrincipal) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
+        assertThat(((SagaPrincipal) ordenFinal.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
 
         var hijas = repo.todas().stream().filter(o -> !SagaPrincipal.TIPO.equals(o.tipo())).toList();
         assertThat(hijas).hasSize(3);
@@ -128,11 +128,11 @@ class ServicioSagaPrincipalTest {
         avanzarUnPaso(id); // PASO2
 
         var ordenTrasPaso2 = repo.estadoActual(id);
-        assertThat(((SagaPrincipal) ordenTrasPaso2.saga()).estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
+        assertThat(((SagaPrincipal) ordenTrasPaso2.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
         // Soporte cancela: dispara la compensación PASO2 -> PASO1 -> CANCELADA.
         var ordenACancelar = repo.cargar(id);
-        var sagaACancelar = (SagaPrincipal) ordenACancelar.saga();
+        var sagaACancelar = (SagaPrincipal) ordenACancelar.proceso();
         sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio");
         ordenACancelar.despertar(Instant.now());
         repo.guardar(ordenACancelar);
@@ -140,7 +140,7 @@ class ServicioSagaPrincipalTest {
         servicioContinuar.continuarSiguiente();
 
         var ordenFinal = repo.estadoActual(id);
-        assertThat(((SagaPrincipal) ordenFinal.saga()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
+        assertThat(((SagaPrincipal) ordenFinal.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
         assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_COMPENSADA);
         assertThat(ordenFinal.estaViva()).isFalse();
         verify(puertoPaso2).compensar(any());
@@ -159,7 +159,7 @@ class ServicioSagaPrincipalTest {
         // pod hace takeover y ejecuta PASO3 de verdad (escribe y sube la version).
         when(puertoPaso3.ejecutar(any())).thenAnswer(invocacion -> {
             var ordenOtroPod = repo.cargar(id);
-            ((SagaPrincipal) ordenOtroPod.saga())
+            ((SagaPrincipal) ordenOtroPod.proceso())
                     .aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod")));
             repo.guardar(ordenOtroPod);
             return new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-zombi"));
@@ -168,16 +168,16 @@ class ServicioSagaPrincipalTest {
         // El zombi despierta con su instantánea obsoleta: su guardar falla por version.
         org.assertj.core.api.Assertions
                 .assertThatThrownBy(() -> servicioSaga.ejecutarPaso(repo.cargar(id)))
-                .isInstanceOf(com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException.class);
+                .isInstanceOf(com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException.class);
 
         // Gana el otro pod: estado en PASO3_HECHO (sin saltar a PASO4_HECHO) y su ref intacta.
-        var saga = (SagaPrincipal) repo.estadoActual(id).saga();
+        var saga = (SagaPrincipal) repo.estadoActual(id).proceso();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
         assertThat(saga.contexto().refPaso3()).isEqualTo(new RefPaso3("ref3-otro-pod"));
     }
 
     /** Ejecuta exactamente un paso invocando al servicioSaga directamente (no toca el token). */
-    private void avanzarUnPaso(SagaId id) {
+    private void avanzarUnPaso(OrdenId id) {
         var antes = repo.estadoActual(id).version();
         servicioSaga.ejecutarPaso(repo.cargar(id));
         assertThat(repo.estadoActual(id).version()).isGreaterThan(antes);

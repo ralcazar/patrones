@@ -9,7 +9,7 @@
 - [x] Paso 2 — SPI de persistencia `MapeadorProceso` + partir la configuración
 - [x] Paso 3 — Extraer soporte saga-específico (cancelación, vista, `DescriptorSoporteOrden`)
 - [x] Paso 4 — `TipoSaga` (enum) → `TipoOrden` (record) + regla ArchUnit de frontera
-- [ ] Paso 5 — Renombrados neutros del motor + aplanar paquetes
+- [x] Paso 5 — Renombrados neutros del motor + aplanar paquetes
 - [ ] Paso 6 — BD/SQL y claves de configuración
 - [ ] Paso 7 — Diagramas, PNG, READMEs y CLAUDE.md + push
 

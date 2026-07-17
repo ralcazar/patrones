@@ -1,6 +1,6 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.salida;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.ComandoPasoSecundaria2;
 
 /**
@@ -13,5 +13,5 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.ComandoPasoSecunda
  */
 public interface PuertoSagaSecundaria2 {
 
-    void solicitar(SagaId sagaId, ComandoPasoSecundaria2.Solicitar cmd);
+    void solicitar(OrdenId sagaId, ComandoPasoSecundaria2.Solicitar cmd);
 }

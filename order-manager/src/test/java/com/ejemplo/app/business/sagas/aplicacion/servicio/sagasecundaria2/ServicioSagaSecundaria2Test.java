@@ -16,16 +16,16 @@ import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria2;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.soporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
+import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExcepcionServicioExterno;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.ExcepcionServicioExterno;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
@@ -50,8 +50,8 @@ class ServicioSagaSecundaria2Test {
         servicioSaga = new ServicioSagaSecundaria2(repo, puerto, conciliacion);
     }
 
-    private SagaId crearOrdenSecundaria2() {
-        var id = SagaId.nuevo();
+    private OrdenId crearOrdenSecundaria2() {
+        var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
         repo.crear(OrdenRoot.nueva(SagaSecundaria2.crear(id, ctx), Instant.now()));
@@ -70,7 +70,7 @@ class ServicioSagaSecundaria2Test {
         assertThat(((SenalPaso.Aparcar) senal).ventana()).isEqualTo(Duration.ofHours(3));
         verify(puerto).solicitar(org.mockito.ArgumentMatchers.eq(id), any());
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.proximoReintentoEn())
                 .isBetween(antes.plus(Duration.ofHours(3)), despues.plus(Duration.ofHours(3)));
@@ -89,8 +89,8 @@ class ServicioSagaSecundaria2Test {
         assertThat(((SenalPaso.Finalizada) senal).resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
         var orden = repo.estadoActual(id);
         assertThat(orden.estaViva()).isFalse();
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
-        assertThat(((SagaSecundaria2) orden.saga()).refRespuesta().valor()).isEqualTo("resp-1");
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+        assertThat(((SagaSecundaria2) orden.proceso()).refRespuesta().valor()).isEqualTo("resp-1");
     }
 
     @Test
@@ -104,7 +104,7 @@ class ServicioSagaSecundaria2Test {
         assertThat(senal).isInstanceOf(SenalPaso.Aparcar.class);
         assertThat(((SenalPaso.Aparcar) senal).ventana()).isEqualTo(Duration.ofHours(3));
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
     }
 
     @Test
@@ -115,9 +115,9 @@ class ServicioSagaSecundaria2Test {
                 .thenReturn(new PuertoConciliacionSecundaria2.Resultado.FalloRegistrado(MotivoFallo.errorTecnico("boom")));
 
         assertThatThrownBy(() -> servicioSaga.ejecutarPaso(repo.cargar(id))).isInstanceOf(ExcepcionServicioExterno.class);
-        // No se persiste nada al lanzar: ServicioContinuarSaga es quien decide el reintento.
+        // No se persiste nada al lanzar: ServicioContinuarOrden es quien decide el reintento.
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
     }
 
     @Test
@@ -127,7 +127,7 @@ class ServicioSagaSecundaria2Test {
 
         // El consumer de Kafka resuelve la saga directamente y despierta la orden (ServicioRegistrarRespuestaSecundaria2).
         var orden = repo.cargar(id);
-        var saga = (SagaSecundaria2) orden.saga();
+        var saga = (SagaSecundaria2) orden.proceso();
         saga.respuestaRecibida(new RefRespuesta("resp-kafka"));
         orden.despertar(Instant.now());
         repo.guardar(orden);

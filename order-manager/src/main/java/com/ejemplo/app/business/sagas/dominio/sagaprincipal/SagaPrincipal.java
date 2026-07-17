@@ -5,23 +5,23 @@ import java.util.Map;
 
 import org.jmolecules.ddd.annotation.Entity;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.DatosManualesRequeridosException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoNoIntervenibleException;
+import com.ejemplo.app.business.ordermanager.dominio.DatosManualesRequeridosException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.PuntoNoRetornoSuperadoException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaYaCompletadaException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenYaCompletadaException;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Saga principal: PASO1 -> PASO2 -> ... -> PASO8, todos síncronos.
@@ -38,38 +38,38 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  *   sí y sin join.
  */
 @Entity
-public final class SagaPrincipal extends Saga<EstadoSagaPrincipal> {
+public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
 
     public static final TipoOrden TIPO = new TipoOrden("PRINCIPAL");
 
     private ContextoTramitacion ctx;
 
-    private SagaPrincipal(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    private SagaPrincipal(OrdenId id, ExternalId externalId, ContextoTramitacion ctx,
                               EstadoSagaPrincipal estado) {
         super(id, externalId, estado);
         this.ctx = ctx;
     }
 
-    private SagaPrincipal(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    private SagaPrincipal(OrdenId id, ExternalId externalId, ContextoTramitacion ctx,
                               EstadoSagaPrincipal estado, List<AuditoriaIntervencion> auditoria) {
         super(id, externalId, estado, auditoria);
         this.ctx = ctx;
     }
 
-    public static SagaPrincipal crear(SagaId id, ExternalId externalId,
+    public static SagaPrincipal crear(OrdenId id, ExternalId externalId,
                                           DatoNegocio3 datos, DatoNegocio2 datoNegocio2) {
         return new SagaPrincipal(id, externalId, ContextoTramitacion.inicial(datos, datoNegocio2),
                 EstadoSagaPrincipal.INICIAL);
     }
 
     /** Para el adaptador de persistencia. */
-    public static SagaPrincipal rehidratar(SagaId id, ExternalId externalId, ContextoTramitacion ctx,
+    public static SagaPrincipal rehidratar(OrdenId id, ExternalId externalId, ContextoTramitacion ctx,
             EstadoSagaPrincipal estado, List<AuditoriaIntervencion> auditoria) {
         return new SagaPrincipal(id, externalId, ctx, estado, auditoria);
     }
 
     // ------------------------------------------------------------------
-    // Especialización del ciclo de vida común de Saga
+    // Especialización del ciclo de vida común de Proceso
     // ------------------------------------------------------------------
 
     @Override public TipoOrden tipo() { return TIPO; }
@@ -197,7 +197,7 @@ public final class SagaPrincipal extends Saga<EstadoSagaPrincipal> {
     /** Cancela la saga. Solo posible ANTES de alcanzar PASO7_HECHO. Dispara la compensación de PASO2 y PASO1. */
     public void cancelar(UsuarioSoporte quien, String motivo) {
         if (estado == EstadoSagaPrincipal.TERMINADA) {
-            throw new SagaYaCompletadaException(id);
+            throw new OrdenYaCompletadaException(id);
         }
         if (estado == EstadoSagaPrincipal.COMPENSAR_PASO2
                 || estado == EstadoSagaPrincipal.COMPENSAR_PASO1

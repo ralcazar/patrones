@@ -5,7 +5,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,7 +37,7 @@ public class ConsumidorRespuestaSecundaria2 {
     public void onRespuesta(String mensaje,
                             @Header(name = "kafka_receivedMessageKey", required = false) String key) throws Exception {
         JsonNode n = mapper.readTree(mensaje);
-        var sagaId = SagaId.de(n.get("sagaId").asText());   // clave de correlación puesta por PuertoSagaSecundaria2
+        var sagaId = OrdenId.de(n.get("sagaId").asText());   // clave de correlación puesta por PuertoSagaSecundaria2
         var mensajeId = n.get("mensajeId").asText();        // id único del evento (dedup)
 
         if (n.get("exito").asBoolean()) {

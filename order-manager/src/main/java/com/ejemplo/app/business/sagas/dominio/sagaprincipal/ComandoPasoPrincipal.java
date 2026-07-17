@@ -1,7 +1,7 @@
 package com.ejemplo.app.business.sagas.dominio.sagaprincipal;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;

@@ -7,10 +7,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso1;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso2;
@@ -99,7 +99,7 @@ public class ConfiguracionSagas {
     }
 
     @Bean
-    ServicioVistaTramitacion servicioVistaTramitacion(PuertoConsultaSagasSoporte consultas) {
+    ServicioVistaTramitacion servicioVistaTramitacion(PuertoConsultaOrdenesSoporte consultas) {
         return new ServicioVistaTramitacion(consultas);
     }
 }

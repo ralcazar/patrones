@@ -5,18 +5,18 @@ import java.util.Map;
 
 import org.jmolecules.ddd.annotation.Entity;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PasoNoIntervenibleException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Saga SECUNDARIA3: un único paso síncrono (una llamada REST).
@@ -25,32 +25,32 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
  * retorno): nunca se cancela ni compensa.
  */
 @Entity
-public final class SagaSecundaria3 extends Saga<EstadoSagaSecundaria3> {
+public final class SagaSecundaria3 extends Proceso<EstadoSagaSecundaria3> {
 
     public static final TipoOrden TIPO = new TipoOrden("SECUNDARIA3");
 
     private final RefPaso7 refPaso7;
     private RefEjecucion refEjecucion;
 
-    private SagaSecundaria3(SagaId id, ExternalId externalId, RefPaso7 refPaso7,
+    private SagaSecundaria3(OrdenId id, ExternalId externalId, RefPaso7 refPaso7,
             EstadoSagaSecundaria3 estado) {
         super(id, externalId, estado);
         this.refPaso7 = refPaso7;
     }
 
-    private SagaSecundaria3(SagaId id, ExternalId externalId, RefPaso7 refPaso7,
+    private SagaSecundaria3(OrdenId id, ExternalId externalId, RefPaso7 refPaso7,
             RefEjecucion refEjecucion, EstadoSagaSecundaria3 estado, List<AuditoriaIntervencion> auditoria) {
         super(id, externalId, estado, auditoria);
         this.refPaso7 = refPaso7;
         this.refEjecucion = refEjecucion;
     }
 
-    public static SagaSecundaria3 crear(SagaId id, ContextoArranque.ArranqueSecundaria3 ctx) {
+    public static SagaSecundaria3 crear(OrdenId id, ContextoArranque.ArranqueSecundaria3 ctx) {
         return new SagaSecundaria3(id, ctx.externalId(), ctx.refPaso7(), EstadoSagaSecundaria3.INICIAL);
     }
 
     /** Para el adaptador de persistencia. */
-    public static SagaSecundaria3 rehidratar(SagaId id, ExternalId externalId, RefPaso7 refPaso7,
+    public static SagaSecundaria3 rehidratar(OrdenId id, ExternalId externalId, RefPaso7 refPaso7,
             RefEjecucion refEjecucion, EstadoSagaSecundaria3 estado, List<AuditoriaIntervencion> auditoria) {
         return new SagaSecundaria3(id, externalId, refPaso7, refEjecucion, estado, auditoria);
     }

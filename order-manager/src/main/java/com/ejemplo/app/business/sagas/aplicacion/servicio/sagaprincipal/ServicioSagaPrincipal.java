@@ -17,13 +17,13 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ComandoPasoPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ResultadoPasoPrincipal;
@@ -50,7 +50,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
  * ConfiguracionSagas (ver {@link #establecerSelf}).
  */
 @Service
-public class ServicioSagaPrincipal implements ServicioSaga {
+public class ServicioSagaPrincipal implements ProcesadorOrden {
 
     private final RepositorioOrden repo;
     private final Duration lease;
@@ -99,7 +99,7 @@ public class ServicioSagaPrincipal implements ServicioSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaPrincipal) orden.saga();
+        var saga = (SagaPrincipal) orden.proceso();
         return switch (saga.estado()) {
             case CANCELADA -> self.aplicarCancelacion(orden, saga); // via proxy -> @Transactional (sin REST)
             case COMPENSAR_PASO1, COMPENSAR_PASO2 -> ejecutarCompensacion(orden, saga);
@@ -158,11 +158,11 @@ public class ServicioSagaPrincipal implements ServicioSaga {
         for (var contexto : contextos) {
             OrdenRoot hija = switch (contexto) {
                 case ContextoArranque.ArranqueSecundaria1 c ->
-                        OrdenRoot.nueva(SagaSecundaria1.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria1.crear(OrdenId.nuevo(), c), ahora);
                 case ContextoArranque.ArranqueSecundaria2 c ->
-                        OrdenRoot.nueva(SagaSecundaria2.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria2.crear(OrdenId.nuevo(), c), ahora);
                 case ContextoArranque.ArranqueSecundaria3 c ->
-                        OrdenRoot.nueva(SagaSecundaria3.crear(SagaId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria3.crear(OrdenId.nuevo(), c), ahora);
             };
             repo.crear(hija);
         }

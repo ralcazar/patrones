@@ -9,11 +9,11 @@ import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria1;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.SenalPaso;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ComandoPaso;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
+import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ComandoPasoSecundaria1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
@@ -29,7 +29,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
  * por auto-invocación.
  */
 @Service
-public class ServicioSagaSecundaria1 implements ServicioSaga {
+public class ServicioSagaSecundaria1 implements ProcesadorOrden {
 
     private final RepositorioOrden repo;
     private final Duration lease;
@@ -57,7 +57,7 @@ public class ServicioSagaSecundaria1 implements ServicioSaga {
      */
     @Override
     public SenalPaso ejecutarPaso(OrdenRoot orden) {
-        var saga = (SagaSecundaria1) orden.saga();
+        var saga = (SagaSecundaria1) orden.proceso();
         var resultado = ejecutarComando(saga.comandoActual()); // REST fuera de tx
         return self.aplicar(orden, saga, resultado); // via proxy -> @Transactional
     }

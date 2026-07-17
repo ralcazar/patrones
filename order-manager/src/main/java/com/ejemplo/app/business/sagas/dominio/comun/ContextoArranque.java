@@ -2,7 +2,7 @@ package com.ejemplo.app.business.sagas.dominio.comun;
 
 import org.jmolecules.ddd.annotation.ValueObject;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 
 /**
  * Contexto recortado con el que arranca cada saga secundaria: exactamente los

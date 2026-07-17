@@ -5,23 +5,23 @@ import java.util.List;
 
 import org.jmolecules.ddd.annotation.Repository;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 
 /**
  * ÚNICO puerto de persistencia de escritura del agregado: OrdenRoot, que
- * contiene su Saga. Siempre persiste o rehidrata el agregado completo
+ * contiene su Proceso. Siempre persiste o rehidrata el agregado completo
  * (ejecución + negocio + auditoría) de una sola vez.
  */
 @Repository
 public interface RepositorioOrden {
 
-    /** Persiste el agregado completo (orden + saga + auditoría) por primera vez. */
+    /** Persiste el agregado completo (orden + proceso + auditoría) por primera vez. */
     void crear(OrdenRoot orden);
 
-    /** Rehidrata el agregado completo, despachando la subclase de Saga por su tipo. */
-    OrdenRoot cargar(SagaId id);
+    /** Rehidrata el agregado completo, despachando la subclase de Proceso por su tipo. */
+    OrdenRoot cargar(OrdenId id);
 
     /** Lanza ConcurrenciaOptimistaException si la versión no coincide. */
     void guardar(OrdenRoot orden);
@@ -39,5 +39,5 @@ public interface RepositorioOrden {
     /** Limpieza de datos: borra el agregado completo de las órdenes finalizadas antes del corte. */
     long purgarFinalizadasAntesDe(Instant corte);
 
-    record CandidataOrden(SagaId sagaId, TipoOrden tipo) {}
+    record CandidataOrden(OrdenId ordenId, TipoOrden tipo) {}
 }

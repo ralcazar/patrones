@@ -7,8 +7,8 @@ import jakarta.transaction.Transactional;
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoCancelarTramitacion;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
@@ -28,11 +28,11 @@ public class ServicioCancelarTramitacion implements CasoUsoCancelarTramitacion {
 
     @Override
     @Transactional
-    public void cancelarPrincipal(SagaId id, UsuarioSoporte quien, String motivo) {
+    public void cancelarPrincipal(OrdenId id, UsuarioSoporte quien, String motivo) {
         // El agregado valida el punto de no retorno; las excepciones
         // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
         var orden = repo.cargar(id);
-        var saga = (SagaPrincipal) orden.saga();
+        var saga = (SagaPrincipal) orden.proceso();
         saga.cancelar(quien, motivo);
         orden.despertar(Instant.now());
         repo.guardar(orden);

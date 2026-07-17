@@ -11,20 +11,20 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ConcurrenciaOptimistaException;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * ÚNICO adaptador de escritura del agregado: OrdenRoot (que contiene su
- * Saga). Mapea dominio&lt;-&gt;entidades JPA despachando la subclase de
- * Saga por {@code tipo} a través de la SPI {@link MapeadorProceso} (una
+ * Proceso). Mapea dominio&lt;-&gt;entidades JPA despachando la subclase de
+ * Proceso por {@code tipo} a través de la SPI {@link MapeadorProceso} (una
  * implementación por tipo, indexadas por {@link MapeadorProceso#tipo()}), y
  * traduce el conflicto de versión de Hibernate a
  * {@link ConcurrenciaOptimistaException}.
@@ -33,31 +33,31 @@ import com.ejemplo.app.business.ordermanager.dominio.comun.UsuarioSoporte;
 public class AdaptadorRepositorioOrden implements RepositorioOrden {
 
     private final OrdenJpaRepository ordenes;
-    private final SagaJpaRepository sagas;
+    private final ProcesoJpaRepository procesos;
     private final Map<TipoOrden, MapeadorProceso> mapeadores;
 
-    public AdaptadorRepositorioOrden(OrdenJpaRepository ordenes, SagaJpaRepository sagas,
+    public AdaptadorRepositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
             List<MapeadorProceso> mapeadores) {
         this.ordenes = ordenes;
-        this.sagas = sagas;
+        this.procesos = procesos;
         this.mapeadores = mapeadores.stream()
                 .collect(Collectors.toUnmodifiableMap(MapeadorProceso::tipo, m -> m));
     }
 
     @Override
     public void crear(OrdenRoot orden) {
-        sagas.save(entidadSagaDe(orden.saga()));
+        procesos.save(entidadProcesoDe(orden.proceso()));
         ordenes.save(entidadOrdenDe(orden));
     }
 
     @Override
-    public OrdenRoot cargar(SagaId id) {
-        var sagaId = id.valor().toString();
-        var sagaEntity = sagas.findById(sagaId)
-                .orElseThrow(() -> new IllegalArgumentException("No existe la saga " + sagaId));
-        var ordenEntity = ordenes.findById(sagaId)
-                .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + sagaId));
-        return OrdenRoot.rehidratar(sagaDesde(sagaEntity), ordenEntity.getIntentos(),
+    public OrdenRoot cargar(OrdenId id) {
+        var ordenId = id.valor().toString();
+        var procesoEntity = procesos.findById(ordenId)
+                .orElseThrow(() -> new IllegalArgumentException("No existe el proceso " + ordenId));
+        var ordenEntity = ordenes.findById(ordenId)
+                .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + ordenId));
+        return OrdenRoot.rehidratar(procesoDesde(procesoEntity), ordenEntity.getIntentos(),
                 ordenEntity.getProximoReintentoEn(), uuidONull(ordenEntity.getTokenTrabajador()),
                 ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
                 resultadoONull(ordenEntity.getResultado()), ordenEntity.getVersion());
@@ -66,18 +66,18 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     @Override
     public void guardar(OrdenRoot orden) {
         try {
-            sagas.save(entidadSagaDe(orden.saga()));
+            procesos.save(entidadProcesoDe(orden.proceso()));
             ordenes.save(entidadOrdenDe(orden));
             ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera
         } catch (OptimisticLockingFailureException e) {
-            throw new ConcurrenciaOptimistaException(orden.sagaId(), orden.version());
+            throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
         }
     }
 
     @Override
     public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
         return ordenes.buscarCandidatas(ahora, limite).stream()
-                .map(fila -> new CandidataOrden(SagaId.de(fila.getSagaId()), new TipoOrden(fila.getTipo())))
+                .map(fila -> new CandidataOrden(OrdenId.de(fila.getSagaId()), new TipoOrden(fila.getTipo())))
                 .toList();
     }
 
@@ -93,7 +93,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
             return 0;
         }
         ordenes.borrarPorIds(ids);
-        sagas.borrarPorIds(ids);
+        procesos.borrarPorIds(ids);
         return ids.size();
     }
 
@@ -102,7 +102,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     // ------------------------------------------------------------------
 
     private static OrdenEntity entidadOrdenDe(OrdenRoot orden) {
-        return new OrdenEntity(orden.sagaId().valor().toString(), orden.intentos(), orden.proximoReintentoEn(),
+        return new OrdenEntity(orden.id().valor().toString(), orden.intentos(), orden.proximoReintentoEn(),
                 orden.tokenTrabajador() == null ? null : orden.tokenTrabajador().toString(),
                 orden.tokenExpiraEn(), orden.ticketAbiertoEn(),
                 orden.resultado() == null ? null : orden.resultado().name(), orden.version());
@@ -117,23 +117,23 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     // ------------------------------------------------------------------
-    // SagaEntity <-> Saga (despacho por tipo a través de MapeadorProceso)
+    // ProcesoEntity <-> Proceso (despacho por tipo a través de MapeadorProceso)
     // ------------------------------------------------------------------
 
-    private SagaEntity entidadSagaDe(Saga<?> saga) {
+    private ProcesoEntity entidadProcesoDe(Proceso<?> proceso) {
         var auditoria = new ArrayList<AuditoriaEntity>();
-        for (var a : saga.auditoria()) {
+        for (var a : proceso.auditoria()) {
             auditoria.add(new AuditoriaEntity(a.cuando(), a.quien().usuario(), a.accion(), a.detalle()));
         }
-        var sagaId = saga.id().valor().toString();
-        var externalId = saga.externalId().valor().toString();
-        var persistible = mapeadorDe(saga.tipo()).desarmar(saga);
-        return new SagaEntity(sagaId, saga.tipo().valor(), externalId, persistible.estado(),
+        var ordenId = proceso.id().valor().toString();
+        var externalId = proceso.externalId().valor().toString();
+        var persistible = mapeadorDe(proceso.tipo()).desarmar(proceso);
+        return new ProcesoEntity(ordenId, proceso.tipo().valor(), externalId, persistible.estado(),
                 ContextoCodec.escribir(persistible.contexto()), auditoria);
     }
 
-    private Saga<?> sagaDesde(SagaEntity entity) {
-        var id = SagaId.de(entity.getSagaId());
+    private Proceso<?> procesoDesde(ProcesoEntity entity) {
+        var id = OrdenId.de(entity.getSagaId());
         var externalId = ExternalId.de(entity.getExternalId());
         var auditoria = entity.getAuditoria().stream()
                 .map(a -> new AuditoriaIntervencion(a.getCuando(), new UsuarioSoporte(a.getQuien()),

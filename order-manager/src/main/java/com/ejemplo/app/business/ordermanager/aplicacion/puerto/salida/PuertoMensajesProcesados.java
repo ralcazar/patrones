@@ -2,11 +2,11 @@ package com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida;
 
 import java.time.Instant;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
+import com.ejemplo.app.business.ordermanager.dominio.MensajeId;
 
 /**
  * Deduplicación de mensajes externos (la mensajería es at-least-once).
- * registrar() se invoca dentro de la misma transacción que muta la saga.
+ * registrar() se invoca dentro de la misma transacción que muta la orden.
  */
 public interface PuertoMensajesProcesados {
     boolean yaProcesado(MensajeId msgId);

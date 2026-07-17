@@ -15,13 +15,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.soporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
@@ -44,8 +44,8 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         servicio = new ServicioRegistrarRespuestaSecundaria2(repo, dedup, new PoliticaReintentos());
     }
 
-    private SagaId crearOrdenEsperandoRespuesta() {
-        var id = SagaId.nuevo();
+    private OrdenId crearOrdenEsperandoRespuesta() {
+        var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
         var saga = SagaSecundaria2.crear(id, ctx);
@@ -64,8 +64,8 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         servicio.respuestaOk(id, new RefRespuesta("resp-1"), "msg-1");
 
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
-        assertThat(((SagaSecundaria2) orden.saga()).refRespuesta().valor()).isEqualTo("resp-1");
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+        assertThat(((SagaSecundaria2) orden.proceso()).refRespuesta().valor()).isEqualTo("resp-1");
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.proximoReintentoEn()).isBeforeOrEqualTo(Instant.now());
         verify(dedup).registrar(any());
@@ -78,7 +78,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
 
         servicio.respuestaOk(id, new RefRespuesta("resp-1"), "msg-1");
 
-        assertThat(((SagaSecundaria2) repo.estadoActual(id).saga()).estado())
+        assertThat(((SagaSecundaria2) repo.estadoActual(id).proceso()).estado())
                 .isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
         verify(dedup, never()).registrar(any());
     }
@@ -91,7 +91,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         servicio.respuestaError(id, "ERR", "detalle", true, "msg-1");
 
         var orden = repo.estadoActual(id);
-        assertThat(((SagaSecundaria2) orden.saga()).estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
+        assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
         assertThat(orden.intentos()).isEqualTo(1);
         assertThat(orden.proximoReintentoEn())
                 .isBetween(Instant.now().plus(Duration.ofSeconds(55)), Instant.now().plus(Duration.ofMinutes(1).plusSeconds(5)));

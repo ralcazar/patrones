@@ -3,16 +3,16 @@ package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 import java.util.List;
 import java.util.Map;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 
 /**
- * SPI de persistencia por tipo de saga: {@link AdaptadorRepositorioOrden}
+ * SPI de persistencia por tipo de orden: {@link AdaptadorRepositorioOrden}
  * indexa las implementaciones por {@link #tipo()} y delega en ellas el
- * (des)armado de la forma persistible de cada saga concreta, sin conocer sus
+ * (des)armado de la forma persistible de cada tipo concreto, sin conocer sus
  * clases. La codificación a JSON del contexto (común a todos los tipos) la
  * sigue haciendo el adaptador con {@link ContextoCodec}.
  */
@@ -20,9 +20,9 @@ public interface MapeadorProceso {
 
     TipoOrden tipo();
 
-    ProcesoPersistible desarmar(Saga<?> saga);
+    ProcesoPersistible desarmar(Proceso<?> proceso);
 
-    Saga<?> rearmar(SagaId id, ExternalId externalId, String estado,
+    Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado,
             Map<String, String> contexto, List<AuditoriaIntervencion> auditoria);
 
     record ProcesoPersistible(String estado, Map<String, String> contexto) {}

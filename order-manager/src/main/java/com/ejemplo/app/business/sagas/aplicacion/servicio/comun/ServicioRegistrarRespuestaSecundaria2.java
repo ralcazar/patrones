@@ -9,9 +9,9 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MensajeId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.MensajeId;
+import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
 
@@ -38,14 +38,14 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
 
     @Override
     @Transactional
-    public void respuestaOk(SagaId sagaId, RefRespuesta ref, String mensajeId) {
+    public void respuestaOk(OrdenId sagaId, RefRespuesta ref, String mensajeId) {
         var msgId = MensajeId.externo(mensajeId);
         if (dedup.yaProcesado(msgId)) {
             return;
         }
         dedup.registrar(msgId);
         var orden = repo.cargar(sagaId);
-        var saga = (SagaSecundaria2) orden.saga();
+        var saga = (SagaSecundaria2) orden.proceso();
         saga.respuestaRecibida(ref);
         orden.despertar(Instant.now());
         repo.guardar(orden);
@@ -53,7 +53,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
 
     @Override
     @Transactional
-    public void respuestaError(SagaId sagaId, String codigo, String detalle,
+    public void respuestaError(OrdenId sagaId, String codigo, String detalle,
                                boolean reintentable, String mensajeId) {
         var msgId = MensajeId.externo(mensajeId);
         if (dedup.yaProcesado(msgId)) {
@@ -61,7 +61,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         }
         dedup.registrar(msgId);
         var orden = repo.cargar(sagaId);
-        var saga = (SagaSecundaria2) orden.saga();
+        var saga = (SagaSecundaria2) orden.proceso();
         saga.volverASolicitar();
         orden.programarReintento(politica, Instant.now());
         repo.guardar(orden);

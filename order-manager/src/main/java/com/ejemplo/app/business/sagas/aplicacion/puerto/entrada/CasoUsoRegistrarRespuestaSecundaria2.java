@@ -1,6 +1,6 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.entrada;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 
 /**
@@ -12,8 +12,8 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
  */
 public interface CasoUsoRegistrarRespuestaSecundaria2 {
 
-    void respuestaOk(SagaId sagaId, RefRespuesta ref, String mensajeId);
+    void respuestaOk(OrdenId sagaId, RefRespuesta ref, String mensajeId);
 
-    void respuestaError(SagaId sagaId, String codigo, String detalle,
+    void respuestaError(OrdenId sagaId, String codigo, String detalle,
                         boolean reintentable, String mensajeId);
 }

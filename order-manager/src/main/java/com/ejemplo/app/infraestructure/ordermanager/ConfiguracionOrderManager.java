@@ -9,24 +9,24 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaSagasSoporte;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoSagasTicketPendiente;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioContinuarSaga;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioLimpiezaDatos;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSaga;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioSoporteSagas;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.comun.ServicioTicketsSoporte;
-import com.ejemplo.app.business.ordermanager.dominio.comun.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteOrdenes;
+import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
+import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 
 /**
- * Wiring del motor de órdenes: genérico en el tipo de saga, no conoce las
+ * Wiring del motor de órdenes: genérico en el tipo de orden, no conoce las
  * sagas concretas (ver {@link ConfiguracionSagas} en {@code infraestructure.sagas}).
- * Los servicios de saga que participan del bucle de continuación llegan aquí
- * como {@code List<ServicioSaga>}: cada uno se registra a sí mismo por su
- * {@code tipo()}, sin que este motor tenga que enumerarlos a mano.
+ * Los procesadores de orden que participan del bucle de continuación llegan
+ * aquí como {@code List<ProcesadorOrden>}: cada uno se registra a sí mismo por
+ * su {@code tipo()}, sin que este motor tenga que enumerarlos a mano.
  *
  * La frontera transaccional es {@code @Transactional} (jakarta.transaction)
  * directamente sobre métodos de estos POJOs: Spring envuelve en un proxy
@@ -46,25 +46,25 @@ public class ConfiguracionOrderManager {
     }
 
     @Bean
-    ServicioContinuarSaga servicioContinuarSaga(List<ServicioSaga> serviciosSaga,
+    ServicioContinuarOrden servicioContinuarOrden(List<ProcesadorOrden> procesadores,
             RepositorioOrden repo, PoliticaReintentos politica,
             @Value("${orden.lease}") Duration lease,
             @Value("${orden.planificador.lote:16}") int lote,
-            @Lazy ServicioContinuarSaga self) {
-        var serviciosSagaPorTipo = serviciosSaga.stream()
-                .collect(Collectors.toUnmodifiableMap(ServicioSaga::tipo, s -> s));
-        var servicio = new ServicioContinuarSaga(serviciosSagaPorTipo, repo, politica, lease, lote);
+            @Lazy ServicioContinuarOrden self) {
+        var procesadoresPorTipo = procesadores.stream()
+                .collect(Collectors.toUnmodifiableMap(ProcesadorOrden::tipo, s -> s));
+        var servicio = new ServicioContinuarOrden(procesadoresPorTipo, repo, politica, lease, lote);
         servicio.establecerSelf(self);
         return servicio;
     }
 
     @Bean
-    ServicioSoporteSagas servicioSoporteSagas(RepositorioOrden repo, PuertoConsultaSagasSoporte consultas) {
-        return new ServicioSoporteSagas(repo, consultas);
+    ServicioSoporteOrdenes servicioSoporteOrdenes(RepositorioOrden repo, PuertoConsultaOrdenesSoporte consultas) {
+        return new ServicioSoporteOrdenes(repo, consultas);
     }
 
     @Bean
-    ServicioTicketsSoporte servicioTicketsSoporte(PuertoSagasTicketPendiente pendientes,
+    ServicioTicketsSoporte servicioTicketsSoporte(PuertoOrdenesTicketPendiente pendientes,
             PuertoTicketsSoporte tickets, RepositorioOrden repo, @Lazy ServicioTicketsSoporte self) {
         var servicio = new ServicioTicketsSoporte(pendientes, tickets, repo);
         servicio.establecerSelf(self);

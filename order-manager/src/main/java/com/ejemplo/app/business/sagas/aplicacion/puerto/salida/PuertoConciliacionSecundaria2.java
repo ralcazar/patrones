@@ -1,8 +1,8 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.salida;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.MotivoFallo;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
 
 /**
@@ -13,7 +13,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
  */
 public interface PuertoConciliacionSecundaria2 {
 
-    Resultado consultar(SagaId sagaId, ExternalId externalId);
+    Resultado consultar(OrdenId sagaId, ExternalId externalId);
 
     /** Lo que la conciliación puede contar del estado de la solicitud. */
     sealed interface Resultado {

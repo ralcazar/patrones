@@ -3,7 +3,7 @@ package com.ejemplo.app.business.sagas.dominio.sagaprincipal;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ResultadoPaso;
+import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
 
 /**
  * Lo que cada paso de la saga principal produce al completarse. Sealed: el

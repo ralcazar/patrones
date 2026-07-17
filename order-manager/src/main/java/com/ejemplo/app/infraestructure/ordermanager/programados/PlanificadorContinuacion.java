@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarSaga;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
 
 /**
  * Un planificador por pod: cada pasada comprueba si hay trabajo (un EXISTS
@@ -15,11 +15,11 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 @Component
 public class PlanificadorContinuacion {
 
-    private final CasoUsoContinuarSaga casoUso;
+    private final CasoUsoContinuarOrden casoUso;
     private final TrabajadorContinuacion trabajador;
     private final int trabajadores;
 
-    public PlanificadorContinuacion(CasoUsoContinuarSaga casoUso, TrabajadorContinuacion trabajador,
+    public PlanificadorContinuacion(CasoUsoContinuarOrden casoUso, TrabajadorContinuacion trabajador,
             @Value("${orden.planificador.trabajadores:2}") int trabajadores) {
         this.casoUso = casoUso;
         this.trabajador = trabajador;

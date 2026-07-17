@@ -9,11 +9,11 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.ejemplo.app.business.ordermanager.dominio.comun.AuditoriaIntervencion;
-import com.ejemplo.app.business.ordermanager.dominio.comun.ExternalId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.Saga;
-import com.ejemplo.app.business.ordermanager.dominio.comun.SagaId;
-import com.ejemplo.app.business.ordermanager.dominio.comun.TipoOrden;
+import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.ordermanager.dominio.Proceso;
+import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.EstadoSagaSecundaria3;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.RefEjecucion;
@@ -46,7 +46,7 @@ public class SoporteSagaSecundaria3 implements MapeadorProceso, DescriptorSoport
     }
 
     @Override
-    public ProcesoPersistible desarmar(Saga<?> saga) {
+    public ProcesoPersistible desarmar(Proceso<?> saga) {
         var s = (SagaSecundaria3) saga;
         var m = new LinkedHashMap<String, String>();
         m.put("refPaso7", s.refPaso7().valor());
@@ -55,7 +55,7 @@ public class SoporteSagaSecundaria3 implements MapeadorProceso, DescriptorSoport
     }
 
     @Override
-    public Saga<?> rearmar(SagaId id, ExternalId externalId, String estado, Map<String, String> contexto,
+    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, Map<String, String> contexto,
             List<AuditoriaIntervencion> auditoria) {
         return SagaSecundaria3.rehidratar(id, externalId, new RefPaso7(contexto.get("refPaso7")),
                 refONull(contexto, "refEjecucion", RefEjecucion::new),
