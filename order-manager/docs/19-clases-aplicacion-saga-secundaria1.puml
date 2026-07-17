@@ -1,26 +1,27 @@
 @startuml 19-clases-aplicacion-saga-secundaria1
-title Aplicación — saga secundaria 1: ServicioSagaSecundaria1 y sus puertos
+title Aplicación — saga secundaria 1 (business.sagas.aplicacion.servicio.sagasecundaria1): ServicioSagaSecundaria1 y sus puertos
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-interface "ServicioSaga (ver 17)" as Base
+interface "ProcesadorOrden (ver 17)" as Base
 
 class ServicioSagaSecundaria1 <<@Service>> {
   -repo : RepositorioOrden
   -lease : Duration
   -puerto : PuertoSagaSecundaria1
-  -self : ServicioSagaSecundaria1  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
-  +tipo() : TipoSaga  «SECUNDARIA1»
+  -self : ServicioSagaSecundaria1  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+  +tipo() : TipoOrden  «SagaSecundaria1.TIPO»
   +ejecutarPaso(orden) : SenalPaso
   +aplicar(orden, saga, resultado) : SenalPaso  «@Transactional»
   -ejecutarComando(ComandoPaso) : ResultadoPasoSecundaria1  «switch: Iniciar->puerto.iniciar,\nConfirmar->puerto.confirmar»
 }
 note right of ServicioSagaSecundaria1
   ejecutarPaso: recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17); comandoActual() + REST fuera de
-  tx, luego self.aplicar(...) -- vía proxy, para que @Transactional
-  no se ignore por auto-invocación -- guarda esa misma instancia sin
+  ServicioContinuarOrden (ver 17); castea orden.proceso() a
+  SagaSecundaria1, comandoActual() + REST fuera de tx, luego
+  self.aplicar(...) -- vía proxy, para que @Transactional no se
+  ignore por auto-invocación -- guarda esa misma instancia sin
   recargar (aplicarYAvanzar; si terminada() -> finalizar(FINALIZADA_OK),
   si no -> resetearIntentos()+renovarLease()); si otro actor escribió
   entre medias, guardar falla por version. Sin comprobación de
@@ -29,9 +30,7 @@ note right of ServicioSagaSecundaria1
 end note
 
 package "puerto.salida" {
-  interface RepositorioOrden <<@Repository>> {
-    «ver 17: único puerto de escritura del agregado»
-  }
+  interface "RepositorioOrden\n(business.ordermanager — ver 17)" as RepositorioOrden
   interface PuertoSagaSecundaria1 {
     +iniciar(cmd) : Iniciada(refInicio)
     +confirmar(cmd) : Confirmada(refConfirmacion)

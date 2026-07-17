@@ -1,17 +1,17 @@
 @startuml 18-clases-aplicacion-saga-principal
-title Aplicación — saga principal: ServicioSagaPrincipal y sus puertos
+title Aplicación — saga principal (business.sagas.aplicacion.servicio.sagaprincipal): ServicioSagaPrincipal y sus puertos
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-interface "ServicioSaga (ver 17)" as Base
+interface "ProcesadorOrden (ver 17)" as Base
 
 class ServicioSagaPrincipal <<@Service>> {
   -repo : RepositorioOrden
   -lease : Duration
   -puertoPaso1 .. puertoPaso8 : PuertoPasoN
-  -self : ServicioSagaPrincipal  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
-  +tipo() : TipoSaga  «PRINCIPAL»
+  -self : ServicioSagaPrincipal  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+  +tipo() : TipoOrden  «SagaPrincipal.TIPO»
   +ejecutarPaso(orden) : SenalPaso
   -ejecutarPasoNormal(orden, saga) : SenalPaso
   -ejecutarCompensacion(orden, saga) : SenalPaso
@@ -23,9 +23,10 @@ class ServicioSagaPrincipal <<@Service>> {
 }
 note right of ServicioSagaPrincipal
   ejecutarPaso: recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17); despacha por saga.estado() con un
-  switch de 3 ramas: CANCELADA -> self.aplicarCancelacion (sin REST,
-  directo, sin pasar por ejecutarCompensacion); COMPENSAR_PASO1/2 ->
+  ServicioContinuarOrden (ver 17); castea orden.proceso() a
+  SagaPrincipal y despacha por saga.estado() con un switch de 3
+  ramas: CANCELADA -> self.aplicarCancelacion (sin REST, directo,
+  sin pasar por ejecutarCompensacion); COMPENSAR_PASO1/2 ->
   ejecutarCompensacion; el resto (PASO1_HECHO..PASO7_HECHO/INICIAL)
   -> ejecutarPasoNormal. ejecutarPasoNormal: comandoActual() + REST
   fuera de tx, luego self.aplicarPasoNormal(...) -- vía proxy, para
@@ -41,9 +42,7 @@ note right of ServicioSagaPrincipal
 end note
 
 package "puerto.salida" {
-  interface RepositorioOrden <<@Repository>> {
-    «ver 17: único puerto de escritura del agregado»
-  }
+  interface "RepositorioOrden\n(business.ordermanager — ver 17)" as RepositorioOrden
   interface "PuertoPaso1 .. PuertoPaso8" as PuertosPaso {
     +ejecutar(cmd) : ResultadoPasoN
     +compensar(cmd)  «solo PuertoPaso1 y PuertoPaso2»
@@ -53,4 +52,11 @@ package "puerto.salida" {
 Base <|.. ServicioSagaPrincipal
 ServicioSagaPrincipal --> RepositorioOrden
 ServicioSagaPrincipal --> PuertosPaso : REST síncrono (fuera de la tx)
+
+note as NPaquete
+  Vive en business.sagas: depende de RepositorioOrden y
+  ProcesadorOrden, ambos del motor (business.ordermanager), pero el
+  motor nunca depende de este paquete — regla de frontera ArchUnit
+  (ver CLAUDE.md y 14).
+end note
 @enduml

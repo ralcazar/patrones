@@ -1,15 +1,15 @@
 @startuml 23-clases-infraestructura-persistencia
-title Infraestructura — persistencia del agregado (infraestructure.ordermanager.persistencia) y el planificador de continuación (...programados)
+title Infraestructura — persistencia del agregado (infraestructure.ordermanager.persistencia), sus SPI y el planificador de continuación (...programados)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
 package "programados" {
   class PlanificadorContinuacion <<@Component>> {
-    -casoUso : CasoUsoContinuarSaga
+    -casoUso : CasoUsoContinuarOrden
     -trabajador : TrabajadorContinuacion
-    -trabajadores : int  «orden.planificador.trabajadores, por defecto 4»
-    +ejecutar()  «@Scheduled fixedDelayString\norden.planificador.intervalo-ms (500 ms)»
+    -trabajadores : int  «ordermanager.planificador.trabajadores, por defecto 2»
+    +ejecutar()  «@Scheduled fixedDelayString\nordermanager.planificador.intervalo-ms (5000 ms)»
   }
   note right of PlanificadorContinuacion
     Un planificador por pod: cada pasada comprueba
@@ -21,27 +21,64 @@ package "programados" {
   end note
 }
 
-interface "CasoUsoContinuarSaga\n(aplicación — ver 17)" as CasoUsoContinuarSaga
+interface "CasoUsoContinuarOrden\n(aplicación — ver 17)" as CasoUsoContinuarOrden
 class "TrabajadorContinuacion\n(ver 24)" as TrabajadorContinuacion
 
 package "persistencia" {
   class AdaptadorRepositorioOrden <<@Component>> {
     -ordenes : OrdenJpaRepository
-    -sagas : SagaJpaRepository
-    +crear(OrdenRoot)  «sagas.save(...); ordenes.save(...)»
-    +cargar(SagaId) : OrdenRoot  «rehidrata despachando por SagaEntity.tipo»
-    +guardar(OrdenRoot)  «sagas.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
+    -procesos : ProcesoJpaRepository
+    -mapeadores : Map<TipoOrden, MapeadorProceso>  «indexado por MapeadorProceso::tipo\nal construir el bean (List<MapeadorProceso> inyectado)»
+    +crear(OrdenRoot)  «procesos.save(...); ordenes.save(...)»
+    +cargar(OrdenId) : OrdenRoot  «rehidrata despachando por ProcesoEntity.tipo\nvía mapeadorDe(tipo).rearmar(...)»
+    +guardar(OrdenRoot)  «procesos.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
     +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
     +purgarFinalizadasAntesDe(corte) : long
+    -mapeadorDe(tipo) : MapeadorProceso  «IllegalStateException si no hay\nninguno registrado para el tipo»
   }
   note right of AdaptadorRepositorioOrden
-    ÚNICO adaptador de escritura del agregado. entidadSagaDe()/
-    sagaDesde() despachan por TipoSaga (switch sobre la subclase de
-    Saga) y (de)serializan el contexto propio de cada saga con
-    ContextoCodec (JSON plano: todas las refs son wrappers de un
-    único String). ordenes.flush() fuerza el chequeo de version
-    aquí, no en el commit de fuera.
+    ÚNICO adaptador de escritura del agregado, 100% genérico en el
+    tipo de orden: ya no importa ninguna saga concreta. Despacha por
+    TipoOrden a través de la SPI MapeadorProceso (desarmar/rearmar,
+    ver abajo) en vez de los switches entidadSagaDe()/sagaDesde() de
+    antes; sigue (de)serializando el contexto propio de cada tipo
+    con ContextoCodec (JSON plano: todas las refs son wrappers de un
+    único String) — eso es común a todos los tipos, lo sigue
+    haciendo el adaptador. ordenes.flush() fuerza el chequeo de
+    version aquí, no en el commit de fuera.
+  end note
+
+  interface MapeadorProceso <<SPI>> {
+    +tipo() : TipoOrden
+    +desarmar(Proceso<?>) : ProcesoPersistible
+    +rearmar(id, externalId, estado, contexto, auditoria) : Proceso<?>
+    record ProcesoPersistible(estado, contexto)
+  }
+  note right of MapeadorProceso
+    Punto de extensión nº2 (persistencia por tipo): una
+    implementación por tipo de orden, indexadas por tipo(). Las 4
+    implementaciones concretas (SoporteSagaPrincipal/Secundaria1/2/3)
+    viven en infraestructure.sagas.persistencia — ver 24. La forma
+    persistible es contrato de PERSISTENCIA, no de negocio: por eso
+    esta SPI vive en infraestructure.ordermanager (no en
+    business.ordermanager), y la dirección infra.sagas ->
+    infra.ordermanager -> business.ordermanager es legal.
+  end note
+
+  interface DescriptorSoporteOrden <<SPI>> {
+    +tipo() : TipoOrden
+    +pasoPendiente(estado) : String  «null si ya no avanza»
+    +datosManualesObligatorios(estado) : boolean
+    +cancelable(estado) : boolean
+  }
+  note right of DescriptorSoporteOrden
+    Punto de extensión nº3 (modelo de lectura de soporte): la usa
+    AdaptadorConsultaOrdenesSoporte (ver 24) para derivar el paso
+    pendiente/cancelable de (tipo, estado) sin cargar agregados, en
+    vez de sus 3 switches FSM de antes. Mismas implementaciones
+    SoporteSaga* que MapeadorProceso (una clase implementa las dos
+    SPI) — ver 24.
   end note
 
   interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository, package-private>> {
@@ -50,19 +87,19 @@ package "persistencia" {
     +idsFinalizadasAntesDe(corte) : List<String>
     +borrarPorIds(ids)
     +buscarTicketsPendientes() : List<TicketPendienteFila>
-    +sagasBloqueadas() / sagasEnEjecucion(ahora)
-    +sagasConTicketPendiente() / buscar(...) / porExternalId(...)
-    +resumenDe(tipo, sagaId) : Optional<SagaResumenFila>
+    +ordenesBloqueadas() / ordenesEnEjecucion(ahora)
+    +ordenesConTicketPendiente() / buscar(...) / porExternalId(...)
+    +resumenDe(tipo, ordenId) : Optional<OrdenResumenFila>
   }
-  interface "SagaJpaRepository" as SagaJpa <<JpaRepository, package-private>> {
+  interface "ProcesoJpaRepository" as ProcesoJpa <<JpaRepository, package-private>> {
     +borrarPorIds(ids)
   }
   interface CandidataFila <<projection, package-private>> {
-    getSagaId() / getTipo()
+    getOrdenId() / getTipo()
   }
 
   class OrdenEntity <<@Entity orden>> {
-    @Id sagaId : String  «FK a saga»
+    @Id ordenId : String  «FK a proceso»
     intentos : int
     proximoReintentoEn : Instant
     tokenTrabajador : String
@@ -72,26 +109,27 @@ package "persistencia" {
     @Version version : long  «ÚNICA del agregado»
     creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
   }
-  class SagaEntity <<@Entity saga>> {
-    @Id sagaId : String
+  class ProcesoEntity <<@Entity proceso>> {
+    @Id ordenId : String
     tipo / externalId / estado : String
     @Lob contexto : String  «JSON plano (ContextoCodec)»
-    auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla saga_auditoria»
+    auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»
   }
   class AuditoriaEntity <<@Embeddable>> {
     cuando / quien / accion / detalle
   }
 
   note bottom of OrdenEntity
-    Tablas Oracle: DDL manual en order-manager/db/ (saga.sql,
-    saga_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
-    Flyway ni ddl-auto: none). saga (saga_id PK, tipo, external_id,
-    estado, contexto CLOB) + orden (saga_id PK/FK a saga, intentos,
-    proximo_reintento_en, token_trabajador, token_expira_en,
-    ticket_abierto_en, resultado, version, creada_en, actualizada_en).
-    Sin índices parciales en Oracle: idx_orden_candidatas es funcional
-    sobre CASE WHEN resultado IS NULL THEN proximo_reintento_en END;
-    idx_orden_intentos indexa la bandeja de trabajo/tickets.
+    Tablas Oracle: DDL manual en order-manager/db/ (proceso.sql,
+    proceso_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
+    Flyway ni ddl-auto: none). proceso (orden_id PK, tipo,
+    external_id, estado, contexto CLOB) + orden (orden_id PK/FK a
+    proceso, intentos, proximo_reintento_en, token_trabajador,
+    token_expira_en, ticket_abierto_en, resultado, version,
+    creada_en, actualizada_en). Sin índices parciales en Oracle:
+    idx_orden_candidatas es funcional sobre CASE WHEN resultado IS
+    NULL THEN proximo_reintento_en END; idx_orden_intentos indexa la
+    bandeja de trabajo/tickets.
   end note
 
   note right of OrdenJpa
@@ -105,14 +143,16 @@ package "persistencia" {
   end note
 }
 
-PlanificadorContinuacion --> CasoUsoContinuarSaga : hayTrabajoPendiente()
+PlanificadorContinuacion --> CasoUsoContinuarOrden : hayTrabajoPendiente()
 PlanificadorContinuacion --> TrabajadorContinuacion : trabajar() ×N
 AdaptadorRepositorioOrden --> OrdenJpa
-AdaptadorRepositorioOrden --> SagaJpa
+AdaptadorRepositorioOrden --> ProcesoJpa
+AdaptadorRepositorioOrden --> MapeadorProceso : despacha por tipo
 OrdenJpa ..> CandidataFila
-OrdenEntity "1" -- "1" SagaEntity : saga_id (FK)
-SagaEntity "1" *-- "n" AuditoriaEntity
+OrdenEntity "1" -- "1" ProcesoEntity : orden_id (FK)
+ProcesoEntity "1" *-- "n" AuditoriaEntity
 
-PlanificadorContinuacion -[hidden]down- CasoUsoContinuarSaga
-CasoUsoContinuarSaga -[hidden]down- AdaptadorRepositorioOrden
+PlanificadorContinuacion -[hidden]down- CasoUsoContinuarOrden
+CasoUsoContinuarOrden -[hidden]down- AdaptadorRepositorioOrden
+MapeadorProceso -[hidden]down- DescriptorSoporteOrden
 @enduml

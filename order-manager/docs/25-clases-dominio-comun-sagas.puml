@@ -1,0 +1,52 @@
+@startuml 25-clases-dominio-comun-sagas
+title Dominio — shared kernel de las sagas (business.sagas.dominio.comun)
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+interface ContextoArranque <<sealed>> {
+  ExternalId externalId()
+  ArranqueSecundaria1(externalId, refPaso1)
+  ArranqueSecundaria2(externalId, refPaso5)
+  ArranqueSecundaria3(externalId, refPaso7)
+}
+
+class RefPaso1 <<@ValueObject, record>> {
+  valor : String
+}
+class RefPaso5 <<@ValueObject, record>> {
+  valor : String
+}
+class RefPaso7 <<@ValueObject, record>> {
+  valor : String
+}
+
+class "ExternalId\n(business.ordermanager.dominio — ver 14)" as ExternalId <<@ValueObject>>
+
+ContextoArranque ..> RefPaso1
+ContextoArranque ..> RefPaso5
+ContextoArranque ..> RefPaso7
+ContextoArranque ..> ExternalId
+
+note bottom of ContextoArranque
+  Contexto recortado con el que arranca cada saga secundaria: lo
+  crea SagaPrincipal.contextosArranque() al llegar a TERMINADA
+  (ver 03 y 15) y lo consumen SagaSecundaria1/2/3.crear(id, ctx)
+  (ver 16). RefPaso1/RefPaso5/RefPaso7 viven en dominio.comun
+  porque los produce la principal y los consumen las secundarias:
+  es shared kernel DENTRO de business.sagas, no del motor — el
+  motor (business.ordermanager) no puede depender de este paquete
+  (regla de frontera ArchUnit, ver 14).
+end note
+
+note as NUbicacion
+  Antes vivían junto al resto del "dominio.comun" del motor
+  fusionado (14-clases-dominio-comun). Al separar el motor
+  (ordermanager) de las sagas, ContextoArranque y las 3 refs se
+  quedan del lado de sagas porque son vocabulario propio de la
+  saga principal y de cómo arrancan sus hijas, no del motor
+  genérico. PuntoNoRetornoSuperadoException, en cambio, se movió
+  junto con la saga principal (dominio.sagaprincipal — ver 15), no
+  a este paquete: solo ella la lanza.
+end note
+@enduml

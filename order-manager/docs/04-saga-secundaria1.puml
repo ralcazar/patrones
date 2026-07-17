@@ -6,8 +6,8 @@ box "Adaptadores de entrada" #EFF5FB
   participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaSecundaria1\n(ServicioSaga)" as ORQ
+  participant "ServicioContinuarOrden" as CONT
+  participant "ServicioSagaSecundaria1\n(ProcesadorOrden)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
@@ -36,10 +36,10 @@ note right of PLAN
 end note
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-return [CandidataOrden(sagaId, SECUNDARIA1), ...]
-CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA1)
+return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA1")), ...]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
 group Transacción: reclamarToken
-  CONT -> REPO ++ : cargar(sagaId)
+  CONT -> REPO ++ : cargar(ordenId)
   return orden
   CONT -> ORDEN ++ : estaViva() / tieneTokenVigente(ahora)
   return true / false
@@ -50,14 +50,16 @@ group Transacción: reclamarToken
 end
 
 == Paso INICIO (primer método REST) ==
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga (SagaSecundaria1)
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Iniciar(externalId, refPaso1)
 ORQ -> PSEC ++ : iniciar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria1.Iniciada(refInicio)
-ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
+ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Iniciada(refInicio))
   SAGA -> SAGA : refInicio = ref; avanzar():\nINICIAL -> INICIO_HECHO
@@ -76,9 +78,11 @@ return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue
 
 == Paso CONFIRMACION (segundo método REST) y finalización ==
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria1.Confirmar(refInicio)
 ORQ -> PSEC ++ : confirmar(cmd) -- REST fuera de tx
@@ -111,7 +115,7 @@ deactivate TRAB
 
 note over ORQ, PSEC
   Ante ExcepcionServicioExterno en cualquiera de los dos métodos:
-  se propaga fuera de tx; ServicioContinuarSaga.reclamarYEjecutar()
+  se propaga fuera de tx; ServicioContinuarOrden.reclamarYEjecutar()
   la atrapa y programa el reintento sobre la MISMA orden cargada
   arriba (backoff 1..180 min, indefinido) — ver
   07-error-ticket-soporte. Nunca se cancela ni compensa: nace tras

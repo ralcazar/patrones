@@ -1,23 +1,24 @@
 @startuml 21-clases-aplicacion-saga-secundaria3
-title Aplicación — saga secundaria 3: ServicioSagaSecundaria3 y sus puertos
+title Aplicación — saga secundaria 3 (business.sagas.aplicacion.servicio.sagasecundaria3): ServicioSagaSecundaria3 y sus puertos
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-interface "ServicioSaga (ver 17)" as Base
+interface "ProcesadorOrden (ver 17)" as Base
 
 class ServicioSagaSecundaria3 <<@Service>> {
   -repo : RepositorioOrden
   -puerto : PuertoSagaSecundaria3
-  -self : ServicioSagaSecundaria3  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
-  +tipo() : TipoSaga  «SECUNDARIA3»
+  -self : ServicioSagaSecundaria3  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+  +tipo() : TipoOrden  «SagaSecundaria3.TIPO»
   +ejecutarPaso(orden) : SenalPaso
   +aplicar(orden, saga, resultado) : SenalPaso  «@Transactional»
 }
 note right of ServicioSagaSecundaria3
   Un único paso: recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17); comandoActual() + puerto.ejecutar
-  (REST fuera de tx), luego self.aplicar(...) -- vía proxy, para que
+  ServicioContinuarOrden (ver 17); castea orden.proceso() a
+  SagaSecundaria3, comandoActual() + puerto.ejecutar (REST fuera de
+  tx), luego self.aplicar(...) -- vía proxy, para que
   @Transactional no se ignore por auto-invocación -- guarda esa
   misma instancia sin recargar: aplicarYAvanzar +
   orden.finalizar(FINALIZADA_OK) directo, sin comprobar terminada()
@@ -29,9 +30,7 @@ note right of ServicioSagaSecundaria3
 end note
 
 package "puerto.salida" {
-  interface RepositorioOrden <<@Repository>> {
-    «ver 17: único puerto de escritura del agregado»
-  }
+  interface "RepositorioOrden\n(business.ordermanager — ver 17)" as RepositorioOrden
   interface PuertoSagaSecundaria3 {
     +ejecutar(cmd) : Ejecutada(refEjecucion)  «REST síncrono»
   }

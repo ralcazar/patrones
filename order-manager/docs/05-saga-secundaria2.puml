@@ -7,8 +7,8 @@ box "Adaptadores de entrada" #EFF5FB
   participant "ConsumidorRespuesta\nSecundaria2 (@KafkaListener)" as CONS
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaSecundaria2\n(ServicioSaga)" as ORQ
+  participant "ServicioContinuarOrden" as CONT
+  participant "ServicioSagaSecundaria2\n(ProcesadorOrden)" as ORQ
   participant "ServicioRegistrarRespuesta\nSecundaria2" as SREG
 end box
 box "Dominio" #FBF5EF
@@ -34,19 +34,21 @@ PLAN ->> TRAB : trabajar()
 activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-return [CandidataOrden(sagaId, SECUNDARIA2), ...]
-CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
+return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga (SagaSecundaria2)
 ORQ -> SAGA ++ : saga.estado()
 return INICIAL
 ORQ -> ORQ : solicitar(orden, saga)
 ORQ -> SAGA ++ : saga.comandoActual()
 return ComandoPasoSecundaria2.Solicitar(externalId, refPaso5)
-ORQ -> PSOL ++ : solicitar(saga.id(), cmd) -- REST fuera de tx\n(el sagaId viaja como clave de correlación)
+ORQ -> PSOL ++ : solicitar(saga.id(), cmd) -- REST fuera de tx\n(el ordenId viaja como clave de correlación)
 return
-ORQ -> ORQ ++ : self.aplicarSolicitud(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
+ORQ -> ORQ ++ : self.aplicarSolicitud(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción única
   ORQ -> SAGA ++ : saga.solicitudEnviada()
   SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
@@ -71,18 +73,20 @@ return true (el worker sigue con la siguiente candidata\nhasta que continuarSigu
 deactivate TRAB
 
 == El servicio externo responde a posteriori (puede tardar) por Kafka: éxito ==
-[o-> CONS : evento en topic respuesta.secundaria2 (JSON)
+[o-> CONS : evento en topic sagas.topics.respuesta-secundaria2 (JSON)
 activate CONS
-CONS -> CONS : parsear sagaId, mensajeId, ref
-CONS -> SREG ++ : respuestaOk(sagaId, RefRespuesta(ref), mensajeId)
+CONS -> CONS : parsear ordenId, mensajeId, ref
+CONS -> SREG ++ : respuestaOk(ordenId, RefRespuesta(ref), mensajeId)
 SREG -> DEDUP ++ : yaProcesado(MensajeId.externo(mensajeId))
 return no
 group Transacción (@Transactional en respuestaOk: método público,\nse invoca cross-bean desde el consumer, el proxy aplica sin self)
   SREG -> DEDUP ++ : registrar(msgId)
   return
-  SREG -> REPO ++ : cargar(sagaId)
+  SREG -> REPO ++ : cargar(ordenId)
   return orden
-  SREG -> SAGA ++ : (orden.saga()).respuestaRecibida(ref)
+  SREG -> ORDEN ++ : orden.proceso()
+  return saga
+  SREG -> SAGA ++ : saga.respuestaRecibida(ref)
   SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
   return
   SREG -> ORDEN ++ : despertar(Instant.now())
@@ -107,11 +111,13 @@ PLAN ->> TRAB : trabajar()
 activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-return [CandidataOrden(sagaId, SECUNDARIA2), ...]
-CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
+return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga
 ORQ -> SAGA ++ : saga.estado()
 return TERMINADA
 ORQ -> ORQ ++ : self.aplicarFinalizacionYaResuelta(orden, saga)  -- vía proxy (@Transactional;\nsin REST, pero igualmente vía self: la llama\nejecutarPaso, un método no transaccional)
@@ -134,15 +140,17 @@ PLAN ->> TRAB : trabajar()
 activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-return [CandidataOrden(sagaId, SECUNDARIA2), ...]
-CONT -> CONT : reclamarYEjecutar(sagaId, SECUNDARIA2)
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
+return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga
 ORQ -> SAGA ++ : saga.estado()
 return ESPERANDO_RESPUESTA
 ORQ -> ORQ : conciliar(orden, saga)
-ORQ -> PCON ++ : consultar(saga.id(), externalId) -- REST fuera de tx
+ORQ -> PCON ++ : consultar(saga.id(), saga.externalId()) -- REST fuera de tx
 return Disponible(ref) | SinResultado() | FalloRegistrado(motivo)
 alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   ORQ -> ORQ ++ : self.aplicarConciliacionDisponible(orden, saga, ref)  -- vía proxy (@Transactional)
@@ -172,24 +180,26 @@ else FalloRegistrado(motivo): el destino terminó con error
   ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
   deactivate ORQ
   note right of CONT
-    ServicioContinuarSaga.reclamarYEjecutar() la atrapa como
+    ServicioContinuarOrden.reclamarYEjecutar() la atrapa como
     RuntimeException y programa el reintento sobre la MISMA orden
     cargada arriba (backoff 1..180 min) — ver 07.
   end note
 end
 
 == Kafka responde con error: vuelve a solicitar ==
-[o-> CONS : evento en topic respuesta.secundaria2 (error)
+[o-> CONS : evento en topic sagas.topics.respuesta-secundaria2 (error)
 activate CONS
-CONS -> SREG ++ : respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)
+CONS -> SREG ++ : respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)
 SREG -> DEDUP ++ : yaProcesado(msgId)
 return no
 group Transacción (@Transactional en respuestaError, cross-bean, sin self)
   SREG -> DEDUP ++ : registrar(msgId)
   return
-  SREG -> REPO ++ : cargar(sagaId)
+  SREG -> REPO ++ : cargar(ordenId)
   return orden
-  SREG -> SAGA ++ : (orden.saga()).volverASolicitar()
+  SREG -> ORDEN ++ : orden.proceso()
+  return saga
+  SREG -> SAGA ++ : saga.volverASolicitar()
   SAGA -> SAGA : estado = INICIAL
   return
   SREG -> ORDEN ++ : programarReintento(politica, Instant.now())

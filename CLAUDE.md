@@ -35,10 +35,40 @@ Guía para trabajar en este repositorio.
   de aplicación (un caso de uso / servicio de aplicación) y, si la operación
   lo requiere, por la capa de dominio.
 - Ejemplo: el consumer de Kafka (`ConsumidorRespuestaSecundaria2`, adaptador
-  de entrada) no encola en `PuertoColaTareas` directamente; invoca el caso de
-  uso `CasoUsoRegistrarRespuestaSecundaria2` y es su servicio de aplicación
-  quien encola. Lo mismo aplica a los `@Scheduled` (invocan casos de uso) y a
+  de entrada, en `infraestructure.sagas.eventos`) no toca `RepositorioOrden`
+  ni el agregado directamente; invoca el caso de uso
+  `CasoUsoRegistrarRespuestaSecundaria2` (`business.sagas`) y es su servicio
+  de aplicación (`ServicioRegistrarRespuestaSecundaria2`) quien muta y
+  guarda. Lo mismo aplica a los `@Scheduled` (invocan casos de uso) y a
   cualquier adaptador REST futuro.
+
+## Restricción de arquitectura: ordermanager ↛ sagas
+
+- El motor de órdenes (`business.ordermanager` + `infraestructure.ordermanager`)
+  es genérico en el tipo de orden: **ninguna clase de `ordermanager` puede
+  depender de `business.sagas` ni de `infraestructure.sagas`**. La
+  dependencia va siempre `sagas -> ordermanager`, nunca al revés — así el
+  motor se puede llevar a otra aplicación y definir allí otros tipos de orden
+  sin tocar su código.
+- El motor tampoco puede nombrar el concepto "saga" en sus propias clases
+  (vocabulario neutro): usa `OrdenId`, `Proceso<E>`, `TipoOrden` (VO abierto,
+  no un enum cerrado), `ProcesadorOrden`, nunca `SagaId`/`Saga`/`TipoSaga`/
+  `ServicioSaga`.
+- El motor expone 3 puntos de extensión (SPI) para que las sagas (o
+  cualquier otro tipo de orden futuro) se registren sin que el motor las
+  conozca: `ProcesadorOrden` (ejecuta un paso, en
+  `business.ordermanager.aplicacion.servicio`), `MapeadorProceso` y
+  `DescriptorSoporteOrden` (persistencia y modelo de lectura por tipo, ambas
+  en `infraestructure.ordermanager.persistencia`). Las implementaciones
+  concretas de las 4 sagas (`ServicioSagaPrincipal`/`Secundaria1/2/3`,
+  `SoporteSagaPrincipal`/`Secundaria1/2/3`) viven en `business.sagas` /
+  `infraestructure.sagas` y se registran como `List<...>` que Spring inyecta
+  y el motor indexa por `tipo()`.
+- La regla la verifica el test de ArchUnit `ReglasArquitecturaTest`
+  (`ordermanagerNoDependeDeSagas`, sobre producción y tests, y
+  `ordermanagerSinVocabularioDeSagas`): si un cambio lo rompe, el cambio está
+  mal ubicado, no el test. Ver `order-manager/docs/README.md` y los
+  diagramas 14, 17, 23 y 24-25 para el detalle de las 3 SPI y la frontera.
 
 ## order-manager: pureza de las capas business
 
@@ -52,11 +82,14 @@ Guía para trabajar en este repositorio.
   `aplicacion/**` para marcar la frontera transaccional (es un estándar
   Jakarta, no un framework; Spring lo reconoce igual que su propio
   `@Transactional` sin que la capa business dependa de Spring). Los servicios
-  de aplicación con REST fuera de transacción (los `ServicioSaga*`,
-  `ServicioContinuarSaga`, `ServicioTicketsSoporte`) se inyectan a sí mismos
-  (`self`, el proxy transaccional) para invocar su parte `@Transactional` sin
-  que la auto-invocación la ignore; ver `ConfiguracionAplicacion` (el `@Lazy`
-  vive ahí, en infraestructure, no en business).
+  de aplicación con REST fuera de transacción (los `ServicioSaga*` de
+  `business.sagas`, `ServicioContinuarOrden`, `ServicioTicketsSoporte`, estos
+  dos últimos de `business.ordermanager`) se inyectan a sí mismos (`self`, el
+  proxy transaccional) para invocar su parte `@Transactional` sin que la
+  auto-invocación la ignore; ver `ConfiguracionOrderManager`
+  (`infraestructure.ordermanager`) y `ConfiguracionSagas`
+  (`infraestructure.sagas`) — el `@Lazy` vive ahí, en infraestructure, no en
+  business.
 - Prohibido en `business/**`: Spring (`org.springframework.*`), JPA
   (`jakarta.persistence.*`), Jackson (`com.fasterxml.*`), Kafka y cualquier
   otra librería de infraestructura. Todo eso vive exclusivamente bajo

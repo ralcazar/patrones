@@ -8,7 +8,7 @@ box "Adaptadores de entrada" #EFF5FB
 end box
 box "Aplicación" #F5FBEF
   participant "ServicioIniciarTramitacion" as INICIAR
-  participant "ServicioContinuarSaga" as CONT
+  participant "ServicioContinuarOrden" as CONT
 end box
 box "Dominio" #FBF5EF
   participant "SagaPrincipal" as SAGA
@@ -22,7 +22,7 @@ end box
 [-> ENTRADA : inicia tramitación
 activate ENTRADA
 ENTRADA -> INICIAR ++ : iniciar(ComandoIniciarTramitacion(\nexternalId, datoNegocio3, datoNegocio2))
-INICIAR -> INICIAR : sagaId = SagaId.nuevo()
+INICIAR -> INICIAR : sagaId = OrdenId.nuevo()
 
 group Transacción (@Transactional)
   INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId,\nexternalId, datoNegocio3, datoNegocio2)
@@ -30,7 +30,7 @@ group Transacción (@Transactional)
   INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
   return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, resultado=null, version=0)
   INICIAR -> REPO ++ : crear(orden)
-  REPO -> REPO : sagas.save(entidadSagaDe(saga))
+  REPO -> REPO : procesos.save(entidadProcesoDe(saga))
   REPO -> REPO : ordenes.save(entidadOrdenDe(orden))
   return
 end
@@ -45,13 +45,13 @@ note right of INICIAR
 end note
 
 == Primer picking: el planificador descubre que hay trabajo y despierta a los workers ==
-loop cada orden.planificador.intervalo-ms (por defecto 500 ms)
+loop cada ordermanager.planificador.intervalo-ms (por defecto 5000 ms)
   PLAN -> CONT ++ : hayTrabajoPendiente()
   CONT -> REPO ++ : hayEjecutables(Instant.now())
   REPO -> REPO : SELECT COUNT(*) ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora) AND ROWNUM = 1
   return true
   return true
-  loop i = 0 .. trabajadores-1 (orden.planificador.trabajadores, por defecto 4)
+  loop i = 0 .. trabajadores-1 (ordermanager.planificador.trabajadores, por defecto 2)
     PLAN ->> TRAB : trabajar()
     activate TRAB
   end
@@ -67,16 +67,17 @@ loop bucle pull: mientras continuarSiguiente() devuelva true
   TRAB -> CONT ++ : continuarSiguiente()
   CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
   REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :lote ROWS ONLY
-  return [CandidataOrden(sagaId, PRINCIPAL), ...]
-  CONT -> CONT : reclamarYEjecutar(candidata.sagaId(), candidata.tipo())
+  return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
+  CONT -> CONT : reclamarYEjecutar(candidata.ordenId(), candidata.tipo())
   return true (una procesada; false cuando no queda trabajo\ny el worker muere)
 end
 deactivate TRAB
 
 note over CONT
-  reclamarYEjecutar(sagaId, PRINCIPAL) reclama el token bajo
-  optimistic lock y entra en el bucle de ejecutarPaso(): el
-  reclamo del token y la cadena PASO1..PASO8 se detallan en
+  reclamarYEjecutar(ordenId, TipoOrden("PRINCIPAL")) reclama el
+  token bajo optimistic lock y entra en el bucle de ejecutarPaso()
+  del ProcesadorOrden registrado para ese tipo (ServicioSagaPrincipal):
+  el reclamo del token y la cadena PASO1..PASO8 se detallan en
   02-pasos-saga-principal. Si pierde el reclamo (otro worker/pod
   la ganó), continuarSiguiente() prueba la siguiente del lote.
 end note

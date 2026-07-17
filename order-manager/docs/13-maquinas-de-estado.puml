@@ -42,7 +42,7 @@ state "EstadoSagaPrincipal (SagaPrincipal)" as MPrincipal {
   COMPENSAR_PASO2 --> COMPENSAR_PASO2 : cancelar() no-op idempotente
   COMPENSAR_PASO1 --> COMPENSAR_PASO1 : cancelar() no-op idempotente
   CANCELADA --> CANCELADA : cancelar() no-op idempotente
-  TERMINADA --> TERMINADA : cancelar() lanza\nSagaYaCompletadaException
+  TERMINADA --> TERMINADA : cancelar() lanza\nOrdenYaCompletadaException
 }
 
 state "EstadoSagaSecundaria1 (SagaSecundaria1)" as MSec1 {

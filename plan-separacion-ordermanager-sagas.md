@@ -11,7 +11,7 @@
 - [x] Paso 4 — `TipoSaga` (enum) → `TipoOrden` (record) + regla ArchUnit de frontera
 - [x] Paso 5 — Renombrados neutros del motor + aplanar paquetes
 - [x] Paso 6 — BD/SQL y claves de configuración
-- [ ] Paso 7 — Diagramas, PNG, READMEs y CLAUDE.md + push
+- [x] Paso 7 — Diagramas, PNG, READMEs y CLAUDE.md + push
 
 ## Contexto
 

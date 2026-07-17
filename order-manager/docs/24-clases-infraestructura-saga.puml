@@ -1,39 +1,44 @@
 @startuml 24-clases-infraestructura-saga
-title Infraestructura — el resto del módulo: entrada Kafka (eventos), planificadores (programados) y adaptadores de lectura (persistencia)
+title Infraestructura — resto de infraestructure.ordermanager + infraestructure.sagas (entrada Kafka, planificadores, lectura CQRS, wiring)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-package "eventos" {
+package "infraestructure.ordermanager.eventos" {
+  ' --- adaptador de SALIDA (implementa un puerto de salida) ---
+  class AdaptadorTicketsLog <<@Component>> {
+    +abrir(ordenes)  «log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\nun texto en el log = el ticket; sin id»
+  }
+}
+
+package "infraestructure.sagas.eventos" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class ConsumidorRespuestaSecundaria2 <<@Component>> {
     -registro : CasoUsoRegistrarRespuestaSecundaria2
     -mapper : ObjectMapper
-    +onRespuesta(mensaje, key)  «@KafkaListener\ntopic ordermanager.topics.respuesta-secundaria2»
+    +onRespuesta(mensaje, key)  «@KafkaListener\ntopic sagas.topics.respuesta-secundaria2»
   }
   note right of ConsumidorRespuestaSecundaria2
-    Consumer FINO: parsea el JSON (sagaId, mensajeId, exito, ref |
+    Consumer FINO: parsea el JSON (ordenId, mensajeId, exito, ref |
     codigo/detalle/reintentable) y llama a
     registro.respuestaOk(...)/respuestaError(...). No toca el
     agregado ni RepositorioOrden directamente (regla de
-    arquitectura del CLAUDE.md).
+    arquitectura del CLAUDE.md). CasoUsoRegistrarRespuestaSecundaria2
+    es específico de la saga secundaria 2 y vive en business.sagas
+    (ver 20): por eso este consumer vive en infraestructure.sagas,
+    no en infraestructure.ordermanager.
   end note
-
-  ' --- adaptador de SALIDA (implementa un puerto de salida) ---
-  class AdaptadorTicketsLog <<@Component>> {
-    +abrir(sagas)  «log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\nun texto en el log = el ticket; sin id»
-  }
 }
 
-package "programados" {
+package "infraestructure.ordermanager.programados" {
   ' --- adaptadores de ENTRADA (invocan la capa de aplicación) ---
   class TrabajadorContinuacion <<@Component>> {
-    -casoUso : CasoUsoContinuarSaga
+    -casoUso : CasoUsoContinuarOrden
     +trabajar()  «@Async("ejecutorContinuacion")»
   }
   note right of TrabajadorContinuacion
     Worker pull: while (casoUso.continuarSiguiente()) {} — al acabar
-    una saga va a la BD a por la siguiente; cuando no queda trabajo,
+    una orden va a la BD a por la siguiente; cuando no queda trabajo,
     muere. Lo despierta PlanificadorContinuacion (ver 23); una
     RuntimeException no se propaga: se loguea, el worker muere y el
     siguiente tick vuelve a levantar workers. Nada de autoinvocación:
@@ -51,9 +56,9 @@ package "programados" {
   }
 
   class ConfiguracionEjecucionAsincrona <<@Configuration, SchedulingConfigurer\n@EnableScheduling @EnableAsync>> {
-    -tamanoPool : int  «orden.planificador.tamano-pool, 4»
+    -tamanoPool : int  «ordermanager.planificador.tamano-pool, 4»
     +configureTasks(ScheduledTaskRegistrar)
-    +ejecutorContinuacion(trabajadores) : ThreadPoolTaskExecutor\n«@Bean("ejecutorContinuacion"),\norden.planificador.trabajadores, 4»
+    +ejecutorContinuacion(trabajadores) : ThreadPoolTaskExecutor\n«@Bean("ejecutorContinuacion"),\nordermanager.planificador.trabajadores, 2»
   }
   note bottom of ConfiguracionEjecucionAsincrona
     Dos pools: (1) el scheduler de los 3 @Scheduled del módulo
@@ -69,98 +74,143 @@ package "programados" {
 }
 
 ' --- capa de aplicación (ver 17-22) ---
-interface CasoUsoContinuarSaga
+interface CasoUsoContinuarOrden
 interface CasoUsoRegistrarRespuestaSecundaria2
 interface CasoUsoLimpiarDatosAntiguos
 interface CasoUsoAbrirTicketsPendientes
-interface PuertoConsultaSagasSoporte
-interface PuertoSagasTicketPendiente
+interface PuertoConsultaOrdenesSoporte
+interface PuertoOrdenesTicketPendiente
 interface PuertoTicketsSoporte
+interface "MapeadorProceso,\nDescriptorSoporteOrden (ver 23)" as SPIs
 
-package "persistencia" {
+package "infraestructure.ordermanager.persistencia" {
   ' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
-  class AdaptadorConsultaSagasSoporte <<@Component>> {
+  class AdaptadorConsultaOrdenesSoporte <<@Component>> {
     -ordenes : OrdenJpaRepository
-    -sagas : SagaJpaRepository
-    +sagasBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nvistaTramitacion/detalle
-    -pasoPendiente(tipo, estado) : String  «tabla duplicada a propósito:\nel dominio no la expone, la lectura no carga agregados»
-    -datosManualesObligatorios(tipo, estado) / cancelable(tipo, estado)
+    -procesos : ProcesoJpaRepository
+    -descriptores : Map<TipoOrden, DescriptorSoporteOrden>
+    +ordenesBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nporExternalId/detalle
+    -descriptorDe(tipo) : DescriptorSoporteOrden  «IllegalStateException si no\nhay ninguno registrado»
   }
-  class AdaptadorSagasTicketPendiente <<@Component>> {
+  note right of AdaptadorConsultaOrdenesSoporte
+    pasoPendiente/datosManualesObligatorios/cancelable ya NO son
+    switches propios: se delegan en el DescriptorSoporteOrden del
+    tipo (ver 23). porExternalId(...) es genérico (solo agrupa por
+    externalId, sin componer ninguna vista); quien la usa para
+    construir VistaTramitacion particionando por SagaPrincipal.TIPO
+    es ServicioVistaTramitacion, en business.sagas (ver 22).
+  end note
+  class AdaptadorOrdenesTicketPendiente <<@Component>> {
     -ordenes : OrdenJpaRepository
-    +buscar() : List<SagaTicketPendiente>  «delega en\nordenes.buscarTicketsPendientes()»
+    +buscar() : List<OrdenTicketPendiente>  «delega en\nordenes.buscarTicketsPendientes()»
   }
   class "ContextoCodec" as Codec <<package-private>> {
     {static} escribir(Map<String,String>) : String
     {static} leer(String) : Map<String,String>
   }
   note bottom of Codec
-    OrdenJpaRepository/SagaJpaRepository (ver 23) son package-private:
-    viven aquí, en persistencia, junto con quien los usa, para no
-    tener que ampliar su visibilidad.
+    OrdenJpaRepository/ProcesoJpaRepository (ver 23) son
+    package-private: viven aquí, en persistencia, junto con quien
+    los usa, para no tener que ampliar su visibilidad.
   end note
 }
 
-package "ordermanager (config)" {
+package "infraestructure.ordermanager (config)" {
   ' --- configuración ---
-  class ConfiguracionAplicacion <<@Configuration>> {
-    +@Bean de PoliticaReintentos y de los 4\nServicioSaga + servicios de soporte/limpieza
+  class ConfiguracionOrderManager <<@Configuration>> {
+    +@Bean de PoliticaReintentos, servicioContinuarOrden(List<ProcesadorOrden>, ...),\nservicioSoporteOrdenes, servicioTicketsSoporte, servicioLimpiezaDatos
     «POJOs sin anotaciones Spring: la capa business\nno depende de ningún framework»
   }
-  note bottom of ConfiguracionAplicacion
-    La frontera transaccional es @Transactional (jakarta.transaction)
-    directo en los métodos de los POJOs de aplicación: ya no hay
-    puerto UnidadDeTrabajo ni adaptador UnidadDeTrabajoSpring. Para
-    ServicioSagaPrincipal/Secundaria1/2/3, ServicioContinuarSaga y
-    ServicioTicketsSoporte (REST fuera de tx, ver 17-22), el método
-    @Bean se inyecta a sí mismo el proxy con un parámetro @Lazy del
-    mismo tipo que devuelve, y llama a servicio.establecerSelf(self)
-    antes de devolver el bean — así su parte @Transactional se invoca
-    a través del proxy en vez de por auto-invocación.
+  note bottom of ConfiguracionOrderManager
+    Wiring del motor: genérico en el tipo de orden, NO conoce las
+    sagas concretas (ver ConfiguracionSagas más abajo). Los
+    ProcesadorOrden que participan del bucle de continuación llegan
+    como List&lt;ProcesadorOrden&gt; y se indexan por tipo() con
+    toUnmodifiableMap (tipo duplicado -> falla el arranque). Mismo
+    patrón @Lazy self que antes (ver 17), ahora repartido en dos
+    @Configuration: aquí para ServicioContinuarOrden y
+    ServicioTicketsSoporte.
+  end note
+}
+
+package "infraestructure.sagas.persistencia" {
+  ' --- adaptadores de SALIDA (implementan las 2 SPI de persistencia/lectura por tipo) ---
+  class "SoporteSagaPrincipal,\nSoporteSagaSecundaria1/2/3" as SoporteSaga <<@Component>> {
+    +tipo() : TipoOrden  «SagaX.TIPO»
+    +desarmar(Proceso<?>) / +rearmar(...)  «MapeadorProceso»
+    +pasoPendiente/datosManualesObligatorios/cancelable(estado)  «DescriptorSoporteOrden»
+  }
+  note right of SoporteSaga
+    Una clase por saga implementa LAS DOS SPI del motor
+    (MapeadorProceso + DescriptorSoporteOrden — ver 23), absorbiendo
+    los antiguos contextoDe*/*Desde/switches FSM: p. ej.
+    SoporteSagaPrincipal implements MapeadorProceso,
+    DescriptorSoporteOrden. Usan AyudanteContexto
+    (ponerSiNoNulo/refONull, package-private) para leer/escribir el
+    mapa de contexto. Claves JSON del contexto (refPaso1...) sin cambios.
+  end note
+}
+
+package "infraestructure.sagas (config)" {
+  class ConfiguracionSagas <<@Configuration>> {
+    +@Bean de los 4 ServicioSaga* (ProcesadorOrden),\nservicioIniciarTramitacion, servicioRegistrarRespuestaSecundaria2,\nservicioCancelarTramitacion, servicioVistaTramitacion
+  }
+  note bottom of ConfiguracionSagas
+    Wiring de las 4 sagas concretas: se apoya en los puertos y
+    servicios genéricos del motor (RepositorioOrden,
+    PoliticaReintentos, ...) definidos en infraestructure.ordermanager,
+    pero el motor NUNCA depende de esta clase ni de las sagas (regla
+    de frontera ArchUnit, ver 14). Mismo patrón @Lazy self que
+    ConfiguracionOrderManager, aquí para los 4 ServicioSaga*.
   end note
 }
 
 ' Entrada -> aplicación
 ConsumidorRespuestaSecundaria2 --> CasoUsoRegistrarRespuestaSecundaria2
-TrabajadorContinuacion --> CasoUsoContinuarSaga : continuarSiguiente()\n(bucle pull)
+TrabajadorContinuacion --> CasoUsoContinuarOrden : continuarSiguiente()\n(bucle pull)
 PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
 PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
 
 ' Puertos de salida <- adaptadores
-PuertoConsultaSagasSoporte <|.. AdaptadorConsultaSagasSoporte
-PuertoSagasTicketPendiente <|.. AdaptadorSagasTicketPendiente
+PuertoConsultaOrdenesSoporte <|.. AdaptadorConsultaOrdenesSoporte
+PuertoOrdenesTicketPendiente <|.. AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
+SPIs <|.. SoporteSaga
 
 note as NRegla
   Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA
   (ConsumidorRespuestaSecundaria2, el worker TrabajadorContinuacion y
   los dos planificadores) solo invocan casos de uso de la capa de
-  aplicación; los adaptadores de SALIDA (AdaptadorConsultaSagasSoporte,
-  AdaptadorSagasTicketPendiente, AdaptadorTicketsLog) implementan
-  puertos de salida. Los paquetes (eventos/programados/persistencia)
-  agrupan por TIPO de adaptador, no por dirección entrada/salida: por
-  eso conviven ambos sentidos dentro de un mismo paquete. Ya no hay
-  UnidadDeTrabajoSpring: la frontera transaccional es @Transactional
-  directo en los servicios de aplicación (ver ConfiguracionAplicacion
-  y 17-22). PlanificadorContinuacion y AdaptadorRepositorioOrden
-  (la persistencia del agregado) están en 23.
+  aplicación; los adaptadores de SALIDA (AdaptadorConsultaOrdenesSoporte,
+  AdaptadorOrdenesTicketPendiente, AdaptadorTicketsLog, SoporteSaga*)
+  implementan puertos de salida / SPI. Los paquetes
+  (eventos/programados/persistencia) agrupan por TIPO de adaptador,
+  no por dirección entrada/salida. Nueva regla de frontera ArchUnit
+  (ver 14): ninguna clase de ..ordermanager.. puede depender de
+  ..sagas.. — la dependencia real de este diagrama va siempre
+  infraestructure.sagas -> business.sagas y
+  infraestructure.sagas -> {business,infraestructure}.ordermanager,
+  nunca al revés. PlanificadorContinuacion y AdaptadorRepositorioOrden
+  (la persistencia del agregado, con las 2 SPI) están en 23.
 end note
 
-' orden de izquierda a derecha: eventos -> programados -> persistencia -> config
-ConsumidorRespuestaSecundaria2 -[hidden]right- AdaptadorTicketsLog
+' orden de izquierda a derecha: ordermanager (eventos/programados/persistencia/config) -> sagas
 AdaptadorTicketsLog -[hidden]right- TrabajadorContinuacion
 TrabajadorContinuacion -[hidden]right- PlanificadorLimpieza
 PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
 PlanificadorTicketsSoporte -[hidden]right- ConfiguracionEjecucionAsincrona
-ConfiguracionEjecucionAsincrona -[hidden]right- AdaptadorConsultaSagasSoporte
-AdaptadorConsultaSagasSoporte -[hidden]right- AdaptadorSagasTicketPendiente
-AdaptadorSagasTicketPendiente -[hidden]right- Codec
-Codec -[hidden]right- ConfiguracionAplicacion
+ConfiguracionEjecucionAsincrona -[hidden]right- AdaptadorConsultaOrdenesSoporte
+AdaptadorConsultaOrdenesSoporte -[hidden]right- AdaptadorOrdenesTicketPendiente
+AdaptadorOrdenesTicketPendiente -[hidden]right- Codec
+Codec -[hidden]right- ConfiguracionOrderManager
+ConfiguracionOrderManager -[hidden]right- ConsumidorRespuestaSecundaria2
+ConsumidorRespuestaSecundaria2 -[hidden]right- SoporteSaga
+SoporteSaga -[hidden]right- ConfiguracionSagas
 
-CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- CasoUsoContinuarSaga
-CasoUsoContinuarSaga -[hidden]right- CasoUsoLimpiarDatosAntiguos
+CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- CasoUsoContinuarOrden
+CasoUsoContinuarOrden -[hidden]right- CasoUsoLimpiarDatosAntiguos
 CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
-PuertoConsultaSagasSoporte -[hidden]down- AdaptadorConsultaSagasSoporte
-PuertoSagasTicketPendiente -[hidden]down- AdaptadorSagasTicketPendiente
+PuertoConsultaOrdenesSoporte -[hidden]down- AdaptadorConsultaOrdenesSoporte
+PuertoOrdenesTicketPendiente -[hidden]down- AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
 @enduml

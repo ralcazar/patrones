@@ -25,12 +25,12 @@ PLAN -> LIMP ++ : purgarAnterioresA(corte)
 
 group Transacción única (@Transactional)
   LIMP -> REPO ++ : purgarFinalizadasAntesDe(corte)
-  REPO -> REPO : ids = idsFinalizadasAntesDe(corte)\n(SELECT saga_id WHERE resultado IS NOT NULL\nAND actualizada_en < corte)
+  REPO -> REPO : ids = idsFinalizadasAntesDe(corte)\n(SELECT orden_id WHERE resultado IS NOT NULL\nAND actualizada_en < corte)
   alt ids.isEmpty()
     REPO -> REPO : return 0
   else hay ids
-    REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE saga_id IN ids)
-    REPO -> REPO : sagas.borrarPorIds(ids)\n(DELETE FROM saga WHERE saga_id IN ids)
+    REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE orden_id IN ids)
+    REPO -> REPO : procesos.borrarPorIds(ids)\n(DELETE FROM proceso WHERE orden_id IN ids)
     REPO -> REPO : return ids.size()
   end
   return nº órdenes borradas
@@ -43,8 +43,10 @@ PLAN -> PLAN : log.info("Limpieza de datos (corte {}):\n{} órdenes y {} registr
 deactivate PLAN
 
 note over REPO
-  Al borrar la fila de orden se borra también (ON DELETE CASCADE
-  desde saga_id) la tabla hija saga_auditoria. Todo o nada: un
-  solo commit para órdenes + saga + dedup.
+  orden se borra ANTES que proceso (orden.orden_id es FK a
+  proceso.orden_id); al borrar la fila de proceso se borra también
+  (ON DELETE CASCADE desde orden_id) la tabla hija
+  proceso_auditoria. Todo o nada: un solo commit para órdenes +
+  proceso + dedup.
 end note
 @enduml

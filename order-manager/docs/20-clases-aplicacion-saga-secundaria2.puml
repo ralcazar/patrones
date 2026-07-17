@@ -4,10 +4,10 @@ title Aplicación — saga secundaria 2: respuesta diferida por Kafka, aparcado 
 hide empty members
 skinparam classAttributeIconSize 0
 
-package "puerto.entrada" {
+package "business.sagas.aplicacion.puerto.entrada" {
   interface CasoUsoRegistrarRespuestaSecundaria2 {
-    +respuestaOk(sagaId, ref, mensajeId)
-    +respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)
+    +respuestaOk(ordenId, ref, mensajeId)
+    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)
   }
   note bottom of CasoUsoRegistrarRespuestaSecundaria2
     Entrada del consumer Kafka: el adaptador de entrada no toca el
@@ -16,65 +16,69 @@ package "puerto.entrada" {
   end note
 }
 
-interface "ServicioSaga (ver 17)" as Base
+interface "ProcesadorOrden (ver 17)" as Base
 
-class ServicioSagaSecundaria2 <<@Service>> {
-  {static} VENTANA_ESPERA = Duration.ofHours(3)
-  -repo : RepositorioOrden
-  -puerto : PuertoSagaSecundaria2
-  -conciliacion : PuertoConciliacionSecundaria2
-  -self : ServicioSagaSecundaria2  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
-  +tipo() : TipoSaga  «SECUNDARIA2»
-  +ejecutarPaso(orden) : SenalPaso  «switch(saga.estado()):\nINICIAL->solicitar, ESPERANDO_RESPUESTA->conciliar,\nTERMINADA->self.aplicarFinalizacionYaResuelta»
-  -solicitar(orden, saga) : SenalPaso  «puerto.solicitar (REST) +\nself.aplicarSolicitud(...) -> Aparcar(3h)»
-  -conciliar(orden, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->self.aplicarConciliacionDisponible;\nSinResultado->self.aplicarConciliacionSinResultado;\nFalloRegistrado->throw ExcepcionServicioExterno»
-  +aplicarSolicitud(orden, saga) : SenalPaso  «@Transactional»
-  +aplicarConciliacionDisponible(orden, saga, ref) : SenalPaso  «@Transactional»
-  +aplicarConciliacionSinResultado(orden, saga) : SenalPaso  «@Transactional»
-  +aplicarFinalizacionYaResuelta(orden, saga) : SenalPaso  «@Transactional»
+package "business.sagas.aplicacion.servicio.sagasecundaria2" {
+  class ServicioSagaSecundaria2 <<@Service>> {
+    {static} VENTANA_ESPERA = Duration.ofHours(3)
+    -repo : RepositorioOrden
+    -puerto : PuertoSagaSecundaria2
+    -conciliacion : PuertoConciliacionSecundaria2
+    -self : ServicioSagaSecundaria2  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+    +tipo() : TipoOrden  «SagaSecundaria2.TIPO»
+    +ejecutarPaso(orden) : SenalPaso  «switch(saga.estado()):\nINICIAL->solicitar, ESPERANDO_RESPUESTA->conciliar,\nTERMINADA->self.aplicarFinalizacionYaResuelta»
+    -solicitar(orden, saga) : SenalPaso  «puerto.solicitar (REST) +\nself.aplicarSolicitud(...) -> Aparcar(3h)»
+    -conciliar(orden, saga) : SenalPaso  «conciliacion.consultar (REST):\nDisponible->self.aplicarConciliacionDisponible;\nSinResultado->self.aplicarConciliacionSinResultado;\nFalloRegistrado->throw ExcepcionServicioExterno»
+    +aplicarSolicitud(orden, saga) : SenalPaso  «@Transactional»
+    +aplicarConciliacionDisponible(orden, saga, ref) : SenalPaso  «@Transactional»
+    +aplicarConciliacionSinResultado(orden, saga) : SenalPaso  «@Transactional»
+    +aplicarFinalizacionYaResuelta(orden, saga) : SenalPaso  «@Transactional»
+  }
+  note right of ServicioSagaSecundaria2
+    Nota de diseño: sin lease propio (no recibe Duration lease en el
+    constructor) — HayMasTrabajo no se produce en esta saga: cada
+    rama devuelve Aparcar o Finalizada, nunca continúa el bucle en la
+    misma pasada. ejecutarPaso castea orden.proceso() a
+    SagaSecundaria2 (agregado YA CARGADO por ServicioContinuarOrden,
+    ver 17); cada rama llama a su self.aplicarX(...) -- vía el
+    proxy auto-inyectado, para que @Transactional no se ignore por
+    auto-invocación, incluida aplicarFinalizacionYaResuelta que no
+    tiene REST previo -- y guarda esa misma instancia sin recargar:
+    si otro actor escribió entre medias (consumer de Kafka,
+    takeover), guardar falla por version.
+  end note
 }
-note right of ServicioSagaSecundaria2
-  Nota de diseño: sin lease propio (no recibe Duration lease en el
-  constructor) — HayMasTrabajo no se produce en esta saga: cada
-  rama devuelve Aparcar o Finalizada, nunca continúa el bucle en la
-  misma pasada. ejecutarPaso recibe el agregado YA CARGADO por
-  ServicioContinuarSaga (ver 17); cada rama llama a su self.aplicarX(...)
-  -- vía el proxy auto-inyectado, para que @Transactional no se
-  ignore por auto-invocación, incluida aplicarFinalizacionYaResuelta
-  que no tiene REST previo -- y guarda esa misma instancia sin
-  recargar: si otro actor escribió entre medias (consumer de Kafka,
-  takeover), guardar falla por version.
-end note
 
-class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
-  -repo : RepositorioOrden
-  -dedup : PuertoMensajesProcesados
-  -politica : PoliticaReintentos
-  +respuestaOk(sagaId, ref, mensajeId)  «@Transactional: dedup +\nsaga.respuestaRecibida(ref) + orden.despertar(ahora)»
-  +respuestaError(sagaId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\nsaga.volverASolicitar() + orden.programarReintento(politica, ahora)»
+package "business.sagas.aplicacion.servicio.comun" {
+  class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
+    -repo : RepositorioOrden
+    -dedup : PuertoMensajesProcesados
+    -politica : PoliticaReintentos
+    +respuestaOk(ordenId, ref, mensajeId)  «@Transactional: dedup +\nsaga.respuestaRecibida(ref) + orden.despertar(ahora)»
+    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\nsaga.volverASolicitar() + orden.programarReintento(politica, ahora)»
+  }
+  note bottom of ServicioRegistrarRespuestaSecundaria2
+    @Transactional directamente en respuestaOk/respuestaError: se
+    invocan cross-bean desde el consumer de Kafka, así que el proxy
+    aplica sin necesidad de self. Castea orden.proceso() a
+    SagaSecundaria2 y deja la saga en TERMINADA (o de vuelta en
+    INICIAL), solo despertando/reprogramando la orden: el cierre
+    operativo final (orden.finalizar) lo hace
+    ServicioSagaSecundaria2.aplicarFinalizacionYaResuelta() en la
+    siguiente pasada del planificador — un único punto decide cuándo
+    la orden queda finalizada.
+  end note
 }
-note bottom of ServicioRegistrarRespuestaSecundaria2
-  @Transactional directamente en respuestaOk/respuestaError: se
-  invocan cross-bean desde el consumer de Kafka, así que el proxy
-  aplica sin necesidad de self. Dejan la saga en TERMINADA (o de
-  vuelta en INICIAL) y solo despiertan/reprograman la orden: el
-  cierre operativo final (orden.finalizar) lo hace
-  ServicioSagaSecundaria2.aplicarFinalizacionYaResuelta() en la
-  siguiente pasada del planificador — un único punto decide cuándo
-  la orden queda finalizada.
-end note
 
 package "puerto.salida" {
-  interface RepositorioOrden <<@Repository>> {
-    «ver 17: único puerto de escritura del agregado»
-  }
+  interface "RepositorioOrden\n(business.ordermanager — ver 17)" as RepositorioOrden
   interface PuertoSagaSecundaria2 {
-    +solicitar(sagaId, cmd)  «REST; el sagaId viaja\ncomo clave de correlación»
+    +solicitar(ordenId, cmd)  «REST; el ordenId viaja\ncomo clave de correlación»
   }
   interface PuertoConciliacionSecundaria2 {
-    +consultar(sagaId, externalId) :\nDisponible(ref) | FalloRegistrado(motivo) | SinResultado()
+    +consultar(ordenId, externalId) :\nDisponible(ref) | FalloRegistrado(motivo) | SinResultado()
   }
-  interface PuertoMensajesProcesados {
+  interface "PuertoMensajesProcesados\n(business.ordermanager — ver 17)" as PuertoMensajesProcesados {
     +yaProcesado(msgId) : boolean
     +registrar(msgId)
     +purgarAnterioresA(corte) : long

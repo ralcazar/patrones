@@ -2,7 +2,7 @@
 title Finalización de la saga principal: TERMINADA + creación de las 3 sagas hijas en la misma tx
 
 box "Aplicación" #F5FBEF
-  participant "ServicioSagaPrincipal\n(ServicioSaga)" as ORQ
+  participant "ServicioSagaPrincipal\n(ProcesadorOrden)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
@@ -35,13 +35,13 @@ group Transacción: checkpoint del paso (crea agregados hijos + finaliza el prop
   ORQ -> SAGA ++ : saga.contextosArranque()
   return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
 
-  loop por cada ContextoArranque (x3)
-    ORQ -> HIJAS ++ : SagaSecundariaN.crear(SagaId.nuevo(), contexto)
+  loop por cada ContextoArranque (x3), en crearHijas(contextos, ahora)
+    ORQ -> HIJAS ++ : SagaSecundariaN.crear(OrdenId.nuevo(), contexto)
     return sagaHija (estado INICIAL)
     ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, ahora)
     return ordenHija (intentos=0, proximoReintentoEn=ahora, version=0)
     ORQ -> REPO ++ : crear(ordenHija)
-    REPO -> REPO : sagas.save(entidadSagaDe(sagaHija))
+    REPO -> REPO : procesos.save(entidadProcesoDe(sagaHija))
     REPO -> REPO : ordenes.save(entidadOrdenDe(ordenHija))
     return
   end

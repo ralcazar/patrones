@@ -1,38 +1,42 @@
 @startuml 22-clases-aplicacion-soporte
-title Aplicación — soporte, tickets y limpieza
+title Aplicación — soporte, tickets y limpieza (business.ordermanager) + cancelación/vista de tramitación (business.sagas)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-package "puerto.entrada" {
-  interface CasoUsoIntervenirSaga {
-    +cancelarPrincipal(id, quien, motivo)
+package "business.ordermanager.aplicacion.puerto.entrada" {
+  interface CasoUsoIntervenirOrden {
     +reintentarPaso(tipo, id, nombrePaso, quien)
     +marcarPasoOk(tipo, id, nombrePaso, quien,\njustificacion, datosManuales)
   }
-  note bottom of CasoUsoIntervenirSaga
-    nombrePaso se conserva por compatibilidad de firma y como
-    dato informativo de auditoría, pero es opcional: cada saga
-    tiene como mucho UN paso pendiente (el que marca su FSM), ya
-    no hace falta identificarlo por su enum.
+  note bottom of CasoUsoIntervenirOrden
+    Sin cancelarPrincipal: cancelar es un concepto específico de la
+    saga principal (solo ella es cancelable), no del motor genérico
+    — ver CasoUsoCancelarTramitacion más abajo. nombrePaso se
+    conserva por compatibilidad de firma y como dato informativo de
+    auditoría, pero es opcional: cada orden tiene como mucho UN paso
+    pendiente (el que marca su FSM), ya no hace falta identificarlo
+    por su enum.
   end note
-  interface CasoUsoConsultarSagasSoporte {
-    +sagasBloqueadas() : List<SagaResumen>  «intentos >= 8»
-    +sagasEnEjecucion() : List<SagaResumen>  «token vigente»
-    +sagasConTicketPendiente() : List<SagaResumen>
-    +buscar(FiltroSagas) : List<SagaResumen>
-    +vistaTramitacion(externalId) : VistaTramitacion
-    +detalle(tipo, id) : SagaDetalle
-    record SagaResumen(id, tipo, externalId, estado : String,\nintentos, ticketAbiertoEn, proximoReintentoEn,\niniciadaEn, actualizadaEn)
-    record FiltroSagas(estado : String, iniciadaDesde/Hasta,\nactualizadaDesde/Hasta)
+  interface CasoUsoConsultarOrdenesSoporte {
+    +ordenesBloqueadas() : List<OrdenResumen>  «intentos >= 8»
+    +ordenesEnEjecucion() : List<OrdenResumen>  «token vigente»
+    +ordenesConTicketPendiente() : List<OrdenResumen>
+    +buscar(FiltroOrdenes) : List<OrdenResumen>
+    +detalle(tipo, id) : OrdenDetalle
+    record OrdenResumen(id, tipo, externalId, estado : String,\nintentos, ticketAbiertoEn, proximoReintentoEn,\niniciadaEn, actualizadaEn)
+    record FiltroOrdenes(estado : String, iniciadaDesde/Hasta,\nactualizadaDesde/Hasta)
     record PasoDetalle(nombrePaso, datosManualesObligatorios)
-    record SagaDetalle(resumen, cancelable, pasos, auditoria)
-    record VistaTramitacion(externalId, principal, secundarias)
+    record OrdenDetalle(resumen, cancelable, pasos, auditoria)
   }
-  note bottom of CasoUsoConsultarSagasSoporte
+  note bottom of CasoUsoConsultarOrdenesSoporte
     Modelo de lectura CQRS puro: el adaptador resuelve con SQL
-    sobre orden/saga sin cargar agregados; por eso "estado" viaja
-    como String (el nombre del enum), no como EstadoSaga*.
+    sobre orden/proceso sin cargar agregados; por eso "estado" viaja
+    como String (el nombre del enum), no como EstadoSaga*. Sin
+    vistaTramitacion: componer la vista de una tramitación completa
+    es específico de las sagas (correlaciona 4 tipos por externalId)
+    — ver CasoUsoVistaTramitacion más abajo, que se apoya en
+    porExternalId(...) de PuertoConsultaOrdenesSoporte (ver 23).
   end note
   interface CasoUsoAbrirTicketsPendientes {
     +abrirTicketsPendientes() : int
@@ -43,35 +47,34 @@ package "puerto.entrada" {
   }
 }
 
-package "servicio.comun" {
-  class ServicioSoporteSagas <<@Service>> {
+package "business.ordermanager.aplicacion.servicio" {
+  class ServicioSoporteOrdenes <<@Service>> {
     -repo : RepositorioOrden
-    -consultas : PuertoConsultaSagasSoporte
-    +cancelarPrincipal(id, quien, motivo)  «@Transactional: saga.cancelar()+orden.despertar()»
+    -consultas : PuertoConsultaOrdenesSoporte
     +reintentarPaso(tipo, id, nombrePaso, quien)  «@Transactional: orden.resetearIntentos()+despertar()»
-    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «@Transactional: saga.marcarPasoActualOkManual()+orden.despertar()»
-    +sagasBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nvistaTramitacion/detalle  «delegan tal cual en consultas»
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «@Transactional: orden.proceso().marcarPasoActualOkManual()+orden.despertar()»
+    +ordenesBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\ndetalle  «delegan tal cual en consultas»
   }
-  note bottom of ServicioSoporteSagas
+  note bottom of ServicioSoporteOrdenes
     Cada intervención actúa DIRECTAMENTE sobre el agregado vía
     RepositorioOrden (un único agregado, un único guardar): no pasa
-    por los servicios de saga de ejecución. despertar() la deja
+    por ningún ProcesadorOrden de ejecución. despertar() la deja
     candidata inmediata para que el planificador la recoja (ver 08).
     @Transactional directamente en cada método público: se invocan
     cross-bean desde el adaptador de entrada, sin necesidad de self.
   end note
 
   class ServicioTicketsSoporte <<@Service>> {
-    -pendientes : PuertoSagasTicketPendiente
+    -pendientes : PuertoOrdenesTicketPendiente
     -tickets : PuertoTicketsSoporte
     -repo : RepositorioOrden
-    -self : ServicioTicketsSoporte  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionAplicacion); establecerSelf(self)»
+    -self : ServicioTicketsSoporte  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionOrderManager); establecerSelf(self)»
     +abrirTicketsPendientes() : int
-    -marcarAbierto(sagaId, apertura)  «ReintentoOptimista.ejecutar(\nself.aplicarMarcarAbierto(sagaId, apertura))»
-    +aplicarMarcarAbierto(sagaId, apertura)  «@Transactional»
+    -marcarAbierto(ordenId, apertura)  «ReintentoOptimista.ejecutar(\nself.aplicarMarcarAbierto(ordenId, apertura))»
+    +aplicarMarcarAbierto(ordenId, apertura)  «@Transactional»
   }
   note bottom of ServicioTicketsSoporte
-    1. pendientes.buscar(); 2. si no vacío, tickets.abrir(sagas) — UN
+    1. pendientes.buscar(); 2. si no vacío, tickets.abrir(ordenes) — UN
     ticket para todas, fuera de tx; 3. marcarAbierto por cada una
     llama a self.aplicarMarcarAbierto(...) -- vía proxy, para que
     @Transactional no se ignore por auto-invocación -- (at-least-once:
@@ -102,44 +105,75 @@ package "servicio.comun" {
   end note
 }
 
-package "puerto.salida" {
-  interface PuertoConsultaSagasSoporte {
-    +sagasBloqueadas() / sagasEnEjecucion()
-    +sagasConTicketPendiente() / buscar(filtro)
-    +vistaTramitacion(externalId) / detalle(tipo, id)
+package "business.ordermanager.aplicacion.puerto.salida" {
+  interface PuertoConsultaOrdenesSoporte {
+    +ordenesBloqueadas() / ordenesEnEjecucion()
+    +ordenesConTicketPendiente() / buscar(filtro)
+    +porExternalId(externalId) / detalle(tipo, id)
   }
-  interface PuertoSagasTicketPendiente {
-    +buscar() : List<SagaTicketPendiente>
-    record SagaTicketPendiente(tipo, sagaId, externalId, intentos)
+  interface PuertoOrdenesTicketPendiente {
+    +buscar() : List<OrdenTicketPendiente>
+    record OrdenTicketPendiente(tipo, ordenId, externalId, intentos)
     «intentos >= 8 AND ticket_abierto_en IS NULL AND resultado IS NULL»
   }
   interface PuertoTicketsSoporte {
-    +abrir(List<SagaTicketPendiente>)
+    +abrir(List<OrdenTicketPendiente>)
     «UN ticket para todas: texto en el log, sin id»
   }
   interface "RepositorioOrden,\nPuertoMensajesProcesados (ver 17)" as PuertosNucleo
 }
 
-CasoUsoIntervenirSaga <|.. ServicioSoporteSagas
-CasoUsoConsultarSagasSoporte <|.. ServicioSoporteSagas
+CasoUsoIntervenirOrden <|.. ServicioSoporteOrdenes
+CasoUsoConsultarOrdenesSoporte <|.. ServicioSoporteOrdenes
 CasoUsoAbrirTicketsPendientes <|.. ServicioTicketsSoporte
 CasoUsoLimpiarDatosAntiguos <|.. ServicioLimpiezaDatos
 
-ServicioSoporteSagas --> PuertoConsultaSagasSoporte
-ServicioSoporteSagas --> PuertosNucleo
-ServicioTicketsSoporte --> PuertoSagasTicketPendiente
+ServicioSoporteOrdenes --> PuertoConsultaOrdenesSoporte
+ServicioSoporteOrdenes --> PuertosNucleo
+ServicioTicketsSoporte --> PuertoOrdenesTicketPendiente
 ServicioTicketsSoporte --> PuertoTicketsSoporte
 ServicioTicketsSoporte --> PuertosNucleo
 ServicioTicketsSoporte ..> Reintento
 ServicioLimpiezaDatos --> PuertosNucleo
 
+package "business.sagas.aplicacion" {
+  interface CasoUsoCancelarTramitacion {
+    +cancelarPrincipal(id, quien, motivo)
+  }
+  interface CasoUsoVistaTramitacion {
+    +vistaTramitacion(externalId) : VistaTramitacion
+    record VistaTramitacion(externalId, principal, secundarias)
+  }
+  class ServicioCancelarTramitacion <<@Service>> {
+    -repo : RepositorioOrden
+    +cancelarPrincipal(id, quien, motivo)  «@Transactional: (SagaPrincipal) orden.proceso();\nsaga.cancelar(quien, motivo); orden.despertar(ahora)»
+  }
+  class ServicioVistaTramitacion <<@Service>> {
+    -consultas : PuertoConsultaOrdenesSoporte
+    +vistaTramitacion(externalId) : VistaTramitacion  «consultas.porExternalId(externalId),\nparticiona por SagaPrincipal.TIPO»
+  }
+  CasoUsoCancelarTramitacion <|.. ServicioCancelarTramitacion
+  CasoUsoVistaTramitacion <|.. ServicioVistaTramitacion
+  ServicioCancelarTramitacion --> PuertosNucleo
+  ServicioVistaTramitacion --> PuertoConsultaOrdenesSoporte
+}
+note bottom of ServicioCancelarTramitacion
+  Extraídos de lo que antes era ServicioSoporteSagas.cancelarPrincipal
+  (cast a SagaPrincipal) y AdaptadorConsultaSagasSoporte.vistaTramitacion
+  (switches FSM por tipo). Son específicos de sagas: solo la
+  principal es cancelable y solo una tramitación de 4 sagas tiene
+  "vista de conjunto" — el motor no conoce ninguno de los dos
+  conceptos. Dependen de RepositorioOrden/PuertoConsultaOrdenesSoporte
+  (motor) en dirección legal sagas -> ordermanager (ver 14).
+end note
+
 note as NRuteo
-  A diferencia del diseño anterior, ServicioSoporteSagas y
-  ServicioTicketsSoporte ya NO delegan en los servicios de saga
-  (ServicioSagaPrincipal/Secundaria1/2/3 — ver 18-21): mutan
-  OrdenRoot/Saga directamente vía RepositorioOrden. La
+  A diferencia del diseño anterior, ServicioSoporteOrdenes y
+  ServicioTicketsSoporte ya NO delegan en ningún ProcesadorOrden de
+  ejecución (ServicioSagaPrincipal/Secundaria1/2/3 — ver 18-21):
+  mutan OrdenRoot/Proceso directamente vía RepositorioOrden. La
   ejecución real de la compensación tras cancelarPrincipal() la
-  recoge, asíncrona, el propio bucle de ServicioContinuarSaga
+  recoge, asíncrona, el propio bucle de ServicioContinuarOrden
   (ver 08 y 17).
 end note
 @enduml

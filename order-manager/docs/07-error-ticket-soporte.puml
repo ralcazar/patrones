@@ -5,8 +5,8 @@ box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorTicketsSoporte\n(@Scheduled 0 0 8-17/3 * * *)" as PLAN
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSaga\n(cualquiera de los 4)" as ORQ
+  participant "ServicioContinuarOrden" as CONT
+  participant "ProcesadorOrden\n(cualquiera de los 4\nservicios de saga)" as ORQ
   participant "ServicioTicketsSoporte" as STICK
 end box
 box "Dominio" #FBF5EF
@@ -15,15 +15,15 @@ box "Dominio" #FBF5EF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
-  participant "PuertoSagasTicketPendiente\n(AdaptadorSagasTicketPendiente)" as PPEND
+  participant "PuertoOrdenesTicketPendiente\n(AdaptadorOrdenesTicketPendiente)" as PPEND
   participant "PuertoTicketsSoporte\n(AdaptadorTicketsLog)" as TICK
 end box
 
-== Un paso falla: ServicioContinuarSaga programa el reintento sobre la orden ya cargada ==
+== Un paso falla: ServicioContinuarOrden programa el reintento sobre la orden ya cargada ==
 [-> CONT : continuarSiguiente() (ver 02/04/05/06)
 activate CONT
-CONT -> CONT : reclamarYEjecutar(sagaId, tipo)
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
 return orden (intentos = N)
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORQ : puertoPasoN.ejecutar(cmd) -- REST fuera de tx
@@ -62,19 +62,19 @@ end note
 PLAN -> STICK ++ : abrirTicketsPendientes()
 STICK -> PPEND ++ : buscar()
 PPEND -> PPEND : SELECT ... WHERE intentos >= 8\nAND ticket_abierto_en IS NULL AND resultado IS NULL
-return [SagaTicketPendiente(tipo, sagaId, externalId, intentos), ...]
-alt sagas.isEmpty()
+return [OrdenTicketPendiente(tipo, ordenId, externalId, intentos), ...]
+alt ordenes.isEmpty()
   STICK --> PLAN : 0 (sin ticket)
-else hay sagas pendientes
-  STICK -> TICK ++ : abrir(sagas) -- UN ticket para TODAS
+else hay órdenes pendientes
+  STICK -> TICK ++ : abrir(ordenes) -- UN ticket para TODAS
   TICK -> TICK : log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\n(no devuelve id: no se conoce)
   return
   STICK -> STICK : apertura = Instant.now()
-  loop por cada saga pendiente
-    STICK -> STICK : marcarAbierto(sagaId, apertura)
+  loop por cada orden pendiente
+    STICK -> STICK : marcarAbierto(ordenId, apertura)
     STICK -> STICK : ReintentoOptimista.ejecutar(...)\n(si conflicto optimista, recarga y reintenta)
     group Transacción
-      STICK -> REPO ++ : cargar(sagaId)
+      STICK -> REPO ++ : cargar(ordenId)
       return orden
       STICK -> ORDEN ++ : marcarTicketAbierto(apertura)
       ORDEN -> ORDEN : ticketAbiertoEn = apertura
@@ -83,7 +83,7 @@ else hay sagas pendientes
       return
     end
   end
-  STICK --> PLAN : sagas.size()
+  STICK --> PLAN : ordenes.size()
 end
 deactivate STICK
 

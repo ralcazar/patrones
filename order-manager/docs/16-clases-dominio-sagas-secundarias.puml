@@ -1,10 +1,10 @@
 @startuml 16-clases-dominio-sagas-secundarias
-title Dominio — las 3 sagas secundarias (dominio.sagasecundaria1/2/3)
+title Dominio — las 3 sagas secundarias (business.sagas.dominio.sagasecundaria1/2/3)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "Saga<E>\n(dominio.comun — ver 14)" as Saga {
+abstract class "Proceso<E>\n(business.ordermanager.dominio — ver 14)" as Proceso {
   ciclo de vida común: comandoActual / aplicarYAvanzar /
   terminada / resultadoFinal / marcarPasoActualOkManual
   Sin version propia: la controla OrdenRoot (ver 14).
@@ -12,11 +12,13 @@ abstract class "Saga<E>\n(dominio.comun — ver 14)" as Saga {
 
 package "dominio.sagasecundaria1" {
   class SagaSecundaria1 <<@Entity>> {
+    +{static} TIPO : TipoOrden = new TipoOrden("SECUNDARIA1")
     -refPaso1 : RefPaso1  «final»
     -refInicio : RefInicio
     -refConfirmacion : RefConfirmacion
     +{static} crear(id, ArranqueSecundaria1) : SagaSecundaria1
     +{static} rehidratar(id, externalId, refPaso1,\nrefInicio, refConfirmacion, estado, auditoria)
+    +tipo() : TipoOrden  «TIPO»
     +comandoActual() : ComandoPasoSecundaria1
     +aplicarYAvanzar(ResultadoPasoSecundaria1)
     +terminada() : boolean  «estado == TERMINADA»
@@ -45,10 +47,12 @@ package "dominio.sagasecundaria1" {
 
 package "dominio.sagasecundaria2" {
   class SagaSecundaria2 <<@Entity>> {
+    +{static} TIPO : TipoOrden = new TipoOrden("SECUNDARIA2")
     -refPaso5 : RefPaso5  «final»
     -refRespuesta : RefRespuesta
     +{static} crear(id, ArranqueSecundaria2) : SagaSecundaria2
     +{static} rehidratar(id, externalId, refPaso5,\nrefRespuesta, estado, auditoria)
+    +tipo() : TipoOrden  «TIPO»
     +comandoActual() : ComandoPasoSecundaria2  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria2.Respuesta)  «delega en respuestaRecibida()»
     +terminada() : boolean  «estado == TERMINADA»
@@ -78,10 +82,12 @@ package "dominio.sagasecundaria2" {
 
 package "dominio.sagasecundaria3" {
   class SagaSecundaria3 <<@Entity>> {
+    +{static} TIPO : TipoOrden = new TipoOrden("SECUNDARIA3")
     -refPaso7 : RefPaso7  «final»
     -refEjecucion : RefEjecucion
     +{static} crear(id, ArranqueSecundaria3) : SagaSecundaria3
     +{static} rehidratar(id, externalId, refPaso7,\nrefEjecucion, estado, auditoria)
+    +tipo() : TipoOrden  «TIPO»
     +comandoActual() : ComandoPasoSecundaria3  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria3.Ejecutada)  «-> TERMINADA directo»
     +terminada() : boolean  «estado == TERMINADA»
@@ -103,9 +109,9 @@ package "dominio.sagasecundaria3" {
   end note
 }
 
-Saga <|-down- SagaSecundaria1
-Saga <|-down- SagaSecundaria2
-Saga <|-down- SagaSecundaria3
+Proceso <|-down- SagaSecundaria1
+Proceso <|-down- SagaSecundaria2
+Proceso <|-down- SagaSecundaria3
 
 SagaSecundaria1 ..> ComandoPasoSecundaria1
 SagaSecundaria1 ..> ResultadoPasoSecundaria1
@@ -118,8 +124,10 @@ note as NNace
   Las 3 nacen cuando la principal alcanza TERMINADA (después del
   punto de no retorno), una por cada ContextoArranque de
   contextosArranque() (ver 03 y 15): nunca se cancelan ni
-  compensan. Cada una es su propio OrdenRoot (ver 14): no hay FK
-  ni relación de objetos con la principal, solo el externalId
-  compartido.
+  compensan. Cada TIPO (SECUNDARIA1/2/3) es la constante que
+  registra el tipo de orden ante el motor, igual que en la
+  principal (ver 15). Cada una es su propio OrdenRoot (ver 14): no
+  hay FK ni relación de objetos con la principal, solo el
+  externalId compartido.
 end note
 @enduml

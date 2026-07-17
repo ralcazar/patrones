@@ -1,12 +1,12 @@
-@startuml 14-clases-dominio-comun
-title Dominio — shared kernel (dominio.comun): el agregado único OrdenRoot ⊃ Saga
+@startuml 14-clases-dominio-ordermanager
+title Dominio — motor genérico (business.ordermanager.dominio): el agregado único OrdenRoot ⊃ Proceso
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
 class OrdenRoot <<@AggregateRoot>> {
-  -sagaId : SagaId  «@Identity»
-  -saga : Saga<?>
+  -id : OrdenId  «@Identity»
+  -proceso : Proceso<?>
   -intentos : int
   -proximoReintentoEn : Instant
   -tokenTrabajador : UUID
@@ -14,8 +14,8 @@ class OrdenRoot <<@AggregateRoot>> {
   -ticketAbiertoEn : Instant
   -resultado : ResultadoOrden
   -version : long  «ÚNICA del agregado»
-  +{static} nueva(saga, ahora) : OrdenRoot
-  +{static} rehidratar(saga, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, resultado, version)
+  +{static} nueva(proceso, ahora) : OrdenRoot
+  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, resultado, version)
   +asignarToken(token, lease, ahora)
   +renovarLease(lease, ahora)
   +tieneTokenVigente(ahora) : boolean
@@ -27,25 +27,26 @@ class OrdenRoot <<@AggregateRoot>> {
   +programarReintento(PoliticaReintentos, ahora)  «intentos++»
   +finalizar(ResultadoOrden)
   +estaViva() : boolean  «resultado == null»
-  +saga() : Saga<?>
-  +tipo() : TipoSaga  «delega en saga.tipo()»
+  +proceso() : Proceso<?>
+  +id() : OrdenId
+  +tipo() : TipoOrden  «delega en proceso.tipo()»
 }
 note right of OrdenRoot
   Reloj determinista: nunca Instant.now(); todo método que
   depende del tiempo recibe Instant ahora como parámetro,
   aportado por la capa de aplicación. Una sola version protege
-  ejecución (intentos/lease/ticket/resultado) + negocio (saga):
+  ejecución (intentos/lease/ticket/resultado) + negocio (proceso):
   varios flujos mutan ambos en la misma tx (consumer Kafka,
   soporte, arranque de secundarias), así que separarlos en dos
   agregados violaría "un agregado por transacción".
 end note
 
-abstract class "Saga<E extends Enum<E>>" as Saga <<@Entity>> {
-  #id : SagaId  «@Identity»
+abstract class "Proceso<E extends Enum<E>>" as Proceso <<@Entity>> {
+  #id : OrdenId  «@Identity»
   #externalId : ExternalId
   #estado : E
   #auditoria : List<AuditoriaIntervencion>
-  {abstract} +tipo() : TipoSaga
+  {abstract} +tipo() : TipoOrden
   {abstract} +comandoActual() : ComandoPaso
   {abstract} +aplicarYAvanzar(ResultadoPaso)
   {abstract} +terminada() : boolean
@@ -54,11 +55,13 @@ abstract class "Saga<E extends Enum<E>>" as Saga <<@Entity>> {
   #auditar(quien, accion, detalle)
   +id() / +externalId() / +estado() / +auditoria()
 }
-note right of Saga
+note right of Proceso
   Entidad interna del agregado: SOLO negocio (la FSM E y la
   auditoría). Sin version propia (la controla OrdenRoot) y sin
   reintentos/tiempo/token: eso es responsabilidad de OrdenRoot.
-  4 subclases — ver 15 (principal) y 16 (las 3 secundarias).
+  Clase neutra del motor: no conoce "saga". Sus subclases
+  concretas (SagaPrincipal, SagaSecundariaN) viven en
+  business.sagas.dominio — ver 15 y 16.
 end note
 
 class PoliticaReintentos {
@@ -73,12 +76,16 @@ note bottom of PoliticaReintentos
   planificador de tickets (ver 07 y 17).
 end note
 
-enum TipoSaga {
-  PRINCIPAL
-  SECUNDARIA1
-  SECUNDARIA2
-  SECUNDARIA3
+class TipoOrden <<@ValueObject, record>> {
+  valor : String
 }
+note bottom of TipoOrden
+  VO abierto (no un enum cerrado): cualquier aplicación que
+  reutilice el motor define sus propios tipos (p. ej. las
+  constantes TIPO de las sagas — ver 15/16) sin tocar este
+  paquete. Antes era el enum cerrado TipoSaga.
+end note
+
 enum ResultadoOrden {
   FINALIZADA_OK
   FINALIZADA_COMPENSADA
@@ -86,30 +93,21 @@ enum ResultadoOrden {
 
 interface ComandoPaso <<marcadora>>
 interface ResultadoPaso <<marcadora>>
-interface ContextoArranque <<sealed>> {
-  ExternalId externalId()
-  ArranqueSecundaria1(externalId, refPaso1)
-  ArranqueSecundaria2(externalId, refPaso5)
-  ArranqueSecundaria3(externalId, refPaso7)
-}
 
 class ConcurrenciaOptimistaException <<RuntimeException>> {
-  (SagaId id, long versionEsperada)
+  (OrdenId id, long versionEsperada)
 }
 class ExcepcionServicioExterno <<RuntimeException>> {
   -motivo : MotivoFallo  «transient»
 }
 class PasoNoIntervenibleException <<RuntimeException>> {
-  (SagaId id, String detalle)
+  (OrdenId id, String detalle)
 }
 class DatosManualesRequeridosException <<RuntimeException>> {
-  (SagaId id, String detalle)
+  (OrdenId id, String detalle)
 }
-class PuntoNoRetornoSuperadoException <<RuntimeException>> {
-  (SagaId id)
-}
-class SagaYaCompletadaException <<RuntimeException>> {
-  (SagaId id)
+class OrdenYaCompletadaException <<RuntimeException>> {
+  (OrdenId id)
 }
 
 class MotivoFallo <<@ValueObject>> {
@@ -118,31 +116,31 @@ class MotivoFallo <<@ValueObject>> {
   esReintentable : boolean
   +{static} timeout() / errorTecnico(detalle) / errorNegocio(detalle)
 }
-class "SagaId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion,\nRefPaso1 / RefPaso5 / RefPaso7" as VOs <<@ValueObject>>
+class "OrdenId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion" as VOs <<@ValueObject>>
 
-OrdenRoot "1" *-- "1" Saga : saga
+OrdenRoot "1" *-- "1" Proceso : proceso
 OrdenRoot ..> PoliticaReintentos : programarReintento(politica, ahora)
 OrdenRoot ..> ResultadoOrden : resultado
 OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide
-Saga ..> TipoSaga : tipo()
-Saga ..> ComandoPaso : comandoActual()
-Saga ..> ResultadoPaso : aplicarYAvanzar()
-Saga ..> ResultadoOrden : resultadoFinal()
-Saga ..> PasoNoIntervenibleException
-Saga ..> DatosManualesRequeridosException
+Proceso ..> TipoOrden : tipo()
+Proceso ..> ComandoPaso : comandoActual()
+Proceso ..> ResultadoPaso : aplicarYAvanzar()
+Proceso ..> ResultadoOrden : resultadoFinal()
+Proceso ..> PasoNoIntervenibleException
+Proceso ..> DatosManualesRequeridosException
 ExcepcionServicioExterno ..> MotivoFallo
 
 ' Layout: columnas sin cruces
-TipoSaga -[hidden]down- ResultadoOrden
+TipoOrden -[hidden]down- ResultadoOrden
 ComandoPaso -[hidden]down- ResultadoPaso
-ResultadoPaso -[hidden]down- ContextoArranque
 MotivoFallo -[hidden]down- VOs
 
-note bottom of ContextoArranque
-  Contexto recortado con el que arranca cada saga secundaria (lo
-  crea SagaPrincipal.contextosArranque() al llegar a
-  TERMINADA — ver 03 y 15). RefPaso1/RefPaso5/RefPaso7 viven en
-  este paquete porque los produce la principal y los consumen
-  las secundarias (shared kernel mínimo).
+note as NFrontera
+  Regla de frontera (ArchUnit, CLAUDE.md): ninguna clase de
+  business.ordermanager (ni infraestructure.ordermanager) puede
+  depender de business.sagas ni de infraestructure.sagas. Este
+  paquete es reutilizable con cualquier tipo de orden — ver
+  25-clases-dominio-comun-sagas para el shared kernel específico
+  de las sagas (ContextoArranque, RefPaso1/5/7).
 end note
 @enduml

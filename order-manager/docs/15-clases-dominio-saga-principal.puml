@@ -1,19 +1,21 @@
 @startuml 15-clases-dominio-saga-principal
-title Dominio — saga principal (dominio.sagaprincipal)
+title Dominio — saga principal (business.sagas.dominio.sagaprincipal)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
 
-abstract class "Saga<EstadoSagaPrincipal>\n(dominio.comun — ver 14)" as Saga {
+abstract class "Proceso<EstadoSagaPrincipal>\n(business.ordermanager.dominio — ver 14)" as Proceso {
   ciclo de vida común: comandoActual / aplicarYAvanzar /
   terminada / resultadoFinal / marcarPasoActualOkManual
 }
 
 package "dominio.sagaprincipal" {
   class SagaPrincipal <<@Entity>> {
+    +{static} TIPO : TipoOrden = new TipoOrden("PRINCIPAL")
     -ctx : ContextoTramitacion
     +{static} crear(id, externalId, datos, datoNegocio2) : SagaPrincipal
     +{static} rehidratar(id, externalId, ctx, estado, auditoria)
+    +tipo() : TipoOrden  «TIPO»
     +comandoActual() : ComandoPasoPrincipal  «switch(estado)»
     +aplicarYAvanzar(ResultadoPasoPrincipal)  «ctx = ctx.aplicar(r); avanzar()»
     +terminada() : boolean  «TERMINADA || CANCELADA»
@@ -26,13 +28,17 @@ package "dominio.sagaprincipal" {
     +contexto() : ContextoTramitacion
   }
   note right of SagaPrincipal
-    PASO1..PASO8 síncronos. Punto de no retorno: PASO7_HECHO ya
-    no es cancelable (PuntoNoRetornoSuperadoException). cancelar():
-    TERMINADA->SagaYaCompletadaException; COMPENSAR_*/CANCELADA->
-    no-op; si no, según el estado, COMPENSAR_PASO2/COMPENSAR_PASO1/
-    CANCELADA. Al llegar a TERMINADA (tras PASO8), la capa de
-    aplicación crea 3 agregados hijos (ver 03) — contextosArranque()
-    los recorta con exactamente lo que cada secundaria necesita.
+    PASO1..PASO8 síncronos. TIPO es la constante que registra este
+    tipo de orden ante el motor (antes, el enum cerrado TipoSaga.
+    PRINCIPAL) — la usan ServicioSagaPrincipal.tipo() (ver 18) y
+    SoporteSagaPrincipal (ver 23). Punto de no retorno: PASO7_HECHO
+    ya no es cancelable (PuntoNoRetornoSuperadoException, definida
+    en este mismo paquete). cancelar(): TERMINADA->
+    OrdenYaCompletadaException; COMPENSAR_*/CANCELADA-> no-op; si
+    no, según el estado, COMPENSAR_PASO2/COMPENSAR_PASO1/CANCELADA.
+    Al llegar a TERMINADA (tras PASO8), la capa de aplicación crea 3
+    agregados hijos (ver 03) — contextosArranque() los recorta con
+    exactamente lo que cada secundaria necesita.
   end note
 
   enum EstadoSagaPrincipal {
@@ -69,14 +75,20 @@ package "dominio.sagaprincipal" {
   }
   class "RefPaso2, RefPaso3, RefPaso4,\nRefPaso6, RefPaso8" as RefsPropias <<@ValueObject>>
   class "DatoNegocio2, DatoNegocio3" as Datos <<@ValueObject>>
+  class PuntoNoRetornoSuperadoException <<RuntimeException>> {
+    (OrdenId id)
+  }
 }
 
-class "RefPaso1, RefPaso5, RefPaso7\n(dominio.comun — ver 14)" as RefsComunes <<@ValueObject>>
+class "RefPaso1, RefPaso5, RefPaso7\n(business.sagas.dominio.comun — ver 25)" as RefsComunes <<@ValueObject>>
+class "OrdenYaCompletadaException\n(business.ordermanager.dominio — ver 14)" as OrdenYaCompletada <<RuntimeException>>
 
-Saga <|-down- SagaPrincipal
+Proceso <|-down- SagaPrincipal
 SagaPrincipal *-- ContextoTramitacion : ctx
 SagaPrincipal ..> ComandoPasoPrincipal : comandoActual()
 SagaPrincipal ..> ResultadoPasoPrincipal : aplicarYAvanzar()
+SagaPrincipal ..> PuntoNoRetornoSuperadoException : cancelar() tras PASO7_HECHO
+SagaPrincipal ..> OrdenYaCompletada : cancelar() en TERMINADA
 ContextoTramitacion o-- RefsPropias
 ContextoTramitacion o-- RefsComunes
 ContextoTramitacion o-- Datos

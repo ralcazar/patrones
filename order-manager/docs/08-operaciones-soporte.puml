@@ -1,5 +1,5 @@
 @startuml 08-operaciones-soporte
-title Operaciones de soporte: consultar, intervenir y cancelar con compensación
+title Operaciones de soporte: consultar, intervenir (motor) y cancelar (saga) con compensación
 
 box "Adaptadores de entrada" #EFF5FB
   actor "Equipo de soporte" as OP
@@ -8,9 +8,10 @@ box "Adaptadores de entrada" #EFF5FB
   participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
 box "Aplicación" #F5FBEF
-  participant "ServicioSoporteSagas" as SOP
-  participant "ServicioContinuarSaga" as CONT
-  participant "ServicioSagaPrincipal\n(ServicioSaga)" as ORQ
+  participant "ServicioSoporteOrdenes" as SOP
+  participant "ServicioCancelarTramitacion\n(business.sagas)" as CANC
+  participant "ServicioContinuarOrden" as CONT
+  participant "ServicioSagaPrincipal\n(ProcesadorOrden)" as ORQ
 end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
@@ -18,16 +19,16 @@ box "Dominio" #FBF5EF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
-  participant "AdaptadorConsultaSagasSoporte\n(queries BBDD, CQRS ligero)" as LECT
+  participant "AdaptadorConsultaOrdenesSoporte\n(queries BBDD, CQRS ligero)" as LECT
   participant "PuertoPaso2 / PuertoPaso1\n(compensaciones REST)" as PCOMP
 end box
 
 == Consultas (modelo de lectura, sin cargar agregados) ==
-OP -> REST ++ : ver sagas bloqueadas / en ejecución / con ticket
-REST -> SOP ++ : sagasBloqueadas() / sagasEnEjecucion() /\nsagasConTicketPendiente() / buscar(FiltroSagas)
-SOP -> LECT ++ : (delega tal cual en PuertoConsultaSagasSoporte)
-LECT -> LECT : SELECT sobre orden JOIN saga\n(intentos>=8 / token vigente / ticket pendiente / filtro dinámico)
-return [SagaResumen(id, tipo, externalId, estado,\nintentos, ticketAbiertoEn, proximoReintentoEn, ...)]
+OP -> REST ++ : ver órdenes bloqueadas / en ejecución / con ticket
+REST -> SOP ++ : ordenesBloqueadas() / ordenesEnEjecucion() /\nordenesConTicketPendiente() / buscar(FiltroOrdenes)
+SOP -> LECT ++ : (delega tal cual en PuertoConsultaOrdenesSoporte)
+LECT -> LECT : SELECT sobre orden JOIN proceso\n(intentos>=8 / token vigente / ticket pendiente / filtro dinámico)
+return [OrdenResumen(id, tipo, externalId, estado,\nintentos, ticketAbiertoEn, proximoReintentoEn, ...)]
 return
 return listado
 
@@ -55,8 +56,10 @@ REST -> SOP ++ : marcarPasoOk(tipo, id, nombrePaso, quien,\njustificacion, datos
 group Transacción (@Transactional en el propio método, sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
-  SOP -> SAGA ++ : (orden.saga()).marcarPasoActualOkManual(\nquien, justificacion, datosManuales)
-  SAGA -> SAGA : construye el ResultadoPaso a partir de datosManuales\n(lanza DatosManualesRequeridosException si faltan);\naplica y avanza(); auditar(MARCAR_OK_MANUAL)
+  SOP -> ORDEN ++ : orden.proceso()
+  return proceso
+  SOP -> ORDEN ++ : proceso.marcarPasoActualOkManual(\nquien, justificacion, datosManuales)
+  ORDEN -> ORDEN : construye el ResultadoPaso a partir de datosManuales\n(lanza DatosManualesRequeridosException si faltan);\naplica y avanza(); auditar(MARCAR_OK_MANUAL)
   return
   SOP -> ORDEN ++ : despertar(Instant.now())
   return
@@ -66,17 +69,19 @@ end
 return
 return 200 OK
 
-== Cancelar la saga principal: dispara la compensación ==
+== Cancelar la saga principal: dispara la compensación (caso de uso específico de sagas) ==
 OP -> REST ++ : cancelar tramitación (id, motivo)
-REST -> SOP ++ : cancelarPrincipal(id, quien, motivo)
+REST -> CANC ++ : cancelarPrincipal(id, quien, motivo)
 group Transacción (@Transactional en el propio método, sin self)
-  SOP -> REPO ++ : cargar(id)
+  CANC -> REPO ++ : cargar(id)
   return orden
-  SOP -> SAGA ++ : (orden.saga()).cancelar(quien, motivo)
+  CANC -> ORDEN ++ : orden.proceso()
+  return saga (cast a SagaPrincipal)
+  CANC -> SAGA ++ : saga.cancelar(quien, motivo)
   alt estado == TERMINADA
-    SAGA --> SOP : lanza SagaYaCompletadaException
+    SAGA --> CANC : lanza OrdenYaCompletadaException
   else estado == PASO7_HECHO (punto de no retorno)
-    SAGA --> SOP : lanza PuntoNoRetornoSuperadoException
+    SAGA --> CANC : lanza PuntoNoRetornoSuperadoException
     note right of REST : el adaptador REST lo mapea a 409 Conflict
   else COMPENSAR_PASO2 / COMPENSAR_PASO1 / CANCELADA
     SAGA -> SAGA : no-op idempotente
@@ -84,19 +89,23 @@ group Transacción (@Transactional en el propio método, sin self)
     SAGA -> SAGA : estado = COMPENSAR_PASO2 (si >= PASO2_HECHO),\nCOMPENSAR_PASO1 (si >= PASO1_HECHO) o CANCELADA;\nauditar(CANCELAR, motivo)
   end
   deactivate SAGA
-  SOP -> ORDEN ++ : despertar(Instant.now())
+  CANC -> ORDEN ++ : despertar(Instant.now())
   return
-  SOP -> REPO ++ : guardar(orden)
+  CANC -> REPO ++ : guardar(orden)
   return
 end
 return
 return 200 OK
 
-note over SOP, REPO
-  cancelar() solo cambia el estado y despierta la orden: no
-  ejecuta ningún REST de compensación de forma síncrona. Son los
-  workers pull quienes, al recogerla despierta, disparan la
-  compensación real por el mismo bucle que 02.
+note over CANC, REPO
+  cancelarPrincipal() actúa directamente sobre el agregado a
+  través de RepositorioOrden (el mismo puerto genérico del motor):
+  solo cambia el estado y despierta la orden, sin ejecutar ningún
+  REST de compensación de forma síncrona. Son los workers pull
+  quienes, al recogerla despierta, disparan la compensación real
+  por el mismo bucle que 02. cancelarPrincipal es específico de
+  sagas (solo la principal es cancelable): vive en
+  business.sagas.aplicacion.servicio.comun, no en ServicioSoporteOrdenes.
 end note
 
 == Compensación asíncrona: un worker recoge la orden despertada ==
@@ -108,11 +117,13 @@ PLAN ->> TRAB : trabajar()  «@Async("ejecutorContinuacion"), máx N»
 activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-return [CandidataOrden(sagaId, PRINCIPAL), ...]
-CONT -> CONT : reclamarYEjecutar(sagaId, PRINCIPAL) (reclamo de token: ver 02)
-CONT -> REPO ++ : cargar(sagaId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
+return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo) (reclamo de token: ver 02)
+CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
+ORQ -> ORDEN ++ : orden.proceso()
+return saga
 ORQ -> SAGA ++ : saga.estado()
 return COMPENSAR_PASO2 (p. ej.)
 ORQ -> ORQ : ejecutarCompensacion(orden, saga)
@@ -120,7 +131,7 @@ ORQ -> SAGA ++ : saga.contexto()
 return ctx (refPaso1, refPaso2, ...)
 ORQ -> PCOMP ++ : puertoPaso2.compensar(CompensarPaso2(ctx.refPaso2()))\n-- REST fuera de tx
 return ok
-ORQ -> ORQ ++ : self.aplicarCompensacion(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionAplicacion)
+ORQ -> ORQ ++ : self.aplicarCompensacion(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción única
   ORQ -> SAGA ++ : saga.compensacionCompletada()
   SAGA -> SAGA : COMPENSAR_PASO2 -> COMPENSAR_PASO1
@@ -149,7 +160,7 @@ note over ORQ, SAGA
   ejecutarCompensacion): solo orden.finalizar(saga.resultadoFinal())
   (FINALIZADA_COMPENSADA) y guarda. Si un puerto de compensación
   lanza ExcepcionServicioExterno, se propaga igual que un paso
-  normal: ServicioContinuarSaga programa reintento (ver 07); ya
+  normal: ServicioContinuarOrden programa reintento (ver 07); ya
   no existe el estado BLOQUEADO_SOPORTE de la versión anterior.
 end note
 @enduml
