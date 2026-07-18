@@ -142,9 +142,10 @@ note as NIniciar
   CasoUsoIniciarTramitacion / ServicioIniciarTramitacion (crea el
   agregado inicial) NO viven aquí: son específicos de cómo arranca
   una tramitación de sagas y viven en business.sagas.aplicacion —
-  ver 01. El motor no expone ningún caso de uso de "creación
-  inicial": cada aplicación que lo reutilice decide cómo arranca sus
-  propias órdenes usando RepositorioOrden.crear(...) directamente.
+  ver 22 (clases) y 01 (secuencia). El motor no expone ningún caso
+  de uso de "creación inicial": cada aplicación que lo reutilice
+  decide cómo arranca sus propias órdenes usando
+  RepositorioOrden.crear(...) directamente.
 end note
 
 @enduml

@@ -90,8 +90,8 @@ package "business.ordermanager.aplicacion.servicio" {
   note bottom of ServicioLimpiezaDatos
     @Transactional directo en el método (cross-bean, sin self):
     repo.purgarFinalizadasAntesDe(corte) +
-    dedup.purgarAnterioresA(corte). Solo borra resultado != null y
-    antiguo; cualquier orden viva sobrevive.
+    dedup.purgarAnterioresA(corte). Solo borra completadaEn != null
+    y antigua; cualquier orden viva sobrevive.
   }
 
   class "ReintentoOptimista" as Reintento <<package-private>> {
@@ -114,7 +114,7 @@ package "business.ordermanager.aplicacion.puerto.salida" {
   interface PuertoOrdenesTicketPendiente {
     +buscar() : List<OrdenTicketPendiente>
     record OrdenTicketPendiente(tipo, ordenId, externalId, intentos)
-    «intentos >= 8 AND ticket_abierto_en IS NULL AND resultado IS NULL»
+    «intentos >= 8 AND ticket_abierto_en IS NULL AND completada_en IS NULL»
   }
   interface PuertoTicketsSoporte {
     +abrir(List<OrdenTicketPendiente>)
@@ -144,6 +144,13 @@ package "business.sagas.aplicacion" {
     +vistaTramitacion(externalId) : VistaTramitacion
     record VistaTramitacion(externalId, principal, secundarias)
   }
+  interface CasoUsoIniciarTramitacion {
+    +iniciar(ComandoIniciarTramitacion) : OrdenId
+    record ComandoIniciarTramitacion(externalId)
+  }
+  interface CasoUsoPurgarDatosNegocioHuerfanos {
+    +purgarHuerfanos() : long
+  }
   class ServicioCancelarTramitacion <<@Service>> {
     -repo : RepositorioOrden
     +cancelarPrincipal(id, quien, motivo)  «@Transactional: (SagaPrincipal) orden.proceso();\nsaga.cancelar(quien, motivo); orden.despertar(ahora)»
@@ -152,11 +159,30 @@ package "business.sagas.aplicacion" {
     -consultas : PuertoConsultaOrdenesSoporte
     +vistaTramitacion(externalId) : VistaTramitacion  «consultas.porExternalId(externalId),\nparticiona por SagaPrincipal.TIPO»
   }
+  class ServicioIniciarTramitacion <<@Service>> {
+    -repo : RepositorioOrden
+    -repoDatos : RepositorioDatosNegocio
+    -puertoDatosNegocio : PuertoDatosNegocio
+    -busqueda : PuertoBusquedaTramitacion
+    -self : ServicioIniciarTramitacion  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+    +iniciar(cmd) : OrdenId
+    +crearAgregados(externalId, respuesta) : OrdenId  «@Transactional»
+  }
+  class ServicioPurgarDatosNegocioHuerfanos <<@Service>> {
+    -repoDatos : RepositorioDatosNegocio
+    +purgarHuerfanos() : long  «@Transactional»
+  }
   CasoUsoCancelarTramitacion <|.. ServicioCancelarTramitacion
   CasoUsoVistaTramitacion <|.. ServicioVistaTramitacion
+  CasoUsoIniciarTramitacion <|.. ServicioIniciarTramitacion
+  CasoUsoPurgarDatosNegocioHuerfanos <|.. ServicioPurgarDatosNegocioHuerfanos
   ServicioCancelarTramitacion --> PuertosNucleo
   ServicioVistaTramitacion --> PuertoConsultaOrdenesSoporte
+  ServicioIniciarTramitacion --> PuertosNucleo
 }
+interface "PuertoDatosNegocio,\nRepositorioDatosNegocio,\nPuertoBusquedaTramitacion\n(ver 26)" as PuertosDatosNegocio
+ServicioIniciarTramitacion --> PuertosDatosNegocio
+ServicioPurgarDatosNegocioHuerfanos --> PuertosDatosNegocio
 note bottom of ServicioCancelarTramitacion
   Extraídos de lo que antes era ServicioSoporteSagas.cancelarPrincipal
   (cast a SagaPrincipal) y AdaptadorConsultaSagasSoporte.vistaTramitacion
@@ -165,6 +191,22 @@ note bottom of ServicioCancelarTramitacion
   "vista de conjunto" — el motor no conoce ninguno de los dos
   conceptos. Dependen de RepositorioOrden/PuertoConsultaOrdenesSoporte
   (motor) en dirección legal sagas -> ordermanager (ver 14).
+end note
+note bottom of ServicioIniciarTramitacion
+  iniciar(): idempotente vía busqueda.ordenPrincipalDe(externalId);
+  si no existe, puertoDatosNegocio.obtener(externalId) fuera de tx y
+  self.crearAgregados(...) -- vía proxy --: crea DatosNegocio +
+  repoDatos.crear(...) + SagaPrincipal.crear(...) + repo.crear(orden),
+  todo en una tx; si el índice único de datos_negocio.external_id
+  rechaza la creación (carrera de 2 POST), captura
+  ExternalIdDuplicadoException y relee al ganador — ver 01 y 26.
+end note
+note bottom of ServicioPurgarDatosNegocioHuerfanos
+  @Transactional directo (cross-bean, sin self): recorre
+  repoDatos.idsHuerfanos() y repoDatos.borrar(id) por cada uno.
+  Solo hay huérfanos tras purgarFinalizadasAntesDe (motor) borrar
+  las 4 sagas de una tramitación completa — ver 26. Lo dispara
+  PlanificadorPurgaDatosNegocio (ver 24).
 end note
 
 note as NRuteo

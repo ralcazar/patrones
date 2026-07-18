@@ -1,0 +1,180 @@
+@startuml 26-clases-datos-negocio
+title El agregado DatosNegocio (business.sagas.dominio.datosnegocio): dominio, puertos y adaptador de persistencia
+!pragma layout smetana
+hide empty members
+skinparam classAttributeIconSize 0
+
+package "business.sagas.dominio.datosnegocio" {
+  class DatosNegocio <<@AggregateRoot>> {
+    -id : DatosNegocioId  «@Identity»
+    -externalId : ExternalId
+    -datoNegocio1 : DatoNegocio1
+    -datoNegocio2 : DatoNegocio2
+    -datoNegocio3 : DatoNegocio3
+    +{static} crear(id, externalId, datoNegocio1,\ndatoNegocio2, datoNegocio3) : DatosNegocio
+    +id() / +externalId() / +datoNegocio1() / +datoNegocio2() / +datoNegocio3()
+  }
+  note right of DatosNegocio
+    Correlacionado con la saga principal por ExternalId (misma
+    correlación externa que el resto de sagas, ver 15). Deliberadamente
+    SIN lista de documentos en memoria: son blobs y se piden aparte al
+    repositorio (documentosDe), para no cargarlos accidentalmente cada
+    vez que se carga el agregado.
+  end note
+
+  class DatosNegocioId <<@ValueObject, record>> {
+    valor : UUID
+    +{static} nuevo() : DatosNegocioId
+  }
+  class DatoNegocio1 <<@ValueObject, record>> {
+    valor : Integer
+  }
+  class DatoNegocio2 <<@ValueObject, record>> {
+    valor : LocalDate
+  }
+  class DatoNegocio3 <<@ValueObject, record>> {
+    valor : String
+  }
+  class DocumentoNegocio <<@Entity, record>> {
+    nombre : String
+    mimeType : String
+    contenido : byte[]
+  }
+  note right of DocumentoNegocio
+    Entidad hija de DatosNegocio, sin agregado propio: un blob con
+    su metadato. Vive fuera del agregado en memoria (ver nota de
+    arriba); su ciclo de vida lo gestiona el repositorio.
+  end note
+
+  class ExternalIdDuplicadoException <<RuntimeException>> {
+    (ExternalId externalId, Throwable causa)
+  }
+  note bottom of ExternalIdDuplicadoException
+    La lanza el adaptador de persistencia cuando el índice único de
+    datos_negocio.external_id rechaza un crear() porque ya existe una
+    fila con ese externalId (carrera de 2 POST /tramitaciones
+    simultáneos). Traduce a vocabulario de negocio el
+    DataIntegrityViolationException de Spring (infraestructura, no
+    puede cruzar a business) — mismo patrón que
+    ConcurrenciaOptimistaException con OptimisticLockingFailureException
+    (ver 14). La captura ServicioIniciarTramitacion (ver 01 y 22).
+  end note
+
+  DatosNegocio *-- DatoNegocio1
+  DatosNegocio *-- DatoNegocio2
+  DatosNegocio *-- DatoNegocio3
+}
+
+class "ExternalId\n(business.ordermanager.dominio — ver 14)" as ExternalIdRef <<@ValueObject>>
+DatosNegocio o-- ExternalIdRef : externalId
+
+package "business.sagas.aplicacion.puerto.salida" {
+  interface PuertoDatosNegocio {
+    +obtener(externalId) : RespuestaDatosNegocio
+    record RespuestaDatosNegocio(datoNegocio1, datoNegocio2,\ndatoNegocio3, documentos : List<DocumentoNegocio>)
+  }
+  note right of PuertoDatosNegocio
+    Servicio externo "DatosDeNegocio". SIN adaptador HTTP real
+    todavía: solo la interfaz, sustituida por un doble en tests (ver
+    CLAUDE.md, cobertura). Lo invoca ServicioIniciarTramitacion fuera
+    de tx, antes de crear los agregados — ver 01.
+  end note
+
+  interface RepositorioDatosNegocio {
+    +crear(DatosNegocio, List<DocumentoNegocio>)  «lanza\nExternalIdDuplicadoException»
+    +cargar(DatosNegocioId) : DatosNegocio  «SOLO escalares,\nJAMÁS carga los blobs»
+    +documentosDe(DatosNegocioId) : List<DocumentoNegocio>  «ÚNICA\nquery que toca el BLOB»
+    +buscarPorExternalId(ExternalId) : Optional<DatosNegocio>
+    +idsHuerfanos() : List<DatosNegocioId>  «sin ningún proceso que\ncomparta ya su externalId»
+    +borrar(DatosNegocioId)  «documentos primero (sin cascade),\nluego el registro»
+  }
+  note bottom of RepositorioDatosNegocio
+    Lo usa ServicioSagaPrincipal (repoDatos.cargar/documentosDe,
+    fuera de tx, PASO1/2/7 — ver 02 y 18), ServicioIniciarTramitacion
+    (crear, dentro de tx — ver 01 y 22) y
+    ServicioPurgarDatosNegocioHuerfanos (idsHuerfanos/borrar, dentro
+    de tx — ver 22).
+  end note
+}
+
+PuertoDatosNegocio ..> DocumentoNegocio
+RepositorioDatosNegocio ..> DatosNegocio
+RepositorioDatosNegocio ..> DocumentoNegocio
+RepositorioDatosNegocio ..> ExternalIdDuplicadoException : crear()
+
+package "infraestructure.sagas.persistencia" {
+  class AdaptadorDatosNegocio <<@Component>> {
+    -datosNegocio : DatosNegocioJpaRepository
+    -documentos : DocumentoNegocioJpaRepository
+    +crear(datosNegocio, documentos)  «save + flush (fuerza el chequeo\ndel índice único aquí, no en el commit\nde fuera) -> catch DataIntegrityViolationException»
+    +cargar(id) : DatosNegocio
+    +documentosDe(id) : List<DocumentoNegocio>
+    +buscarPorExternalId(externalId) : Optional<DatosNegocio>
+    +idsHuerfanos() : List<DatosNegocioId>
+    +borrar(id)  «documentos.deleteByDatosnegocioId(id);\ndatosNegocio.deleteById(id) -- hija antes\nque padre, sin ON DELETE CASCADE»
+  }
+
+  interface DatosNegocioJpaRepository <<JpaRepository>> {
+    +findByExternalId(externalId) : Optional<DatosNegocioEntity>
+    +idsHuerfanos() : List<String>  «nativeQuery: NOT EXISTS\n(SELECT 1 FROM proceso p WHERE\np.external_id = d.external_id)»
+  }
+  interface DocumentoNegocioJpaRepository <<JpaRepository>> {
+    +findByDatosnegocioIdOrderBySecuenciaAsc(id) : List<DocumentoNegocioEntity>
+    +deleteByDatosnegocioId(id)  «@Transactional explícito: query\nderivada delete...By, no abre tx propia»
+  }
+
+  class DatosNegocioEntity <<@Entity datos_negocio>> {
+    @Id datosnegocioId : UUID
+    externalId : String  «unique=true, replica en el DDL de H2\nel índice único real de Oracle»
+    datoNegocio1 : Integer
+    datoNegocio2 : LocalDate
+    datoNegocio3 : String
+  }
+  class DocumentoNegocioEntity <<@Entity datos_negocio_documento,\n@IdClass>> {
+    @Id datosnegocioId : UUID
+    @Id secuencia : Integer
+    nombre : String
+    mimeType : String
+    @Lob contenido : byte[]
+  }
+  class DocumentoNegocioEntityId <<@IdClass>> {
+    datosnegocioId : UUID
+    secuencia : Integer
+  }
+
+  note bottom of DatosNegocioEntity
+    Tablas Oracle: DDL manual en order-manager/db/ (datos_negocio.sql,
+    datos_negocio_documento.sql — mismo régimen que el resto, ver 23).
+    datos_negocio (datosnegocio_id PK, external_id UNIQUE, dato_negocio1
+    NUMBER, dato_negocio2 DATE, dato_negocio3 VARCHAR2) + datos_negocio_
+    documento (datosnegocio_id + secuencia PK compuesta, FK a
+    datos_negocio, nombre, mime_type, contenido BLOB). Sin ON DELETE
+    CASCADE (prohibido, ver CLAUDE.md): AdaptadorDatosNegocio.borrar()
+    borra la hija explícitamente antes que el padre. Referenciada
+    también por proceso_saga_principal.datosnegocio_id (FK, ver 23).
+  end note
+}
+
+class "doble en tests\n(sin adaptador real)" as DobleTest
+PuertoDatosNegocio <|.. DobleTest
+RepositorioDatosNegocio <|.. AdaptadorDatosNegocio
+AdaptadorDatosNegocio --> DatosNegocioJpaRepository
+AdaptadorDatosNegocio --> DocumentoNegocioJpaRepository
+DatosNegocioEntity "1" -- "n" DocumentoNegocioEntity : datosnegocio_id (FK)
+DocumentoNegocioEntity ..> DocumentoNegocioEntityId : @IdClass
+
+' Layout: dominio arriba, puertos en medio, infraestructura abajo
+DatosNegocio -[hidden]down- PuertoDatosNegocio
+PuertoDatosNegocio -[hidden]down- AdaptadorDatosNegocio
+DatoNegocio1 -[hidden]right- DatoNegocio2
+DatoNegocio2 -[hidden]right- DatoNegocio3
+DatoNegocio3 -[hidden]right- DocumentoNegocio
+
+note as NFrontera
+  Agregado autocontenido de business.sagas (Fase 1 del rediseño que
+  separó los datos de negocio de las sagas): la saga principal solo
+  referencia su DatosNegocioId, nunca lo contiene — ver
+  ContextoTramitacion en 15. business.ordermanager no lo conoce
+  (regla de frontera, ver 14 y CLAUDE.md).
+end note
+@enduml

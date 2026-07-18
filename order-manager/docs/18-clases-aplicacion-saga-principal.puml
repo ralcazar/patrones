@@ -9,6 +9,7 @@ interface "ProcesadorOrden (ver 17)" as Base
 class ServicioSagaPrincipal <<@Service>> {
   -repo : RepositorioOrden
   -lease : Duration
+  -repoDatos : RepositorioDatosNegocio
   -puertoPaso1 .. puertoPaso8 : PuertoPasoN
   -self : ServicioSagaPrincipal  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
   +tipo() : TipoOrden  «SagaPrincipal.TIPO»
@@ -19,7 +20,7 @@ class ServicioSagaPrincipal <<@Service>> {
   +aplicarCancelacion(orden, saga) : SenalPaso  «@Transactional»
   +aplicarCompensacion(orden, saga) : SenalPaso  «@Transactional»
   -crearHijas(contextos, ahora)  «OrdenRoot.nueva(SagaSecundariaN.crear(...))\n+ repo.crear(hija), una vez por ContextoArranque»
-  -ejecutarComando(ComandoPaso) : ResultadoPasoPrincipal  «switch: rutea al PuertoPasoN;\nCompensarPaso1/2 -> IllegalStateException (van por ejecutarCompensacion)»
+  ~ejecutarComando(ComandoPaso) : ResultadoPasoPrincipal  «switch: rutea al PuertoPasoN;\nPASO1/2/7 cargan antes DatosNegocio (y PASO2 sus\ndocumentos) vía repoDatos, fuera de tx; CompensarPaso1/2\n-> IllegalStateException (van por ejecutarCompensacion)»
 }
 note right of ServicioSagaPrincipal
   ejecutarPaso: recibe el agregado YA CARGADO por
@@ -28,29 +29,33 @@ note right of ServicioSagaPrincipal
   ramas: CANCELADA -> self.aplicarCancelacion (sin REST, directo,
   sin pasar por ejecutarCompensacion); COMPENSAR_PASO1/2 ->
   ejecutarCompensacion; el resto (PASO1_HECHO..PASO7_HECHO/INICIAL)
-  -> ejecutarPasoNormal. ejecutarPasoNormal: comandoActual() + REST
-  fuera de tx, luego self.aplicarPasoNormal(...) -- vía proxy, para
+  -> ejecutarPasoNormal. ejecutarPasoNormal: comandoActual() +
+  ejecutarComando(cmd) fuera de tx (PASO1/2/7 primero
+  repoDatos.cargar(datosNegocioId) -- y PASO2 además
+  repoDatos.documentosDe(...) --, luego el REST del PuertoPasoN;
+  ver 02), luego self.aplicarPasoNormal(...) -- vía proxy, para
   que @Transactional no se ignore por auto-invocación --:
   aplicarYAvanzar + si terminada() crea las 3 hijas y finaliza
-  (FINALIZADA_OK) — ver 03 —, si no
-  resetearIntentos()+renovarLease(). Si otro actor escribió con el
-  REST en vuelo, guardar falla por version (takeover seguro).
-  ejecutarCompensacion: compensa el paso actual (REST fuera de tx,
-  PuertoPaso2 o PuertoPaso1 según el estado) y self.aplicarCompensacion
-  (compensacionCompletada() en tx) — ver 08. aplicarCancelacion: solo
-  orden.finalizar(saga.resultadoFinal()) (FINALIZADA_COMPENSADA).
+  — ver 03 —, si no resetearIntentos()+renovarLease(). Si otro
+  actor escribió con el REST en vuelo, guardar falla por version
+  (takeover seguro). ejecutarCompensacion: compensa el paso actual
+  (REST fuera de tx, PuertoPaso2 o PuertoPaso1 según el estado) y
+  self.aplicarCompensacion (compensacionCompletada() en tx) — ver
+  08. aplicarCancelacion: solo orden.finalizar(Instant.now()).
 end note
 
 package "puerto.salida" {
   interface "RepositorioOrden\n(business.ordermanager — ver 17)" as RepositorioOrden
+  interface "RepositorioDatosNegocio\n(ver 26)" as RepositorioDatosNegocio
   interface "PuertoPaso1 .. PuertoPaso8" as PuertosPaso {
-    +ejecutar(cmd) : ResultadoPasoN
+    +ejecutar(cmd[, datos[, documentos]]) : ResultadoPasoN\n«PuertoPaso1/2/7 llevan DatosNegocio; PuertoPaso2\nademás List<DocumentoNegocio>»
     +compensar(cmd)  «solo PuertoPaso1 y PuertoPaso2»
   }
 }
 
 Base <|.. ServicioSagaPrincipal
 ServicioSagaPrincipal --> RepositorioOrden
+ServicioSagaPrincipal --> RepositorioDatosNegocio : cargar/documentosDe\n(fuera de tx, PASO1/2/7)
 ServicioSagaPrincipal --> PuertosPaso : REST síncrono (fuera de la tx)
 
 note as NPaquete

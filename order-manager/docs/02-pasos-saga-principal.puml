@@ -14,6 +14,7 @@ box "Dominio" #FBF5EF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
+  participant "AdaptadorDatosNegocio" as ADATOS
   participant "PuertoPaso1 .. PuertoPaso8\n(según el paso actual)" as PASOS
 end box
 
@@ -63,8 +64,17 @@ loop hasta Aparcar / Finalizada / excepción
   ORQ -> SAGA ++ : saga.comandoActual()
   return ComandoPasoPrincipal.EjecutarPasoN(...)
 
+  alt PASO1, PASO2 o PASO7 (ejecutarComando: necesitan DatosNegocio)
+    ORQ -> ADATOS ++ : repoDatos.cargar(datosNegocioId)  -- solo\nescalares, lectura fuera de tx, como el propio REST
+    return datos (DatosNegocio)
+    opt solo PASO2 (único paso que toca los documentos)
+      ORQ -> ADATOS ++ : repoDatos.documentosDe(datosNegocioId)\n-- única query que toca los BLOBs
+      return documentos (List<DocumentoNegocio>)
+    end
+  end
+
   == REST fuera de tx ==
-  ORQ -> PASOS ++ : puertoPasoN.ejecutar(EjecutarPasoN(...))
+  ORQ -> PASOS ++ : puertoPasoN.ejecutar(EjecutarPasoN(...)[, datos[, documentos]])
   alt éxito
     return ResultadoPasoN(ref)
     ORQ -> ORQ ++ : self.aplicarPasoNormal(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)

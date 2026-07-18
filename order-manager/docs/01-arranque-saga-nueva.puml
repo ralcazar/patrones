@@ -1,8 +1,8 @@
 @startuml 01-arranque-saga-nueva
-title Arranque de una nueva saga: ServicioIniciarTramitacion crea el agregado; primer picking del planificador
+title Arranque de una tramitación: POST /tramitaciones (idempotente) crea los agregados; primer picking del planificador
 
 box "Adaptadores de entrada" #EFF5FB
-  participant "Adaptador de entrada\n(REST u otro, aún no\nimplementado en este esqueleto)" as ENTRADA
+  participant "ControladorTramitaciones\n(POST /tramitaciones)" as CTRL
   participant "PlanificadorContinuacion\n(@Scheduled fixedDelay)" as PLAN
   participant "TrabajadorContinuacion\n(worker pull @Async)" as TRAB
 end box
@@ -11,32 +11,80 @@ box "Aplicación" #F5FBEF
   participant "ServicioContinuarOrden" as CONT
 end box
 box "Dominio" #FBF5EF
+  participant "DatosNegocio" as DATOS
   participant "SagaPrincipal" as SAGA
   participant "OrdenRoot" as ORDEN
 end box
 box "Adaptadores de salida" #F3EFFB
+  participant "AdaptadorBusquedaTramitacion" as ABUSQ
+  participant "PuertoDatosNegocio\n(REST externo, sin\nadaptador real todavía)" as PDATOS
+  participant "AdaptadorDatosNegocio" as ADATOS
   participant "AdaptadorRepositorioOrden" as REPO
 end box
 
-== Iniciar tramitación: crea el agregado completo (orden + saga) en una tx ==
-[-> ENTRADA : inicia tramitación
-activate ENTRADA
-ENTRADA -> INICIAR ++ : iniciar(ComandoIniciarTramitacion(\nexternalId, datoNegocio3, datoNegocio2))
-INICIAR -> INICIAR : sagaId = OrdenId.nuevo()
+== Iniciar tramitación: idempotente, REST fuera de tx, agregados en una única tx ==
+[-> CTRL : POST /tramitaciones {externalId}
+activate CTRL
+CTRL -> INICIAR ++ : iniciar(ComandoIniciarTramitacion(externalId))
 
-group Transacción (@Transactional)
-  INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId,\nexternalId, datoNegocio3, datoNegocio2)
-  return saga (estado = INICIAL)
-  INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
-  return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, resultado=null, version=0)
-  INICIAR -> REPO ++ : crear(orden)
-  REPO -> REPO : procesos.save(entidadProcesoDe(saga))
-  REPO -> REPO : ordenes.save(entidadOrdenDe(orden))
-  return
+INICIAR -> ABUSQ ++ : ordenPrincipalDe(externalId)
+ABUSQ -> ABUSQ : findByExternalIdAndTipo(externalId, "PRINCIPAL")
+return Optional<OrdenId>
+
+alt ya existe una orden principal para ese externalId (reintento del cliente o carrera)
+  INICIAR --> CTRL : devuelve el ordenId existente, sin tocar nada más
+else no existe todavía
+  == REST fuera de tx ==
+  INICIAR -> PDATOS ++ : obtener(externalId)
+  alt el servicio externo falla
+    PDATOS --> INICIAR : lanza ExcepcionServicioExterno(motivo)
+    deactivate PDATOS
+    INICIAR --> CTRL : se propaga sin capturar (RuntimeException)
+    deactivate INICIAR
+  else éxito
+    return RespuestaDatosNegocio(datoNegocio1, datoNegocio2,\ndatoNegocio3, documentos)
+
+    INICIAR -> INICIAR ++ : self.crearAgregados(externalId, respuesta)\n-- vía proxy (@Transactional; auto-invocación\nsaltaría el proxy, ver ConfiguracionSagas)
+    group Transacción (@Transactional)
+      INICIAR -> INICIAR : datosNegocioId = DatosNegocioId.nuevo()
+      INICIAR -> DATOS ++ : DatosNegocio.crear(datosNegocioId, externalId,\ndatoNegocio1, datoNegocio2, datoNegocio3)
+      return datosNegocio
+      INICIAR -> ADATOS ++ : crear(datosNegocio, documentos)
+      ADATOS -> ADATOS : datosNegocio.save(entidadDatosNegocioDe(...));\ndatosNegocio.flush()  -- fuerza el chequeo del índice\núnico aquí, no en el commit de fuera
+      alt índice único de datos_negocio.external_id violado\n(carrera de 2 POST simultáneos para el mismo externalId)
+        ADATOS --> INICIAR : lanza ExternalIdDuplicadoException
+        deactivate ADATOS
+      else ok
+        ADATOS -> ADATOS : documentos.save(entidadDocumentoDe(id, i, doc))\npor cada documento de la respuesta
+        return
+      end
+      INICIAR -> INICIAR : sagaId = OrdenId.nuevo()
+      INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId, externalId, datosNegocioId)
+      return saga (estado = INICIAL)
+      INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
+      return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, completadaEn=null, version=0)
+      INICIAR -> REPO ++ : crear(orden)
+      REPO -> REPO : procesos.save(entidadProcesoDe(saga))
+      REPO -> REPO : mapeadorDe(PRINCIPAL).guardarContexto(saga)\n-- upsert en proceso_saga_principal, ver 23
+      REPO -> REPO : ordenes.save(entidadOrdenDe(orden))
+      return
+    end
+    INICIAR --> INICIAR : sagaId (o lanza ExternalIdDuplicadoException\nsi el flush de ADATOS.crear() la lanzó dentro de la tx)
+    deactivate INICIAR
+
+    alt ExternalIdDuplicadoException (carrera: el otro POST ya comiteó)
+      INICIAR -> ABUSQ ++ : ordenPrincipalDe(externalId)
+      return Optional.of(ordenId) del ganador
+      INICIAR --> CTRL : devuelve el ordenId del ganador\n(orElseThrow si no hubiera nadie -- no debería ocurrir)
+    else sin conflicto
+      INICIAR --> CTRL : devuelve sagaId
+    end
+    deactivate INICIAR
+  end
 end
-return sagaId
-[<-- ENTRADA
-deactivate ENTRADA
+CTRL -> CTRL : ResponseEntity.status(ACCEPTED).body(\nRespuestaTramitacion(ordenId))
+[<-- CTRL
+deactivate CTRL
 
 note right of INICIAR
   Al nacer con proximoReintentoEn = ahora, la orden queda
@@ -48,7 +96,7 @@ end note
 loop cada ordermanager.planificador.intervalo-ms (por defecto 5000 ms)
   PLAN -> CONT ++ : hayTrabajoPendiente()
   CONT -> REPO ++ : hayEjecutables(Instant.now())
-  REPO -> REPO : SELECT COUNT(*) ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora) AND ROWNUM = 1
+  REPO -> REPO : SELECT COUNT(*) ... WHERE proximo_reintento_en <= :ahora\nAND completada_en IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora) AND ROWNUM = 1
   return true
   return true
   loop i = 0 .. trabajadores-1 (ordermanager.planificador.trabajadores, por defecto 2)
@@ -66,7 +114,7 @@ end
 loop bucle pull: mientras continuarSiguiente() devuelva true
   TRAB -> CONT ++ : continuarSiguiente()
   CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND resultado IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :lote ROWS ONLY
+  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND completada_en IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :lote ROWS ONLY
   return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
   CONT -> CONT : reclamarYEjecutar(candidata.ordenId(), candidata.tipo())
   return true (una procesada; false cuando no queda trabajo\ny el worker muere)

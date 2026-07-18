@@ -1,5 +1,5 @@
 @startuml 24-clases-infraestructura-saga
-title Infraestructura — resto de infraestructure.ordermanager + infraestructure.sagas (entrada Kafka, planificadores, lectura CQRS, wiring)
+title Infraestructura — resto de infraestructure.ordermanager + infraestructure.sagas (entrada REST/Kafka, planificadores, lectura CQRS, wiring)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
@@ -27,6 +27,26 @@ package "infraestructure.sagas.eventos" {
     es específico de la saga secundaria 2 y vive en business.sagas
     (ver 20): por eso este consumer vive en infraestructure.sagas,
     no en infraestructure.ordermanager.
+  end note
+}
+
+package "infraestructure.sagas.rest" {
+  ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
+  class ControladorTramitaciones <<@RestController>> {
+    -casoUso : CasoUsoIniciarTramitacion
+    +iniciar(PeticionTramitacion) : ResponseEntity<RespuestaTramitacion>\n«@PostMapping("/tramitaciones"), 202 Accepted»
+    +alFallarElServicioExterno(ExcepcionServicioExterno)\n«@ExceptionHandler, 502 Bad Gateway»
+    record PeticionTramitacion(externalId)
+    record RespuestaTramitacion(ordenId)
+  }
+  note right of ControladorTramitaciones
+    SOLO invoca casoUso.iniciar(...) (regla de arquitectura entrada
+    -> aplicación del CLAUDE.md): nunca toca RepositorioOrden,
+    RepositorioDatosNegocio ni ningún adaptador de salida
+    directamente. Si el servicio externo de datos de negocio falla
+    (ExcepcionServicioExterno, lanzada dentro de
+    ServicioIniciarTramitacion.iniciar — ver 01 y 22), no queda nada
+    persistido: basta con traducir a 502 sin compensación.
   end note
 }
 
@@ -73,14 +93,31 @@ package "infraestructure.ordermanager.programados" {
   end note
 }
 
+package "infraestructure.sagas.programados" {
+  ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
+  class PlanificadorPurgaDatosNegocio <<@Component>> {
+    -purga : CasoUsoPurgarDatosNegocioHuerfanos
+    +ejecutar()  «@Scheduled cron sagas.purga-datos-negocio.cron\n(0 30 3 * * *)»
+  }
+  note right of PlanificadorPurgaDatosNegocio
+    Mismo patrón que PlanificadorLimpieza: el QUÉ se borra vive en
+    la aplicación (ServicioPurgarDatosNegocioHuerfanos — ver 22), aquí
+    solo el CUÁNDO. Corre después de la limpieza del motor (03:00),
+    que es la que deja huérfanos al purgar tramitaciones completas.
+  end note
+}
+
 ' --- capa de aplicación (ver 17-22) ---
 interface CasoUsoContinuarOrden
 interface CasoUsoRegistrarRespuestaSecundaria2
 interface CasoUsoLimpiarDatosAntiguos
 interface CasoUsoAbrirTicketsPendientes
+interface CasoUsoIniciarTramitacion
+interface CasoUsoPurgarDatosNegocioHuerfanos
 interface PuertoConsultaOrdenesSoporte
 interface PuertoOrdenesTicketPendiente
 interface PuertoTicketsSoporte
+interface "PuertoBusquedaTramitacion (ver 22)" as PuertoBusquedaTramitacion
 interface "MapeadorProceso,\nDescriptorSoporteOrden (ver 23)" as SPIs
 
 package "infraestructure.ordermanager.persistencia" {
@@ -104,14 +141,14 @@ package "infraestructure.ordermanager.persistencia" {
     -ordenes : OrdenJpaRepository
     +buscar() : List<OrdenTicketPendiente>  «delega en\nordenes.buscarTicketsPendientes()»
   }
-  class "ContextoCodec" as Codec <<package-private>> {
-    {static} escribir(Map<String,String>) : String
-    {static} leer(String) : Map<String,String>
-  }
-  note bottom of Codec
-    OrdenJpaRepository/ProcesoJpaRepository (ver 23) son
-    package-private: viven aquí, en persistencia, junto con quien
-    los usa, para no tener que ampliar su visibilidad.
+  note bottom of AdaptadorOrdenesTicketPendiente
+    OrdenJpaRepository (ver 23) es package-private: vive allí, en
+    persistencia, junto con quien lo usa (todos en este mismo
+    paquete). ProcesoJpaRepository, en cambio, es PUBLIC: lo usa
+    también AdaptadorBusquedaTramitacion, en
+    infraestructure.sagas.persistencia (ver más abajo) — ya no hay
+    ContextoCodec: el contexto de cada tipo es su tabla satélite
+    relacional (ver 23 y 26), no un mapa JSON que serializar.
   end note
 }
 
@@ -136,18 +173,31 @@ package "infraestructure.ordermanager (config)" {
 package "infraestructure.sagas.persistencia" {
   ' --- adaptadores de SALIDA (implementan las 2 SPI de persistencia/lectura por tipo) ---
   class "SoporteSagaPrincipal,\nSoporteSagaSecundaria1/2/3" as SoporteSaga <<@Component>> {
+    -repo : ProcesoSagaPrincipalJpaRepository\n(o su equivalente ProcesoSagaSecundariaNJpaRepository)
     +tipo() : TipoOrden  «SagaX.TIPO»
-    +desarmar(Proceso<?>) / +rearmar(...)  «MapeadorProceso»
+    +estado(Proceso<?>) / +guardarContexto(Proceso<?>) / +rearmar(...) / +borrarContexto(ids)  «MapeadorProceso»
     +pasoPendiente/datosManualesObligatorios/cancelable(estado)  «DescriptorSoporteOrden»
   }
   note right of SoporteSaga
     Una clase por saga implementa LAS DOS SPI del motor
-    (MapeadorProceso + DescriptorSoporteOrden — ver 23), absorbiendo
-    los antiguos contextoDe*/*Desde/switches FSM: p. ej.
-    SoporteSagaPrincipal implements MapeadorProceso,
-    DescriptorSoporteOrden. Usan AyudanteContexto
-    (ponerSiNoNulo/refONull, package-private) para leer/escribir el
-    mapa de contexto. Claves JSON del contexto (refPaso1...) sin cambios.
+    (MapeadorProceso + DescriptorSoporteOrden — ver 23), cada una con
+    SU propio JpaRepository inyectado por constructor sobre SU tabla
+    satélite (proceso_saga_principal / _secundaria1/2/3): ya no hay
+    un contexto común serializado, así que AyudanteContexto y su mapa
+    JSON (ponerSiNoNulo/refONull) ya NO EXISTEN. guardarContexto/
+    rearmar/borrarContexto delegan directo en ese repositorio (upsert/
+    findById/DELETE); SoporteSagaPrincipal además referencia
+    datos_negocio por su datosnegocio_id (FK, ver 26).
+  end note
+
+  class AdaptadorBusquedaTramitacion <<@Component>> {
+    -repo : "ProcesoJpaRepository\n(ver 23)"
+    +ordenPrincipalDe(externalId) : Optional<OrdenId>\n«findByExternalIdAndTipo(externalId, "PRINCIPAL")»
+  }
+  note right of AdaptadorBusquedaTramitacion
+    Busca directamente sobre proceso (la tabla común de la FSM,
+    ProcesoJpaRepository — ver 23), sin cargar el agregado completo:
+    idempotencia de POST /tramitaciones (ver 01 y 22).
   end note
 }
 
@@ -170,47 +220,57 @@ ConsumidorRespuestaSecundaria2 --> CasoUsoRegistrarRespuestaSecundaria2
 TrabajadorContinuacion --> CasoUsoContinuarOrden : continuarSiguiente()\n(bucle pull)
 PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
 PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
+ControladorTramitaciones --> CasoUsoIniciarTramitacion : iniciar(cmd)
+PlanificadorPurgaDatosNegocio --> CasoUsoPurgarDatosNegocioHuerfanos
 
 ' Puertos de salida <- adaptadores
 PuertoConsultaOrdenesSoporte <|.. AdaptadorConsultaOrdenesSoporte
 PuertoOrdenesTicketPendiente <|.. AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
 SPIs <|.. SoporteSaga
+PuertoBusquedaTramitacion <|.. AdaptadorBusquedaTramitacion
 
 note as NRegla
   Regla de arquitectura (CLAUDE.md): los adaptadores de ENTRADA
-  (ConsumidorRespuestaSecundaria2, el worker TrabajadorContinuacion y
-  los dos planificadores) solo invocan casos de uso de la capa de
-  aplicación; los adaptadores de SALIDA (AdaptadorConsultaOrdenesSoporte,
-  AdaptadorOrdenesTicketPendiente, AdaptadorTicketsLog, SoporteSaga*)
+  (ConsumidorRespuestaSecundaria2, el worker TrabajadorContinuacion,
+  ControladorTramitaciones y los tres planificadores) solo invocan
+  casos de uso de la capa de aplicación; los adaptadores de SALIDA
+  (AdaptadorConsultaOrdenesSoporte, AdaptadorOrdenesTicketPendiente,
+  AdaptadorTicketsLog, SoporteSaga*, AdaptadorBusquedaTramitacion)
   implementan puertos de salida / SPI. Los paquetes
-  (eventos/programados/persistencia) agrupan por TIPO de adaptador,
-  no por dirección entrada/salida. Nueva regla de frontera ArchUnit
-  (ver 14): ninguna clase de ..ordermanager.. puede depender de
-  ..sagas.. — la dependencia real de este diagrama va siempre
+  (eventos/rest/programados/persistencia) agrupan por TIPO de
+  adaptador, no por dirección entrada/salida. Regla de frontera
+  ArchUnit (ver 14): ninguna clase de ..ordermanager.. puede depender
+  de ..sagas.. — la dependencia real de este diagrama va siempre
   infraestructure.sagas -> business.sagas y
   infraestructure.sagas -> {business,infraestructure}.ordermanager,
   nunca al revés. PlanificadorContinuacion y AdaptadorRepositorioOrden
-  (la persistencia del agregado, con las 2 SPI) están en 23.
+  (la persistencia del agregado, con las 2 SPI) están en 23;
+  AdaptadorDatosNegocio y sus tablas están en 26.
 end note
 
-' orden de izquierda a derecha: ordermanager (eventos/programados/persistencia/config) -> sagas
-AdaptadorTicketsLog -[hidden]right- TrabajadorContinuacion
+' orden de izquierda a derecha: ordermanager (eventos/rest/programados/persistencia/config) -> sagas
+AdaptadorTicketsLog -[hidden]right- ConsumidorRespuestaSecundaria2
+ConsumidorRespuestaSecundaria2 -[hidden]right- ControladorTramitaciones
+ControladorTramitaciones -[hidden]right- TrabajadorContinuacion
 TrabajadorContinuacion -[hidden]right- PlanificadorLimpieza
 PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
 PlanificadorTicketsSoporte -[hidden]right- ConfiguracionEjecucionAsincrona
-ConfiguracionEjecucionAsincrona -[hidden]right- AdaptadorConsultaOrdenesSoporte
+ConfiguracionEjecucionAsincrona -[hidden]right- PlanificadorPurgaDatosNegocio
+PlanificadorPurgaDatosNegocio -[hidden]right- AdaptadorConsultaOrdenesSoporte
 AdaptadorConsultaOrdenesSoporte -[hidden]right- AdaptadorOrdenesTicketPendiente
-AdaptadorOrdenesTicketPendiente -[hidden]right- Codec
-Codec -[hidden]right- ConfiguracionOrderManager
-ConfiguracionOrderManager -[hidden]right- ConsumidorRespuestaSecundaria2
-ConsumidorRespuestaSecundaria2 -[hidden]right- SoporteSaga
-SoporteSaga -[hidden]right- ConfiguracionSagas
+AdaptadorOrdenesTicketPendiente -[hidden]right- ConfiguracionOrderManager
+ConfiguracionOrderManager -[hidden]right- SoporteSaga
+SoporteSaga -[hidden]right- AdaptadorBusquedaTramitacion
+AdaptadorBusquedaTramitacion -[hidden]right- ConfiguracionSagas
 
 CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- CasoUsoContinuarOrden
 CasoUsoContinuarOrden -[hidden]right- CasoUsoLimpiarDatosAntiguos
 CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
+CasoUsoAbrirTicketsPendientes -[hidden]right- CasoUsoIniciarTramitacion
+CasoUsoIniciarTramitacion -[hidden]right- CasoUsoPurgarDatosNegocioHuerfanos
 PuertoConsultaOrdenesSoporte -[hidden]down- AdaptadorConsultaOrdenesSoporte
 PuertoOrdenesTicketPendiente -[hidden]down- AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog
+PuertoBusquedaTramitacion -[hidden]down- AdaptadorBusquedaTramitacion
 @enduml

@@ -29,41 +29,52 @@ package "persistencia" {
     -ordenes : OrdenJpaRepository
     -procesos : ProcesoJpaRepository
     -mapeadores : Map<TipoOrden, MapeadorProceso>  «indexado por MapeadorProceso::tipo\nal construir el bean (List<MapeadorProceso> inyectado)»
-    +crear(OrdenRoot)  «procesos.save(...); ordenes.save(...)»
-    +cargar(OrdenId) : OrdenRoot  «rehidrata despachando por ProcesoEntity.tipo\nvía mapeadorDe(tipo).rearmar(...)»
-    +guardar(OrdenRoot)  «procesos.save + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
+    +crear(OrdenRoot)  «procesos.save(padre); mapeadorDe(tipo).guardarContexto(proceso)\n(satélite, hija por FK); ordenes.save(...)»
+    +cargar(OrdenId) : OrdenRoot  «rehidrata despachando por ProcesoEntity.tipo\nvía mapeadorDe(tipo).rearmar(id, externalId, estado, auditoria)\n(el contexto lo lee CADA mapeador de SU satélite)»
+    +guardar(OrdenRoot)  «procesos.save + mapeadorDe(tipo).guardarContexto(proceso)\n(upsert satélite) + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
     +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
-    +purgarFinalizadasAntesDe(corte) : long
+    +purgarFinalizadasAntesDe(corte) : long  «sin ON DELETE CASCADE: borrado\nexplícito hijas->padre, ver nota abajo»
     -mapeadorDe(tipo) : MapeadorProceso  «IllegalStateException si no hay\nninguno registrado para el tipo»
   }
   note right of AdaptadorRepositorioOrden
     ÚNICO adaptador de escritura del agregado, 100% genérico en el
     tipo de orden: ya no importa ninguna saga concreta. Despacha por
-    TipoOrden a través de la SPI MapeadorProceso (desarmar/rearmar,
-    ver abajo) en vez de los switches entidadSagaDe()/sagaDesde() de
-    antes; sigue (de)serializando el contexto propio de cada tipo
-    con ContextoCodec (JSON plano: todas las refs son wrappers de un
-    único String) — eso es común a todos los tipos, lo sigue
-    haciendo el adaptador. ordenes.flush() fuerza el chequeo de
-    version aquí, no en el commit de fuera.
+    TipoOrden a través de la SPI MapeadorProceso en vez de los
+    switches entidadSagaDe()/sagaDesde() de antes. crear/guardar
+    escriben SIEMPRE proceso (padre) antes que la satélite propia del
+    tipo (hija, FK a proceso) — guardarContexto(proceso) hace el
+    upsert en ELLA, ya no hay un CLOB contexto común ni ContextoCodec
+    (cada tipo tiene su tabla, ver 24 y 26). ordenes.flush() fuerza
+    el chequeo de version aquí, no en el commit de fuera.
+    purgarFinalizadasAntesDe: sin ON DELETE CASCADE en NINGUNA tabla
+    (prohibido, ver CLAUDE.md): ids = ordenes.idsFinalizadasAntesDe(corte);
+    ordenes.borrarPorIds(ids); procesos.borrarAuditoriaPorIds(ids);
+    CADA mapeador.borrarContexto(ids) (todas las satélites, las de
+    otros tipos simplemente no matchean); procesos.borrarPorIds(ids)
+    al final, el padre ya libre de FKs de sus hijas.
   end note
 
   interface MapeadorProceso <<SPI>> {
     +tipo() : TipoOrden
-    +desarmar(Proceso<?>) : ProcesoPersistible
-    +rearmar(id, externalId, estado, contexto, auditoria) : Proceso<?>
-    record ProcesoPersistible(estado, contexto)
+    +estado(Proceso<?>) : String  «columna proceso.estado»
+    +guardarContexto(Proceso<?>)  «upsert en SU tabla satélite, misma tx»
+    +rearmar(id, externalId, estado, auditoria) : Proceso<?>  «lee SU\nsatélite por id (el PK de proceso)»
+    +borrarContexto(List<UUID> ordenIds)  «DELETE en SU satélite (purga)»
   }
   note right of MapeadorProceso
     Punto de extensión nº2 (persistencia por tipo): una
     implementación por tipo de orden, indexadas por tipo(). Las 4
     implementaciones concretas (SoporteSagaPrincipal/Secundaria1/2/3)
-    viven en infraestructure.sagas.persistencia — ver 24. La forma
-    persistible es contrato de PERSISTENCIA, no de negocio: por eso
-    esta SPI vive en infraestructure.ordermanager (no en
-    business.ordermanager), y la dirección infra.sagas ->
-    infra.ordermanager -> business.ordermanager es legal.
+    viven en infraestructure.sagas.persistencia — ver 24 — cada una
+    con su propio JpaRepository sobre su tabla satélite (p. ej.
+    proceso_saga_principal, FK a proceso Y a datos_negocio — ver 26).
+    Ya no hay ProcesoPersistible/desarmar ni un contexto común
+    serializado: el contexto de cada tipo es SU tabla relacional, no
+    un contrato de persistencia genérico. Por eso esta SPI vive en
+    infraestructure.ordermanager (no en business.ordermanager), y la
+    dirección infra.sagas -> infra.ordermanager -> business.ordermanager
+    es legal.
   end note
 
   interface DescriptorSoporteOrden <<SPI>> {
@@ -91,9 +102,18 @@ package "persistencia" {
     +ordenesConTicketPendiente() / buscar(...) / porExternalId(...)
     +resumenDe(tipo, ordenId) : Optional<OrdenResumenFila>
   }
-  interface "ProcesoJpaRepository" as ProcesoJpa <<JpaRepository, package-private>> {
+  interface "ProcesoJpaRepository" as ProcesoJpa <<JpaRepository>> {
+    +findByExternalIdAndTipo(externalId, tipo) : Optional<ProcesoEntity>\n«idempotencia de POST /tramitaciones, ver 01»
     +borrarPorIds(ids)
+    +borrarAuditoriaPorIds(ids)  «hija proceso_auditoria, antes que\nel padre en purgarFinalizadasAntesDe»
   }
+  note right of ProcesoJpa
+    A diferencia de OrdenJpaRepository, es PUBLIC (no package-private):
+    AdaptadorBusquedaTramitacion (infraestructure.sagas.persistencia,
+    ver 24) lo usa directamente para findByExternalIdAndTipo, sin
+    pasar por AdaptadorRepositorioOrden — no carga el agregado
+    completo para una simple comprobación de existencia.
+  end note
   interface CandidataFila <<projection, package-private>> {
     getOrdenId() / getTipo()
   }
@@ -105,14 +125,13 @@ package "persistencia" {
     tokenTrabajador : String
     tokenExpiraEn : Instant
     ticketAbiertoEn : Instant
-    resultado : String
+    completadaEn : Instant  «null = viva; no-null = finalizada (ok o cancelada)»
     @Version version : long  «ÚNICA del agregado»
     creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
   }
   class ProcesoEntity <<@Entity proceso>> {
     @Id ordenId : UUID  «@JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
     tipo / externalId / estado : String
-    @Lob contexto : String  «JSON plano (ContextoCodec)»
     auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»
   }
   class AuditoriaEntity <<@Embeddable>> {
@@ -123,23 +142,26 @@ package "persistencia" {
     Tablas Oracle: DDL manual en order-manager/db/ (proceso.sql,
     proceso_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
     Flyway ni ddl-auto: none). proceso (orden_id PK, tipo,
-    external_id, estado, contexto CLOB) + orden (orden_id PK/FK a
-    proceso, intentos, proximo_reintento_en, token_trabajador,
-    token_expira_en, ticket_abierto_en, resultado, version,
-    creada_en, actualizada_en). Sin índices parciales en Oracle:
-    idx_orden_candidatas es funcional sobre CASE WHEN resultado IS
-    NULL THEN proximo_reintento_en END; idx_orden_intentos indexa la
-    bandeja de trabajo/tickets.
+    external_id, estado — SIN contexto: el de cada tipo vive en su
+    tabla satélite, p. ej. proceso_saga_principal, ver 24 y 26) +
+    orden (orden_id PK/FK a proceso, intentos, proximo_reintento_en,
+    token_trabajador, token_expira_en, ticket_abierto_en,
+    completada_en, version, creada_en, actualizada_en). Sin índices
+    parciales en Oracle: idx_orden_candidatas es funcional sobre CASE
+    WHEN completada_en IS NULL THEN proximo_reintento_en END;
+    idx_orden_intentos indexa la bandeja de trabajo/tickets.
   end note
 
   note right of OrdenJpa
     buscarCandidatas (SQL nativo): proximo_reintento_en <= :ahora
-    AND resultado IS NULL AND (token_trabajador IS NULL OR
+    AND completada_en IS NULL AND (token_trabajador IS NULL OR
     token_expira_en <= :ahora) ORDER BY proximo_reintento_en
     FETCH FIRST :limite ROWS ONLY. existeCandidata: MISMO predicado
     (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
     sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
-    ticket_abierto_en IS NULL AND resultado IS NULL.
+    ticket_abierto_en IS NULL AND completada_en IS NULL.
+    idsFinalizadasAntesDe: completada_en IS NOT NULL AND
+    actualizada_en < :corte (para la limpieza, ver 09 y 22).
   end note
 }
 

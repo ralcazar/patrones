@@ -7,7 +7,7 @@ versionan juntos y se actualizan en el mismo cambio que el código que
 documentan (ver `CLAUDE.md` en la raíz del repo).
 
 Modelo: un ÚNICO agregado por orden, `OrdenRoot` (ejecución: intentos, lease
-del token, ticket, resultado) que contiene su `Proceso<E>` (entidad interna,
+del token, ticket, completadaEn) que contiene su `Proceso<E>` (entidad interna,
 negocio: FSM `EstadoSaga*` + auditoría). `Proceso<E>` y `OrdenRoot` son
 vocabulario neutro del motor — "saga" solo existe del lado de
 `business.sagas` (sus 4 subclases concretas: `SagaPrincipal`,
@@ -32,7 +32,7 @@ definir sus propios tipos de orden sin tocar `ordermanager`:
 | SPI | Paquete | Qué resuelve |
 |---|---|---|
 | `ProcesadorOrden` | `business.ordermanager.aplicacion.servicio` | Ejecuta un paso de un tipo de orden (ver 17) |
-| `MapeadorProceso` | `infraestructure.ordermanager.persistencia` | (Des)arma la forma persistible de un `Proceso<?>` por tipo (ver 23) |
+| `MapeadorProceso` | `infraestructure.ordermanager.persistencia` | Persiste/rearma el contexto de un `Proceso<?>` por tipo en SU tabla satélite (ver 23) |
 | `DescriptorSoporteOrden` | `infraestructure.ordermanager.persistencia` | Paso pendiente / cancelable / datos manuales por tipo, para la pantalla de soporte (ver 23) |
 
 Las sagas implementan las 3 en `business.sagas`/`infraestructure.sagas`
@@ -48,7 +48,7 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 
 | Bloque | Color | Contenido |
 |---|---|---|
-| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorLimpieza` (`@Scheduled`), `TrabajadorContinuacion` (worker pull `@Async`), consumer Kafka, futuro REST |
+| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorLimpieza`/`PlanificadorPurgaDatosNegocio` (`@Scheduled`), `TrabajadorContinuacion` (worker pull `@Async`), consumer Kafka, `ControladorTramitaciones` (REST `POST /tramitaciones`) |
 | Aplicación | verde `#F5FBEF` | casos de uso, `ServicioContinuarOrden` y los `ProcesadorOrden` de cada saga (`ServicioSagaPrincipal`/`Secundaria1/2/3`) |
 | Dominio | naranja `#FBF5EF` | el agregado (`OrdenRoot` ⊃ `Proceso`: `SagaPrincipal`/`SagaSecundariaN`) |
 | Adaptadores de salida | violeta `#F3EFFB` | `AdaptadorRepositorioOrden` (persistencia del agregado), puertos REST/Kafka de cada paso |
@@ -89,7 +89,7 @@ activación.
 
 | Diagrama | Qué muestra |
 |---|---|
-| [01-arranque-saga-nueva](01-arranque-saga-nueva.png) | `ServicioIniciarTramitacion` (business.sagas) crea el agregado (orden + `SagaPrincipal`) en una tx; `PlanificadorContinuacion` descubre el trabajo (`hayTrabajoPendiente`) y despierta a los workers pull, que la reclaman con `continuarSiguiente` |
+| [01-arranque-saga-nueva](01-arranque-saga-nueva.png) | `POST /tramitaciones` (`ControladorTramitaciones`): idempotente vía `PuertoBusquedaTramitacion`; si no existe, `PuertoDatosNegocio.obtener` fuera de tx y `ServicioIniciarTramitacion.crearAgregados` (`@Transactional`) crea `DatosNegocio` + `SagaPrincipal` + `OrdenRoot` (con el camino 502 si el servicio externo falla y el de carrera si el índice único de `datos_negocio.external_id` lo rechaza); `PlanificadorContinuacion` descubre el trabajo (`hayTrabajoPendiente`) y despierta a los workers pull, que la reclaman con `continuarSiguiente` |
 | [02-pasos-saga-principal](02-pasos-saga-principal.png) | Bucle de `ServicioContinuarOrden` + `ServicioSagaPrincipal.ejecutarPaso` (`ProcesadorOrden`): reclamo de token, REST fuera de tx y checkpoint transaccional (`resetearIntentos`+`renovarLease`) por cada uno de PASO1..PASO8 |
 | [03-finalizacion-saga-principal](03-finalizacion-saga-principal.png) | Al completar PASO8: `FINALIZADA_OK` + creación de las 3 sagas hijas (`RepositorioOrden.crear` ×3) en la misma tx (sin eventos) |
 | [04-saga-secundaria1](04-saga-secundaria1.png) | Saga secundaria 1: INICIO → CONFIRMACION, dos llamadas REST a métodos distintos del mismo servicio |
@@ -110,24 +110,50 @@ infraestructura.
 |---|---|
 | [13-maquinas-de-estado](13-maquinas-de-estado.png) | Las 4 FSM de negocio `EstadoSagaPrincipal`/`Secundaria1`/`Secundaria2`/`Secundaria3` + `ResultadoOrden`; nota de que intentos/lease/ticket son atributos operativos de `OrdenRoot`, no una FSM (ya no hay `EstadoTicket` ni `EstadoPaso`) |
 | [14-clases-dominio-ordermanager](14-clases-dominio-ordermanager.png) | Dominio del motor genérico (`business.ordermanager.dominio`): el agregado único `OrdenRoot` ⊃ `Proceso<E>` (entidad interna, una sola `version` la controla el agregado), `TipoOrden` (VO abierto), `PoliticaReintentos`, excepciones y VOs del motor — sin ninguna clase de sagas |
-| [15-clases-dominio-saga-principal](15-clases-dominio-saga-principal.png) | Dominio de la saga principal (`business.sagas.dominio.sagaprincipal`): `SagaPrincipal` (entidad, extiende `Proceso<EstadoSagaPrincipal>`), su constante `TIPO`, comandos/resultados por paso, `ContextoTramitacion`, `PuntoNoRetornoSuperadoException` |
+| [15-clases-dominio-saga-principal](15-clases-dominio-saga-principal.png) | Dominio de la saga principal (`business.sagas.dominio.sagaprincipal`): `SagaPrincipal` (entidad, extiende `Proceso<EstadoSagaPrincipal>`), su constante `TIPO`, comandos/resultados por paso, `ContextoTramitacion` (referencia `DatosNegocioId` — ver 26 — en vez de contener datos de negocio), `PuntoNoRetornoSuperadoException` |
 | [16-clases-dominio-sagas-secundarias](16-clases-dominio-sagas-secundarias.png) | Dominio de las 3 sagas secundarias (`business.sagas.dominio.sagasecundariaN`): entidades (extienden `Proceso<E>`), su constante `TIPO`, comandos/resultados, sin `version` propia |
 | [17-clases-aplicacion-nucleo](17-clases-aplicacion-nucleo.png) | Aplicación, núcleo del motor (`business.ordermanager.aplicacion`): `CasoUsoContinuarOrden`/`ServicioContinuarOrden`/`ProcesadorOrden`/`SenalPaso`/`RepositorioOrden` y el lease del token (reclamo, renovación por paso, reclamo de token caducado); frontera transaccional `@Transactional` con proxy auto-inyectado |
-| [18-clases-aplicacion-saga-principal](18-clases-aplicacion-saga-principal.png) | Aplicación de la saga principal (`business.sagas.aplicacion.servicio.sagaprincipal`): `ServicioSagaPrincipal` (`ProcesadorOrden`, normal + compensación), `RepositorioOrden` y `PuertoPaso1..8` |
+| [18-clases-aplicacion-saga-principal](18-clases-aplicacion-saga-principal.png) | Aplicación de la saga principal (`business.sagas.aplicacion.servicio.sagaprincipal`): `ServicioSagaPrincipal` (`ProcesadorOrden`, normal + compensación), `RepositorioOrden`, `RepositorioDatosNegocio` (carga `DatosNegocio`/documentos fuera de tx para PASO1/2/7) y `PuertoPaso1..8` |
 | [19-clases-aplicacion-saga-secundaria1](19-clases-aplicacion-saga-secundaria1.png) | Aplicación de la saga secundaria 1: `ServicioSagaSecundaria1` y el puerto REST (dos métodos) |
 | [20-clases-aplicacion-saga-secundaria2](20-clases-aplicacion-saga-secundaria2.png) | Aplicación de la saga secundaria 2: aparcado de 3 h, `PuertoConciliacionSecundaria2` y `ServicioRegistrarRespuestaSecundaria2` (entrada del consumer Kafka) |
 | [21-clases-aplicacion-saga-secundaria3](21-clases-aplicacion-saga-secundaria3.png) | Aplicación de la saga secundaria 3: `ServicioSagaSecundaria3` y el puerto REST |
-| [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteOrdenes`/`ServicioTicketsSoporte`/`ServicioLimpiezaDatos` (motor, sin cancelación) + `ServicioCancelarTramitacion`/`ServicioVistaTramitacion` (sagas, extraídos de lo que antes era `ServicioSoporteSagas`) |
-| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`ProcesoEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`proceso`) y sus 2 SPI (`MapeadorProceso`, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
-| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura, el resto: `infraestructure.ordermanager` (`eventos`/`programados`/`persistencia`/`ConfiguracionOrderManager`) + `infraestructure.sagas` (`ConsumidorRespuestaSecundaria2`, `SoporteSagaPrincipal`/`Secundaria1/2/3` implementando las 2 SPI de 23, `ConfiguracionSagas`) |
+| [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteOrdenes`/`ServicioTicketsSoporte`/`ServicioLimpiezaDatos` (motor, sin cancelación) + `ServicioCancelarTramitacion`/`ServicioVistaTramitacion`/`ServicioIniciarTramitacion`/`ServicioPurgarDatosNegocioHuerfanos` (sagas, `business.sagas.aplicacion.servicio.comun`) |
+| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`ProcesoEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`proceso`, sin CLOB de contexto) y sus 2 SPI (`MapeadorProceso` — 4 métodos: `tipo`/`estado`/`guardarContexto`/`rearmar`/`borrarContexto`, una tabla satélite por tipo —, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
+| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura, el resto: `infraestructure.ordermanager` (`eventos`/`programados`/`persistencia`/`ConfiguracionOrderManager`) + `infraestructure.sagas` (`ConsumidorRespuestaSecundaria2`, `ControladorTramitaciones` (REST `POST /tramitaciones`), `SoporteSagaPrincipal`/`Secundaria1/2/3` implementando las 2 SPI de 23 con su propio repo JPA satélite, `AdaptadorBusquedaTramitacion`, `PlanificadorPurgaDatosNegocio`, `ConfiguracionSagas`) |
 | [25-clases-dominio-comun-sagas](25-clases-dominio-comun-sagas.png) | Shared kernel de las sagas (`business.sagas.dominio.comun`): `ContextoArranque` y `RefPaso1`/`RefPaso5`/`RefPaso7` — los produce la principal y los consumen las secundarias; no puede depender de él ninguna clase de `ordermanager` |
+| [26-clases-datos-negocio](26-clases-datos-negocio.png) | El agregado `DatosNegocio` (`business.sagas.dominio.datosnegocio`), autocontenido: dominio (`DatosNegocio`, `DatoNegocio1/2/3`, `DocumentoNegocio`, `ExternalIdDuplicadoException`), puertos (`PuertoDatosNegocio` — REST externo, sin adaptador real — y `RepositorioDatosNegocio`), adaptador (`AdaptadorDatosNegocio`, `DatosNegocioEntity`/`DocumentoNegocioEntity`, tablas `datos_negocio`/`datos_negocio_documento`) |
 
 ## Esquema de base de datos
 
-El esquema (tablas `proceso`, `proceso_auditoria`, `orden`) se aplica
-manualmente desde `order-manager/db/` (un `.sql` por objeto; orden de
-aplicación por FKs en su `README.md`). Ni JPA (`ddl-auto: none`) ni ninguna
-herramienta de migración crean nada automáticamente al arrancar la app.
+El esquema, 9 tablas, se aplica manualmente desde `order-manager/db/` (un
+`.sql` por objeto; orden de aplicación por FKs en su `README.md`). Ni JPA
+(`ddl-auto: none`) ni ninguna herramienta de migración crean nada
+automáticamente al arrancar la app. Ninguna tabla usa `ON DELETE CASCADE`
+(prohibido, ver `CLAUDE.md`): los borrados de hijas los hace explícitos,
+hijas antes que padre, en la misma transacción, el adaptador de persistencia.
+
+Tablas genéricas del motor (`business.ordermanager`, sin conocer ningún
+tipo de orden concreto):
+
+- `proceso` — FSM común a todos los tipos (`orden_id` PK, `tipo`,
+  `external_id`, `estado`); ya NO tiene un CLOB `contexto`: el contexto
+  propio de cada tipo vive en su tabla satélite (ver abajo).
+- `proceso_auditoria` — intervenciones de soporte, hija de `proceso`.
+- `orden` — estado de ejecución (intentos, lease del token, ticket,
+  `completada_en`, `version`), hija/FK 1:1 de `proceso`.
+
+Tablas del agregado `DatosNegocio` (`business.sagas`, ver 26), autocontenido
+y sin relación de FK con `proceso`, correlacionado solo por `external_id`:
+
+- `datos_negocio` — escalares (`external_id` con índice único, para la
+  idempotencia de `POST /tramitaciones`).
+- `datos_negocio_documento` — documentos (BLOB), hija de `datos_negocio`.
+
+Tablas satélite por tipo de orden (una por saga, 1:1 con `proceso` por
+`orden_id`, el contexto propio que antes vivía en el CLOB — ver
+`MapeadorProceso` en 23): `proceso_saga_principal` (además FK a
+`datos_negocio` por `datosnegocio_id`), `proceso_saga_secundaria1`,
+`proceso_saga_secundaria2`, `proceso_saga_secundaria3`.
 
 ## Regenerar los PNG
 
