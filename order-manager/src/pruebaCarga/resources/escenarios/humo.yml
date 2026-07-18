@@ -1,0 +1,29 @@
+# Prueba de humo: validar el harness de punta a punta en pocos minutos.
+# No mide nada: solo comprueba que los pods arrancan, inyectan, procesan,
+# el log estructurado se escribe y el analizador produce informe.
+nombre: humo
+descripcion: Validación rápida del harness (pods + mocks + analizador), sin fallos.
+
+semilla: 42
+duracion: PT3M
+drenaje-maximo: PT2M
+
+pods: 2
+
+inyeccion:
+  tramitaciones: 100
+  ritmo-por-segundo: 2
+
+rest:
+  latencia-ms: { min: 50, max: 150 }
+  tasa-fallo: 0.0
+
+kafka:
+  retraso-ms: { min: 200, max: 1000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16

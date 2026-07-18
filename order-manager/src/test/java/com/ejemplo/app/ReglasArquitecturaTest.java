@@ -113,4 +113,18 @@ class ReglasArquitecturaTest {
             .that(RESIDE_EN_SRC_TEST)
             .should().dependOnClassesThat().resideInAPackage("org.springframework..")
             .because("src/test son los tests unitarios (sin Spring); los que necesiten Spring van a src/integrationTest");
+
+    /**
+     * El harness de pruebas de carga (source set {@code src/pruebaCarga},
+     * paquete {@code com.ejemplo.app.carga}) es un consumidor de producción,
+     * nunca al revés: ni PROD ni los tests dependen de él. El classpath ya
+     * lo impone (pruebaCarga no está en el classpath de main/test/
+     * integrationTest, ver build.gradle), pero esta regla documenta la
+     * frontera explícitamente y actúa como red de seguridad si eso cambiara.
+     */
+    @ArchTest
+    static final ArchRule nadaFueraDeCargaDependeDeCarga = noClasses()
+            .that().resideOutsideOfPackage("..carga..")
+            .should().dependOnClassesThat().resideInAPackage("com.ejemplo.app.carga..")
+            .because("carga (src/pruebaCarga) es un harness que consume producción, nunca al revés");
 }

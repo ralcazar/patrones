@@ -1,0 +1,31 @@
+# Respuestas Kafka de la secundaria 2 que nunca llegan (5%).
+# Preguntas: ¿las sagas aparcadas sin respuesta las rescata la conciliación?
+# ¿se abren tickets para las irrecuperables y ninguna orden queda viva
+# eternamente sin ticket? Ejercita el camino soporte/tickets de verdad.
+nombre: respuestas-perdidas
+descripcion: 5% de respuestas Kafka perdidas; verificar conciliación de la secundaria 2 y tickets de soporte.
+
+semilla: 42
+duracion: PT30M
+drenaje-maximo: PT15M
+
+pods: 4
+
+inyeccion:
+  tramitaciones: 4000
+  ritmo-por-segundo: 4
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.05
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.05
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16
+  lease: PT10M

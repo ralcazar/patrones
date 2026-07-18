@@ -1,0 +1,32 @@
+# Contención: muchos pods, intervalo corto y lote pequeño a propósito.
+# Preguntas: ¿qué % de reclamos colisiona (optimistic lock)? ¿el lote se
+# agota solo con colisiones dejando workers ociosos con trabajo pendiente
+# ("falta de ritmo")? Comparar el ritmo de reclamo con base-sin-fallos.
+nombre: contencion-8-pods
+descripcion: 8 pods con lote pequeño e intervalo corto para medir colisiones optimistas y ritmo de reclamo.
+
+semilla: 42
+duracion: PT30M
+drenaje-maximo: PT10M
+
+pods: 8
+
+inyeccion:
+  tramitaciones: 8000
+  ritmo-por-segundo: 8
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.0
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 500
+    trabajadores: 4
+    lote: 8          # deliberadamente < trabajadores totales (8 pods x 4):
+                     # fuerza el peor caso de colisión sobre las mismas candidatas
+  lease: PT10M

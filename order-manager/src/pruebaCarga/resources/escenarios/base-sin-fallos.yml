@@ -1,0 +1,31 @@
+# Línea base: mismo perfil que la familia fallos-*, con tasa de fallo 0.
+# Contra este escenario se comparan todos los demás; cualquier cambio aquí
+# (carga, latencias, motor) debe replicarse en fallos-01/10/30 para que la
+# comparación siga aislando la tasa de fallo.
+nombre: base-sin-fallos
+descripcion: Línea base de throughput, latencia de saga y ritmo de reclamo sin fallos REST.
+
+semilla: 42
+duracion: PT1H
+drenaje-maximo: PT10M
+
+pods: 4
+
+inyeccion:
+  tramitaciones: 10000
+  ritmo-por-segundo: 5
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.0
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16
+  lease: PT10M

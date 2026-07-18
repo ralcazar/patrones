@@ -1,0 +1,30 @@
+# Idéntico a base-sin-fallos salvo tasa-fallo: 30% de fallo REST (estrés).
+# Preguntas: ¿la cola drena o crece sin límite? ¿las órdenes que agotan la
+# política de reintentos acaban en error con su ticket abierto (y solo esas)?
+nombre: fallos-30
+descripcion: Estrés con 30% de fallo REST; verificar drenaje, agotamiento de reintentos y apertura de tickets.
+
+semilla: 42
+duracion: PT1H
+drenaje-maximo: PT15M
+
+pods: 4
+
+inyeccion:
+  tramitaciones: 10000
+  ritmo-por-segundo: 5
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.30
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16
+  lease: PT10M

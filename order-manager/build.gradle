@@ -31,11 +31,20 @@ sourceSets {
 		compileClasspath += sourceSets.main.output + sourceSets.test.output
 		runtimeClasspath += sourceSets.main.output + sourceSets.test.output
 	}
+	// src/pruebaCarga/{java,resources}: harness de pruebas de carga
+	// multi-pod (plan-pruebas-carga.md). NO es un test (no lo ejecutan
+	// `test` ni `integrationTest`, no computa cobertura); solo necesita
+	// reutilizar las clases de producción (adaptadores, casos de uso).
+	pruebaCarga {
+		compileClasspath += sourceSets.main.output
+		runtimeClasspath += sourceSets.main.output
+	}
 }
 
 configurations {
 	integrationTestImplementation.extendsFrom testImplementation
 	integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+	pruebaCargaImplementation.extendsFrom implementation
 }
 
 dependencies {
@@ -57,6 +66,13 @@ dependencies {
 	// modo Oracle): la app en sí sigue en Oracle real, sin esquema automático
 	// (ver order-manager/db/). No es runtime ni se usa en los tests unitarios.
 	integrationTestImplementation 'com.h2database:h2'
+
+	// SOLO para el harness de pruebas de carga (src/pruebaCarga): la BBDD
+	// del harness es H2 en fichero (ver plan-pruebas-carga.md). spring-boot
+	// (para arrancar los "pods") y snakeyaml (para leer los escenarios .yml)
+	// ya llegan transitivamente desde 'implementation' vía
+	// pruebaCargaImplementation.extendsFrom implementation.
+	pruebaCargaImplementation 'com.h2database:h2'
 }
 
 dependencyManagement {
@@ -76,6 +92,41 @@ tasks.register('integrationTest', Test) {
 	classpath = sourceSets.integrationTest.runtimeClasspath
 	useJUnitPlatform()
 	shouldRunAfter test
+}
+
+// Lanza el harness de pruebas de carga multi-pod (plan-pruebas-carga.md).
+// Deliberadamente NO se engancha a `check`: no es un test, es una ejecución
+// larga y con efectos (escribe en build/pruebaCarga/<escenario>-<timestamp>/).
+// El escenario es obligatorio y su fichero .yml debe existir en
+// src/pruebaCarga/resources/escenarios/: son la fuente de verdad (ver
+// plan-pruebas-carga.md), así que no se acepta ningún otro parámetro suelto.
+tasks.register('pruebaCarga', JavaExec) {
+	description = 'Lanza una prueba de carga multi-pod. Uso: -Pescenario=<nombre> (obligatorio).'
+	group = 'pruebaCarga'
+	classpath = sourceSets.pruebaCarga.runtimeClasspath
+	mainClass = 'com.ejemplo.app.carga.LanzadorPruebaCarga'
+
+	// Capturados en tiempo de configuración (Provider/Directory, no `project`
+	// vivo) para no depender de la API de proyecto en tiempo de ejecución,
+	// que Gradle desaconseja de cara a la configuration cache.
+	def escenarioProvider = providers.gradleProperty('escenario')
+	def directorioEscenarios = layout.projectDirectory.dir('src/pruebaCarga/resources/escenarios')
+
+	doFirst {
+		if (!escenarioProvider.isPresent()) {
+			throw new GradleException(
+					"Falta la propiedad -Pescenario=<nombre> (obligatoria). "
+							+ "Escenarios disponibles en src/pruebaCarga/resources/escenarios/*.yml")
+		}
+		def nombreEscenario = escenarioProvider.get()
+		def ficheroEscenario = directorioEscenarios.file("${nombreEscenario}.yml").asFile
+		if (!ficheroEscenario.exists()) {
+			throw new GradleException(
+					"No existe el escenario '${nombreEscenario}': se esperaba el fichero "
+							+ "${ficheroEscenario} (ver src/pruebaCarga/resources/escenarios/README.md)")
+		}
+		args = [nombreEscenario]
+	}
 }
 
 // Único filtro de exclusión de cobertura: la clase de arranque de Spring

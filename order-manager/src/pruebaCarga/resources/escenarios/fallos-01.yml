@@ -1,0 +1,30 @@
+# Idéntico a base-sin-fallos salvo tasa-fallo: 1% de fallo REST.
+# Pregunta: ¿un fallo esporádico es ruido que los reintentos absorben sin
+# efecto medible sobre el throughput ni la latencia de saga?
+nombre: fallos-01
+descripcion: 1% de fallo en las llamadas REST; los reintentos deberían absorberlo sin degradación visible.
+
+semilla: 42
+duracion: PT1H
+drenaje-maximo: PT10M
+
+pods: 4
+
+inyeccion:
+  tramitaciones: 10000
+  ritmo-por-segundo: 5
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.01
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16
+  lease: PT10M

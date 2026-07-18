@@ -1,0 +1,30 @@
+# Idéntico a base-sin-fallos salvo tasa-fallo: 10% de fallo REST.
+# Pregunta: ¿cuánto throughput cuesta el 10% de fallo? ¿la cola de
+# reintentos (backoff) se mantiene estable o crece durante la hora?
+nombre: fallos-10
+descripcion: 10% de fallo REST; medir degradación de throughput y estabilidad de la cola de reintentos.
+
+semilla: 42
+duracion: PT1H
+drenaje-maximo: PT10M
+
+pods: 4
+
+inyeccion:
+  tramitaciones: 10000
+  ritmo-por-segundo: 5
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.10
+
+kafka:
+  retraso-ms: { min: 500, max: 5000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 1000
+    trabajadores: 2
+    lote: 16
+  lease: PT10M
