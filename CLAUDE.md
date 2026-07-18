@@ -28,6 +28,14 @@ Guía para trabajar en este repositorio.
   (mismo número de pasos, mismas transacciones, mismas condiciones), no una
   versión simplificada o idealizada de lo que hace el código.
 
+## Esquema de base de datos
+
+- **Prohibido `ON DELETE CASCADE`** (y cualquier borrado implícito en BD:
+  triggers, cascadas de JPA sobre asociaciones, etc.). Los borrados de filas
+  hijas se hacen de forma explícita en el adaptador de persistencia, en la
+  misma transacción que el borrado del padre, y en el orden correcto
+  (hijas antes que padre) para respetar las FK.
+
 ## Restricción de arquitectura: entrada → aplicación → salida
 
 - **Un adaptador de entrada nunca habla directamente con un adaptador de
