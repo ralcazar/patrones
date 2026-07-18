@@ -1,6 +1,7 @@
 package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProcesoJpaRepository extends JpaRepository<ProcesoEntity, UUID> {
+
+    /** Idempotencia de POST /tramitaciones: localizar la orden principal ya creada para un externalId. */
+    Optional<ProcesoEntity> findByExternalIdAndTipo(String externalId, String tipo);
 
     // clearAutomatically: sin esto, una entidad ya cargada en el contexto de persistencia
     // (p. ej. por un merge/save previo en la misma transacción) seguiría "viva" en el

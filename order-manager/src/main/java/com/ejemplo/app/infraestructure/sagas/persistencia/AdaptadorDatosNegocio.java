@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
@@ -14,6 +15,7 @@ import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio3;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.ExternalIdDuplicadoException;
 
 /** Único adaptador de escritura/lectura del agregado {@link DatosNegocio}. */
 @Component
@@ -29,7 +31,17 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
 
     @Override
     public void crear(DatosNegocio datosNegocioAGuardar, List<DocumentoNegocio> documentosAGuardar) {
-        datosNegocio.save(entidadDatosNegocioDe(datosNegocioAGuardar));
+        try {
+            datosNegocio.save(entidadDatosNegocioDe(datosNegocioAGuardar));
+            // Fuerza el chequeo del índice único aquí, no en el commit de fuera: crear() se
+            // invoca desde dentro de la transacción de ServicioIniciarTramitacion.crearAgregados,
+            // así que sin este flush la violación se diferiría hasta ESE commit y llegaría como
+            // DataIntegrityViolationException cruda, sin traducir (mismo motivo que
+            // AdaptadorRepositorioOrden.guardar() fuerza ordenes.flush()).
+            datosNegocio.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new ExternalIdDuplicadoException(datosNegocioAGuardar.externalId(), e);
+        }
         var id = datosNegocioAGuardar.id().valor();
         for (var i = 0; i < documentosAGuardar.size(); i++) {
             documentos.save(entidadDocumentoDe(id, i, documentosAGuardar.get(i)));
@@ -54,6 +66,17 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     public Optional<DatosNegocio> buscarPorExternalId(ExternalId externalId) {
         return datosNegocio.findByExternalId(externalId.valor().toString())
                 .map(AdaptadorDatosNegocio::datosNegocioDesde);
+    }
+
+    @Override
+    public List<DatosNegocioId> idsHuerfanos() {
+        return datosNegocio.idsHuerfanos().stream().map(UUID::fromString).map(DatosNegocioId::new).toList();
+    }
+
+    @Override
+    public void borrar(DatosNegocioId id) {
+        documentos.deleteByDatosnegocioId(id.valor()); // hija primero: sin ON DELETE CASCADE (ver CLAUDE.md)
+        datosNegocio.deleteById(id.valor());
     }
 
     // ------------------------------------------------------------------

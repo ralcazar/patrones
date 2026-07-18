@@ -22,6 +22,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinu
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoDatosNegocio;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
@@ -38,6 +39,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecunda
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
@@ -80,6 +82,7 @@ class ContextoCargaTest {
         assertThat(contexto.getBean(ServicioRegistrarRespuestaSecundaria2.class)).isNotNull();
         assertThat(contexto.getBean(ServicioCancelarTramitacion.class)).isNotNull();
         assertThat(contexto.getBean(ServicioVistaTramitacion.class)).isNotNull();
+        assertThat(contexto.getBean(ServicioPurgarDatosNegocioHuerfanos.class)).isNotNull();
         assertThat(contexto.getBean("ejecutorContinuacion", ThreadPoolTaskExecutor.class)).isNotNull();
     }
 
@@ -109,5 +112,6 @@ class ContextoCargaTest {
 
         @Bean PuertoDatosNegocio puertoDatosNegocio() { return mock(PuertoDatosNegocio.class); }
         @Bean RepositorioDatosNegocio repositorioDatosNegocio() { return mock(RepositorioDatosNegocio.class); }
+        @Bean PuertoBusquedaTramitacion puertoBusquedaTramitacion() { return mock(PuertoBusquedaTramitacion.class); }
     }
 }

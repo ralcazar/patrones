@@ -11,6 +11,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoCons
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso1;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso2;
@@ -27,6 +28,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecunda
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
@@ -86,8 +88,9 @@ public class ConfiguracionSagas {
 
     @Bean
     ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
-            PuertoDatosNegocio puertoDatosNegocio, @Lazy ServicioIniciarTramitacion self) {
-        var servicio = new ServicioIniciarTramitacion(repo, repoDatos, puertoDatosNegocio);
+            PuertoDatosNegocio puertoDatosNegocio, PuertoBusquedaTramitacion busqueda,
+            @Lazy ServicioIniciarTramitacion self) {
+        var servicio = new ServicioIniciarTramitacion(repo, repoDatos, puertoDatosNegocio, busqueda);
         servicio.establecerSelf(self);
         return servicio;
     }
@@ -106,5 +109,10 @@ public class ConfiguracionSagas {
     @Bean
     ServicioVistaTramitacion servicioVistaTramitacion(PuertoConsultaOrdenesSoporte consultas) {
         return new ServicioVistaTramitacion(consultas);
+    }
+
+    @Bean
+    ServicioPurgarDatosNegocioHuerfanos servicioPurgarDatosNegocioHuerfanos(RepositorioDatosNegocio repoDatos) {
+        return new ServicioPurgarDatosNegocioHuerfanos(repoDatos);
     }
 }
