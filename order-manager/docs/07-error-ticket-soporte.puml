@@ -12,6 +12,7 @@ end box
 box "Dominio" #FBF5EF
   participant "OrdenRoot" as ORDEN
   participant "PoliticaReintentos" as POL
+  participant "DetalleError" as DERR
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
@@ -28,13 +29,16 @@ ORQ -> ORQ : puertoPasoN.ejecutar(cmd) -- REST fuera de tx
 ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
 deactivate ORQ
 CONT -> CONT : catch (RuntimeException e): programar el reintento\nsobre la MISMA orden usada arriba (no se recarga:\nfix del takeover seguro)
+CONT -> DERR ++ : DetalleError.de(e)
+DERR -> DERR : tipo = e.getClass().getName();\nmensaje = e.getMessage() (sin stacktrace)
+return error
 
 group Transacción: reintento sobre la orden ya reclamada
-  CONT -> ORDEN ++ : programarReintento(politica, Instant.now())
+  CONT -> ORDEN ++ : programarReintento(politica, error, Instant.now())
   ORDEN -> POL ++ : esperaTras(N + 1)
   POL -> POL : escalera 1, 3, 5, 10, 20, 45,\n90, 180 min (desde el 8º, 180)
   return espera
-  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera;\nliberarToken()
+  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera;\nultimoError = error; liberarToken()
   return
   CONT -> REPO ++ : guardar(orden)
   return
@@ -54,20 +58,20 @@ deactivate CONT
 note over ORDEN, POL
   La escalera nunca se agota: consumida (intentos >= 8) se sigue
   reintentando cada 180 min indefinidamente. resetearIntentos()
-  (paso OK) borra ticketAbiertoEn: un atasco posterior abre un
-  ticket NUEVO, no reutiliza el anterior.
+  (paso OK) borra ticketAbiertoEn y ultimoError: un atasco
+  posterior abre un ticket NUEVO, no reutiliza el anterior.
 end note
 
 == Barrido de tickets (cada 3h, de 8 a 17h) ==
 PLAN -> STICK ++ : abrirTicketsPendientes()
 STICK -> PPEND ++ : buscar()
 PPEND -> PPEND : SELECT ... WHERE intentos >= 8\nAND ticket_abierto_en IS NULL AND resultado IS NULL
-return [OrdenTicketPendiente(tipo, ordenId, externalId, intentos), ...]
+return [OrdenTicketPendiente(tipo, ordenId, externalId, intentos, ultimoError), ...]
 alt ordenes.isEmpty()
   STICK --> PLAN : 0 (sin ticket)
 else hay órdenes pendientes
   STICK -> TICK ++ : abrir(ordenes) -- UN ticket para TODAS
-  TICK -> TICK : log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\n(no devuelve id: no se conoce)
+  TICK -> TICK : log.error("TICKET-SOPORTE-ORDERMANAGER: ...\núltimo error: {tipo}: {mensaje}")\n(no devuelve id: no se conoce)
   return
   STICK -> STICK : apertura = Instant.now()
   loop por cada orden pendiente

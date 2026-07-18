@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -55,11 +56,14 @@ public interface CasoUsoConsultarOrdenesSoporte {
      * - intentos: reintentos de ejecución consumidos; &gt;= 8 marca la orden como bloqueada.
      * - ticketAbiertoEn: null si no hay ticket abierto.
      * - proximoReintentoEn: próxima vez que el planificador la recogerá.
+     * - ultimoError: clase de excepción + mensaje del último fallo de paso
+     *   (null si nunca falló o el paso más reciente fue OK); sin stacktrace.
      */
     record OrdenResumen(OrdenId id, TipoOrden tipo, ExternalId externalId,
                        String estado, int intentos,
                        Instant ticketAbiertoEn, Instant proximoReintentoEn,
-                       Instant iniciadaEn, Instant actualizadaEn) {}
+                       Instant iniciadaEn, Instant actualizadaEn,
+                       DetalleError ultimoError) {}
 
     /** El paso pendiente actual (derivado de la FSM), si la orden sigue viva. */
     record PasoDetalle(String nombrePaso, boolean datosManualesObligatorios) {}

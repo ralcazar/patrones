@@ -23,7 +23,7 @@ class OrdenEntityTest {
         var ticketAbiertoEn = proximoReintentoEn.minusSeconds(60);
         var completadaEn = proximoReintentoEn.plusSeconds(120);
         var entity = new OrdenEntity(ordenId, 3, proximoReintentoEn, "token-1", tokenExpiraEn,
-                ticketAbiertoEn, completadaEn, 5L);
+                ticketAbiertoEn, completadaEn, "java.lang.RuntimeException", "boom", 5L);
 
         assertThat(entity.getOrdenId()).isEqualTo(ordenId);
         assertThat(entity.getIntentos()).isEqualTo(3);
@@ -32,12 +32,14 @@ class OrdenEntityTest {
         assertThat(entity.getTokenExpiraEn()).isEqualTo(tokenExpiraEn);
         assertThat(entity.getTicketAbiertoEn()).isEqualTo(ticketAbiertoEn);
         assertThat(entity.getCompletadaEn()).isEqualTo(completadaEn);
+        assertThat(entity.getUltimoErrorTipo()).isEqualTo("java.lang.RuntimeException");
+        assertThat(entity.getUltimoErrorMensaje()).isEqualTo("boom");
         assertThat(entity.getVersion()).isEqualTo(5L);
     }
 
     @Test
     void alCrear_fijaCreadaEnSoloLaPrimeraVez() {
-        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, 0L);
+        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, null, null, 0L);
 
         entity.alCrear();
         var creadaEnOriginal = entity.getCreadaEn();
@@ -50,7 +52,7 @@ class OrdenEntityTest {
 
     @Test
     void alActualizar_refrescaActualizadaEn() {
-        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, 0L);
+        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, null, null, 0L);
         entity.alCrear();
         var actualizadaEnTrasCrear = entity.getActualizadaEn();
 

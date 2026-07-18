@@ -22,6 +22,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTick
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
@@ -51,7 +52,7 @@ class ServicioTicketsSoporteTest {
         var orden = OrdenRoot.nueva(proceso, Instant.now());
         var politica = new PoliticaReintentos();
         for (int i = 0; i < intentos; i++) {
-            orden.programarReintento(politica, Instant.now());
+            orden.programarReintento(politica, new DetalleError("java.lang.RuntimeException", "boom"), Instant.now());
         }
         repo.crear(orden);
         return id;
@@ -62,7 +63,7 @@ class ServicioTicketsSoporteTest {
         return () -> repo.todas().stream()
                 .filter(o -> o.intentos() >= 8 && o.ticketAbiertoEn() == null && o.estaViva())
                 .map(o -> new OrdenTicketPendiente(o.tipo(), o.id(),
-                        o.proceso().externalId(), o.intentos()))
+                        o.proceso().externalId(), o.intentos(), o.ultimoError()))
                 .toList();
     }
 
@@ -109,7 +110,7 @@ class ServicioTicketsSoporteTest {
         var ordenAtascadaOtraVez = repo.cargar(id);
         var politica = new PoliticaReintentos();
         for (int i = 0; i < 8; i++) {
-            ordenAtascadaOtraVez.programarReintento(politica, Instant.now());
+            ordenAtascadaOtraVez.programarReintento(politica, new DetalleError("java.lang.RuntimeException", "boom"), Instant.now());
         }
         repo.guardar(ordenAtascadaOtraVez);
 

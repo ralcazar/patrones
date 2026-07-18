@@ -18,6 +18,7 @@ class OrdenRootTest {
 
     private static final Duration LEASE = Duration.ofMinutes(10);
     private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
+    private static final DetalleError ERROR = new DetalleError("java.lang.RuntimeException", "boom");
 
     private static Proceso<?> procesoCualquiera() {
         return ProcesoFalso.crear(OrdenId.nuevo(), ExternalId.de(UUID.randomUUID().toString()));
@@ -33,6 +34,7 @@ class OrdenRootTest {
         assertThat(orden.tokenExpiraEn()).isNull();
         assertThat(orden.ticketAbiertoEn()).isNull();
         assertThat(orden.completadaEn()).isNull();
+        assertThat(orden.ultimoError()).isNull();
         assertThat(orden.estaViva()).isTrue();
         assertThat(orden.version()).isZero();
     }
@@ -90,20 +92,22 @@ class OrdenRootTest {
     }
 
     @Test
-    void resetearIntentos_ponePasoOkYCierraElTicketAbierto() {
+    void resetearIntentos_ponePasoOkYCierraElTicketAbiertoYLimpiaElUltimoError() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         var politica = new PoliticaReintentos();
         for (int i = 0; i < 8; i++) {
-            orden.programarReintento(politica, T0);
+            orden.programarReintento(politica, ERROR, T0);
         }
         orden.marcarTicketAbierto(T0);
         assertThat(orden.intentos()).isEqualTo(8);
         assertThat(orden.ticketAbiertoEn()).isNotNull();
+        assertThat(orden.ultimoError()).isEqualTo(ERROR);
 
         orden.resetearIntentos();
 
         assertThat(orden.intentos()).isZero();
         assertThat(orden.ticketAbiertoEn()).isNull();
+        assertThat(orden.ultimoError()).isNull();
     }
 
     @Test
@@ -131,16 +135,17 @@ class OrdenRootTest {
     }
 
     @Test
-    void programarReintento_incrementaIntentosSiguiendoLaEscaleraYLiberaToken() {
+    void programarReintento_incrementaIntentosSiguiendoLaEscaleraYLiberaTokenYGuardaElUltimoError() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         orden.asignarToken(UUID.randomUUID(), LEASE, T0);
         var politica = new PoliticaReintentos();
 
-        orden.programarReintento(politica, T0);
+        orden.programarReintento(politica, ERROR, T0);
 
         assertThat(orden.intentos()).isEqualTo(1);
         assertThat(orden.proximoReintentoEn()).isEqualTo(T0.plus(Duration.ofMinutes(1)));
         assertThat(orden.tokenTrabajador()).isNull();
+        assertThat(orden.ultimoError()).isEqualTo(ERROR);
     }
 
     @Test
@@ -151,7 +156,7 @@ class OrdenRootTest {
 
         var ahora = T0;
         for (int minutosEsperados : esperadas) {
-            orden.programarReintento(politica, ahora);
+            orden.programarReintento(politica, ERROR, ahora);
             assertThat(orden.proximoReintentoEn()).isEqualTo(ahora.plus(Duration.ofMinutes(minutosEsperados)));
             ahora = orden.proximoReintentoEn();
         }
@@ -174,7 +179,7 @@ class OrdenRootTest {
     @Test
     void tieneTokenVigente_esFalsoSiHayTokenTrabajadorPeroSinFechaDeExpiracion() {
         // Combinación solo alcanzable vía rehidratar (asignarToken siempre fija ambos a la vez).
-        var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, UUID.randomUUID(), null, null, null, 0L);
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, UUID.randomUUID(), null, null, null, null, 0L);
 
         assertThat(orden.tieneTokenVigente(T0)).isFalse();
     }
@@ -184,12 +189,13 @@ class OrdenRootTest {
         var proceso = procesoCualquiera();
         var token = UUID.randomUUID();
         var orden = OrdenRoot.rehidratar(proceso, 4, T0.plusSeconds(10), token, T0.plus(LEASE),
-                T0.minusSeconds(1), null, 7L);
+                T0.minusSeconds(1), null, ERROR, 7L);
 
         assertThat(orden.intentos()).isEqualTo(4);
         assertThat(orden.tokenTrabajador()).isEqualTo(token);
         assertThat(orden.version()).isEqualTo(7L);
         assertThat(orden.tipo()).isEqualTo(ProcesoFalso.TIPO);
         assertThat(orden.proceso().estado()).isEqualTo(ProcesoFalso.Estado.INICIAL);
+        assertThat(orden.ultimoError()).isEqualTo(ERROR);
     }
 }

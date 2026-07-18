@@ -14,6 +14,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarOrdenesSoporte.OrdenResumen;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -98,7 +99,11 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
         return new OrdenResumen(OrdenId.de(f.getOrdenId()), new TipoOrden(f.getTipo()),
                 ExternalId.de(f.getExternalId()), f.getEstado(), f.getIntentos(), instanteONull(f.getTicketAbiertoEn()),
                 instanteONull(f.getProximoReintentoEn()), instanteONull(f.getIniciadaEn()),
-                instanteONull(f.getActualizadaEn()));
+                instanteONull(f.getActualizadaEn()), detalleErrorDe(f));
+    }
+
+    private static DetalleError detalleErrorDe(OrdenResumenFila f) {
+        return f.getUltimoErrorTipo() == null ? null : new DetalleError(f.getUltimoErrorTipo(), f.getUltimoErrorMensaje());
     }
 
     private static Instant instanteONull(OffsetDateTime valor) {

@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente.OrdenTicketPendiente;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -26,9 +27,10 @@ class AdaptadorTicketsLogTest {
     void abrir_conVariasOrdenesNoRompe() {
         var ordenes = List.of(
                 new OrdenTicketPendiente(new TipoOrden("PRINCIPAL"), OrdenId.nuevo(),
-                        ExternalId.de(UUID.randomUUID().toString()), 8),
+                        ExternalId.de(UUID.randomUUID().toString()), 8,
+                        new DetalleError("java.lang.RuntimeException", "boom")),
                 new OrdenTicketPendiente(new TipoOrden("SECUNDARIA1"), OrdenId.nuevo(),
-                        ExternalId.de(UUID.randomUUID().toString()), 10));
+                        ExternalId.de(UUID.randomUUID().toString()), 10, null));
 
         assertThatCode(() -> adaptador.abrir(ordenes)).doesNotThrowAnyException();
     }

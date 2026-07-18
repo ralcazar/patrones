@@ -13,6 +13,7 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
@@ -96,7 +97,7 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
                 // Reintento sobre la MISMA orden usada arriba (fix del takeover
                 // seguro): si otro actor escribió entre medias, este guardado falla
                 // por version igual que el de cualquier otro paso.
-                self.programarReintento(orden);
+                self.programarReintento(orden, DetalleError.de(e));
                 return true;
             }
             switch (senal) {
@@ -122,8 +123,8 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
     }
 
     @Transactional
-    public void programarReintento(OrdenRoot orden) {
-        orden.programarReintento(politica, Instant.now());
+    public void programarReintento(OrdenRoot orden, DetalleError error) {
+        orden.programarReintento(politica, error, Instant.now());
         repo.guardar(orden);
     }
 

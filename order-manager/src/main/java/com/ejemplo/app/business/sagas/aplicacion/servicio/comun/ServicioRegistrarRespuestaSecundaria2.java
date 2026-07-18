@@ -9,6 +9,7 @@ import org.jmolecules.ddd.annotation.Service;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.MensajeId;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
@@ -63,7 +64,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         var orden = repo.cargar(sagaId);
         var saga = (SagaSecundaria2) orden.proceso();
         saga.volverASolicitar();
-        orden.programarReintento(politica, Instant.now());
+        orden.programarReintento(politica, new DetalleError(codigo, detalle), Instant.now());
         repo.guardar(orden);
     }
 }

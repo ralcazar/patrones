@@ -49,6 +49,12 @@ public class OrdenEntity {
     @Column(name = "completada_en")
     private Instant completadaEn;
 
+    @Column(name = "ultimo_error_tipo", length = 200)
+    private String ultimoErrorTipo;
+
+    @Column(name = "ultimo_error_mensaje", length = 1000)
+    private String ultimoErrorMensaje;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -64,7 +70,8 @@ public class OrdenEntity {
     }
 
     public OrdenEntity(UUID ordenId, int intentos, Instant proximoReintentoEn, String tokenTrabajador,
-            Instant tokenExpiraEn, Instant ticketAbiertoEn, Instant completadaEn, long version) {
+            Instant tokenExpiraEn, Instant ticketAbiertoEn, Instant completadaEn,
+            String ultimoErrorTipo, String ultimoErrorMensaje, long version) {
         this.ordenId = ordenId;
         this.intentos = intentos;
         this.proximoReintentoEn = proximoReintentoEn;
@@ -72,6 +79,8 @@ public class OrdenEntity {
         this.tokenExpiraEn = tokenExpiraEn;
         this.ticketAbiertoEn = ticketAbiertoEn;
         this.completadaEn = completadaEn;
+        this.ultimoErrorTipo = ultimoErrorTipo;
+        this.ultimoErrorMensaje = ultimoErrorMensaje;
         this.version = version;
     }
 
@@ -96,6 +105,8 @@ public class OrdenEntity {
     public Instant getTokenExpiraEn() { return tokenExpiraEn; }
     public Instant getTicketAbiertoEn() { return ticketAbiertoEn; }
     public Instant getCompletadaEn() { return completadaEn; }
+    public String getUltimoErrorTipo() { return ultimoErrorTipo; }
+    public String getUltimoErrorMensaje() { return ultimoErrorMensaje; }
     public long getVersion() { return version; }
     public Instant getCreadaEn() { return creadaEn; }
     public Instant getActualizadaEn() { return actualizadaEn; }

@@ -16,7 +16,8 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, p.estado AS estado,
                    o.intentos AS intentos, o.ticket_abierto_en AS ticketAbiertoEn,
                    o.proximo_reintento_en AS proximoReintentoEn, o.creada_en AS iniciadaEn,
-                   o.actualizada_en AS actualizadaEn
+                   o.actualizada_en AS actualizadaEn,
+                   o.ultimo_error_tipo AS ultimoErrorTipo, o.ultimo_error_mensaje AS ultimoErrorMensaje
             FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
             """;
 
@@ -62,7 +63,8 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
 
     /** Escalera de reintentos consumida: candidata a bandeja de trabajo y a ticket. */
     @Query(value = """
-            SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, o.intentos AS intentos
+            SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, o.intentos AS intentos,
+                   o.ultimo_error_tipo AS ultimoErrorTipo, o.ultimo_error_mensaje AS ultimoErrorMensaje
             FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
             WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.completada_en IS NULL
             """, nativeQuery = true)

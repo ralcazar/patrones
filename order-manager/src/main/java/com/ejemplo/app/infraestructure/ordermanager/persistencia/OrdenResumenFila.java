@@ -20,4 +20,6 @@ interface OrdenResumenFila {
     OffsetDateTime getProximoReintentoEn();
     OffsetDateTime getIniciadaEn();
     OffsetDateTime getActualizadaEn();
+    String getUltimoErrorTipo();
+    String getUltimoErrorMensaje();
 }

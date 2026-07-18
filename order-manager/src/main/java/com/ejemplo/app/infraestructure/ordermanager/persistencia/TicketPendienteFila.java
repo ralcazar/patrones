@@ -6,4 +6,6 @@ interface TicketPendienteFila {
     String getTipo();
     String getExternalId();
     int getIntentos();
+    String getUltimoErrorTipo();
+    String getUltimoErrorMensaje();
 }

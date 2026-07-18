@@ -19,6 +19,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarOrdenesSoporte.PasoDetalle;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
@@ -55,7 +56,7 @@ class ServicioSoporteOrdenesTest {
 
     private static OrdenResumen resumenEjemplo(OrdenId id) {
         return new OrdenResumen(id, ProcesoFalso.TIPO, ExternalId.de(UUID.randomUUID().toString()),
-                "INICIAL", 3, null, AHORA, AHORA, AHORA);
+                "INICIAL", 3, null, AHORA, AHORA, AHORA, null);
     }
 
     private static OrdenDetalle detalleEjemplo(OrdenId id) {
@@ -68,7 +69,7 @@ class ServicioSoporteOrdenesTest {
         var orden = repo.cargar(id);
         var politica = new PoliticaReintentos();
         for (int i = 0; i < 8; i++) {
-            orden.programarReintento(politica, AHORA);
+            orden.programarReintento(politica, new DetalleError("java.lang.RuntimeException", "boom"), AHORA);
         }
         repo.guardar(orden);
         assertThat(repo.estadoActual(id).intentos()).isEqualTo(8);

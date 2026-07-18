@@ -13,18 +13,19 @@ class OrdenRoot <<@AggregateRoot>> {
   -tokenExpiraEn : Instant
   -ticketAbiertoEn : Instant
   -completadaEn : Instant
+  -ultimoError : DetalleError
   -version : long  «ÚNICA del agregado»
   +{static} nueva(proceso, ahora) : OrdenRoot
-  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn, version)
+  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn,\nultimoError, version)
   +asignarToken(token, lease, ahora)
   +renovarLease(lease, ahora)
   +tieneTokenVigente(ahora) : boolean
   +liberarToken()
-  +resetearIntentos()  «intentos=0 Y ticketAbiertoEn=null»
+  +resetearIntentos()  «intentos=0, ticketAbiertoEn=null Y ultimoError=null»
   +marcarTicketAbierto(ahora)
   +despertar(ahora)  «proximoReintentoEn=ahora, libera token»
   +aparcar(ventana, ahora)  «proximoReintentoEn=ahora+ventana»
-  +programarReintento(PoliticaReintentos, ahora)  «intentos++»
+  +programarReintento(PoliticaReintentos, DetalleError, ahora)  «intentos++; ultimoError=error»
   +finalizar(ahora)
   +estaViva() : boolean  «completadaEn == null»
   +proceso() : Proceso<?>
@@ -110,10 +111,23 @@ class MotivoFallo <<@ValueObject>> {
   esReintentable : boolean
   +{static} timeout() / errorTecnico(detalle) / errorNegocio(detalle)
 }
+class DetalleError <<@ValueObject, record>> {
+  tipo : String
+  mensaje : String
+  +{static} de(Throwable) : DetalleError
+}
+note bottom of DetalleError
+  Lo que soporte ve de un fallo: clase de la excepción + mensaje,
+  NUNCA el stacktrace. La rellena tanto ServicioContinuarOrden
+  (DetalleError.de(e) sobre la RuntimeException de un paso) como
+  ServicioRegistrarRespuestaSecundaria2 (codigo/detalle del
+  evento Kafka de error) -- ver 17 y 07.
+end note
 class "OrdenId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion" as VOs <<@ValueObject>>
 
 OrdenRoot "1" *-- "1" Proceso : proceso
-OrdenRoot ..> PoliticaReintentos : programarReintento(politica, ahora)
+OrdenRoot ..> PoliticaReintentos : programarReintento(politica, error, ahora)
+OrdenRoot ..> DetalleError : ultimoError
 OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide
 Proceso ..> TipoOrden : tipo()
 Proceso ..> ComandoPaso : comandoActual()

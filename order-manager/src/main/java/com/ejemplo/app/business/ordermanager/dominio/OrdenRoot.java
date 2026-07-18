@@ -31,11 +31,12 @@ public final class OrdenRoot {
     private Instant tokenExpiraEn;
     private Instant ticketAbiertoEn;
     private Instant completadaEn;
+    private DetalleError ultimoError;
     private final long version;
 
     private OrdenRoot(OrdenId id, Proceso<?> proceso, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
-            Instant completadaEn, long version) {
+            Instant completadaEn, DetalleError ultimoError, long version) {
         this.id = id;
         this.proceso = proceso;
         this.intentos = intentos;
@@ -44,19 +45,20 @@ public final class OrdenRoot {
         this.tokenExpiraEn = tokenExpiraEn;
         this.ticketAbiertoEn = ticketAbiertoEn;
         this.completadaEn = completadaEn;
+        this.ultimoError = ultimoError;
         this.version = version;
     }
 
     public static OrdenRoot nueva(Proceso<?> proceso, Instant ahora) {
-        return new OrdenRoot(proceso.id(), proceso, 0, ahora, null, null, null, null, 0L);
+        return new OrdenRoot(proceso.id(), proceso, 0, ahora, null, null, null, null, null, 0L);
     }
 
     /** Para el adaptador de persistencia. */
     public static OrdenRoot rehidratar(Proceso<?> proceso, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
-            Instant completadaEn, long version) {
+            Instant completadaEn, DetalleError ultimoError, long version) {
         return new OrdenRoot(proceso.id(), proceso, intentos, proximoReintentoEn, tokenTrabajador,
-                tokenExpiraEn, ticketAbiertoEn, completadaEn, version);
+                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
     }
 
     public void asignarToken(UUID token, Duration lease, Instant ahora) {
@@ -82,6 +84,7 @@ public final class OrdenRoot {
     public void resetearIntentos() {
         this.intentos = 0;
         this.ticketAbiertoEn = null;
+        this.ultimoError = null;
     }
 
     public void marcarTicketAbierto(Instant ahora) {
@@ -100,9 +103,10 @@ public final class OrdenRoot {
         liberarToken();
     }
 
-    public void programarReintento(PoliticaReintentos politica, Instant ahora) {
+    public void programarReintento(PoliticaReintentos politica, DetalleError error, Instant ahora) {
         this.intentos++;
         this.proximoReintentoEn = ahora.plus(politica.esperaTras(intentos));
+        this.ultimoError = error;
         liberarToken();
     }
 
@@ -125,5 +129,6 @@ public final class OrdenRoot {
     public Instant tokenExpiraEn() { return tokenExpiraEn; }
     public Instant ticketAbiertoEn() { return ticketAbiertoEn; }
     public Instant completadaEn() { return completadaEn; }
+    public DetalleError ultimoError() { return ultimoError; }
     public long version() { return version; }
 }

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
@@ -62,7 +63,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         return OrdenRoot.rehidratar(procesoDesde(procesoEntity), ordenEntity.getIntentos(),
                 ordenEntity.getProximoReintentoEn(), uuidONull(ordenEntity.getTokenTrabajador()),
                 ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
-                ordenEntity.getCompletadaEn(), ordenEntity.getVersion());
+                ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
     }
 
     @Override
@@ -74,7 +75,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
             ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera; ya deja la version real en ordenEntity
             return OrdenRoot.rehidratar(orden.proceso(), ordenEntity.getIntentos(), ordenEntity.getProximoReintentoEn(),
                     orden.tokenTrabajador(), ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
-                    ordenEntity.getCompletadaEn(), ordenEntity.getVersion());
+                    ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
         } catch (OptimisticLockingFailureException e) {
             throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
         }
@@ -115,10 +116,17 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     // ------------------------------------------------------------------
 
     private static OrdenEntity entidadOrdenDe(OrdenRoot orden) {
+        var error = orden.ultimoError();
         return new OrdenEntity(orden.id().valor(), orden.intentos(), orden.proximoReintentoEn(),
                 orden.tokenTrabajador() == null ? null : orden.tokenTrabajador().toString(),
-                orden.tokenExpiraEn(), orden.ticketAbiertoEn(),
-                orden.completadaEn(), orden.version());
+                orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
+                error == null ? null : error.tipo(), error == null ? null : error.mensaje(),
+                orden.version());
+    }
+
+    private static DetalleError detalleErrorDesde(OrdenEntity entity) {
+        return entity.getUltimoErrorTipo() == null ? null
+                : new DetalleError(entity.getUltimoErrorTipo(), entity.getUltimoErrorMensaje());
     }
 
     private static UUID uuidONull(String valor) {

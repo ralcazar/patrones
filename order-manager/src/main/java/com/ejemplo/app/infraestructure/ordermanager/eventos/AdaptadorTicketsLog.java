@@ -23,9 +23,14 @@ public class AdaptadorTicketsLog implements PuertoTicketsSoporte {
     @Override
     public void abrir(List<OrdenTicketPendiente> ordenes) {
         String detalle = ordenes.stream()
-                .map(o -> "%s %s (externalId %s): sigue reintentando cada 180 min tras %d intentos".formatted(
-                        o.tipo(), o.ordenId().valor(), o.externalId().valor(), o.intentos()))
+                .map(o -> "%s %s (externalId %s): sigue reintentando cada 180 min tras %d intentos - último error: %s".formatted(
+                        o.tipo(), o.ordenId().valor(), o.externalId().valor(), o.intentos(), errorDe(o)))
                 .collect(Collectors.joining("; "));
         log.error("TICKET-SOPORTE-ORDERMANAGER: {} órdenes requieren atención: {}", ordenes.size(), detalle);
+    }
+
+    private static String errorDe(OrdenTicketPendiente o) {
+        var error = o.ultimoError();
+        return error == null ? "sin registrar" : "%s: %s".formatted(error.tipo(), error.mensaje());
     }
 }

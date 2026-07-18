@@ -24,7 +24,7 @@ package "business.ordermanager.aplicacion.puerto.entrada" {
     +ordenesConTicketPendiente() : List<OrdenResumen>
     +buscar(FiltroOrdenes) : List<OrdenResumen>
     +detalle(tipo, id) : OrdenDetalle
-    record OrdenResumen(id, tipo, externalId, estado : String,\nintentos, ticketAbiertoEn, proximoReintentoEn,\niniciadaEn, actualizadaEn)
+    record OrdenResumen(id, tipo, externalId, estado : String,\nintentos, ticketAbiertoEn, proximoReintentoEn,\niniciadaEn, actualizadaEn, ultimoError : DetalleError)
     record FiltroOrdenes(estado : String, iniciadaDesde/Hasta,\nactualizadaDesde/Hasta)
     record PasoDetalle(nombrePaso, datosManualesObligatorios)
     record OrdenDetalle(resumen, cancelable, pasos, auditoria)
@@ -113,7 +113,7 @@ package "business.ordermanager.aplicacion.puerto.salida" {
   }
   interface PuertoOrdenesTicketPendiente {
     +buscar() : List<OrdenTicketPendiente>
-    record OrdenTicketPendiente(tipo, ordenId, externalId, intentos)
+    record OrdenTicketPendiente(tipo, ordenId, externalId, intentos,\nultimoError : DetalleError)
     «intentos >= 8 AND ticket_abierto_en IS NULL AND completada_en IS NULL»
   }
   interface PuertoTicketsSoporte {

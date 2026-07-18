@@ -2,6 +2,7 @@ package com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida;
 
 import java.util.List;
 
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -18,5 +19,6 @@ public interface PuertoOrdenesTicketPendiente {
 
     List<OrdenTicketPendiente> buscar();
 
-    record OrdenTicketPendiente(TipoOrden tipo, OrdenId ordenId, ExternalId externalId, int intentos) {}
+    record OrdenTicketPendiente(TipoOrden tipo, OrdenId ordenId, ExternalId externalId, int intentos,
+            DetalleError ultimoError) {}
 }

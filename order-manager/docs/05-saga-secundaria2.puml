@@ -194,8 +194,8 @@ group Transacción (@Transactional en respuestaError, cross-bean, sin self)
   SREG -> SAGA ++ : saga.volverASolicitar()
   SAGA -> SAGA : estado = INICIAL
   return
-  SREG -> ORDEN ++ : programarReintento(politica, Instant.now())
-  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera; liberarToken()
+  SREG -> ORDEN ++ : programarReintento(politica,\nnew DetalleError(codigo, detalle), Instant.now())
+  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera;\nultimoError = error; liberarToken()
   return
   SREG -> REPO ++ : guardar(orden)
   return

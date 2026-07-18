@@ -21,6 +21,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.Repositori
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.ProcesadorOrdenFalso;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
@@ -91,6 +92,8 @@ class ServicioContinuarOrdenTest {
             assertThat(orden.tokenTrabajador()).isNull(); // se libera al programar el reintento
         }
         assertThat(repo.estadoActual(id).intentos()).isEqualTo(3);
+        assertThat(repo.estadoActual(id).ultimoError())
+                .isEqualTo(DetalleError.de(new ExcepcionServicioExterno(MotivoFallo.timeout(), null)));
     }
 
     @Test
@@ -150,7 +153,7 @@ class ServicioContinuarOrdenTest {
         assertThat(repo.estadoActual(id).version()).isEqualTo(2L);
 
         // Pod A por fin termina y trata de guardar su trabajo con la version obsoleta (1): falla y se retira.
-        instantaneaColgadaDePodA.programarReintento(POLITICA, Instant.now());
+        instantaneaColgadaDePodA.programarReintento(POLITICA, DetalleError.de(new IllegalStateException("colgado")), Instant.now());
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> repo.guardar(instantaneaColgadaDePodA))
                 .isInstanceOf(ConcurrenciaOptimistaException.class);
 

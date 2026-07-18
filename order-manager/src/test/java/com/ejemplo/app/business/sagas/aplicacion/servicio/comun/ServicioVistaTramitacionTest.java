@@ -26,7 +26,7 @@ class ServicioVistaTramitacionTest {
     private static OrdenDetalle detalleDe(com.ejemplo.app.business.ordermanager.dominio.TipoOrden tipo,
             ExternalId externalId) {
         var resumen = new OrdenResumen(OrdenId.nuevo(), tipo, externalId, "INICIAL", 0,
-                null, Instant.now(), Instant.now(), Instant.now());
+                null, Instant.now(), Instant.now(), Instant.now(), null);
         return new OrdenDetalle(resumen, true, List.of(), List.of());
     }
 

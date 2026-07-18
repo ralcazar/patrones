@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Component;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -23,7 +24,11 @@ public class AdaptadorOrdenesTicketPendiente implements PuertoOrdenesTicketPendi
     public List<OrdenTicketPendiente> buscar() {
         return ordenes.buscarTicketsPendientes().stream()
                 .map(f -> new OrdenTicketPendiente(new TipoOrden(f.getTipo()), OrdenId.de(f.getOrdenId()),
-                        ExternalId.de(f.getExternalId()), f.getIntentos()))
+                        ExternalId.de(f.getExternalId()), f.getIntentos(), detalleErrorDe(f)))
                 .toList();
+    }
+
+    private static DetalleError detalleErrorDe(TicketPendienteFila f) {
+        return f.getUltimoErrorTipo() == null ? null : new DetalleError(f.getUltimoErrorTipo(), f.getUltimoErrorMensaje());
     }
 }

@@ -33,6 +33,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoCo
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden.CandidataOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
@@ -164,13 +165,15 @@ class PersistenciaOrdenIntegrationTest {
         var id = OrdenId.nuevo();
         var token = UUID.randomUUID();
         var ahora = Instant.now();
+        var error = new DetalleError("java.lang.RuntimeException", "boom");
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(id), 0, ahora,
-                token, ahora.plusSeconds(600), null, ahora, 0L));
+                token, ahora.plusSeconds(600), null, ahora, error, 0L));
 
         var recargada = repo.cargar(id);
 
         assertThat(recargada.tokenTrabajador()).isEqualTo(token);
         assertThat(recargada.completadaEn()).isEqualTo(ahora);
+        assertThat(recargada.ultimoError()).isEqualTo(error);
     }
 
     @Test
@@ -306,16 +309,16 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idCandidata = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idCandidata), 0, ahora.minusSeconds(5),
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
         var idFutura = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idFutura), 0, ahora.plusSeconds(3600),
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
         var idConTokenVigente = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idConTokenVigente), 0, ahora.minusSeconds(5),
-                UUID.randomUUID(), ahora.plusSeconds(3600), null, null, 0L));
+                UUID.randomUUID(), ahora.plusSeconds(3600), null, null, null, 0L));
         var idFinalizada = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idFinalizada), 0, ahora.minusSeconds(5),
-                null, null, null, ahora, 0L));
+                null, null, null, ahora, null, 0L));
 
         var candidatas = repo.buscarEjecutables(ahora, 16);
 
@@ -329,7 +332,7 @@ class PersistenciaOrdenIntegrationTest {
         assertThat(repo.hayEjecutables(ahora)).isFalse();
 
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(OrdenId.nuevo()), 0, ahora.minusSeconds(5),
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
 
         assertThat(repo.hayEjecutables(ahora)).isTrue();
     }
@@ -346,10 +349,10 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idVieja = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idVieja), 0, ahora,
-                null, null, null, ahora, 0L));
+                null, null, null, ahora, null, 0L));
         var idNoFinalizada = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idNoFinalizada), 0, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
         // Las candidatas de la query nativa de purga solo ven filas YA en BD: forzamos el
         // flush porque crear() (a diferencia de guardar()) no lo hace.
         ordenJpaRepository.flush();
@@ -377,7 +380,7 @@ class PersistenciaOrdenIntegrationTest {
         var id = OrdenId.nuevo();
         var saga = nuevaSagaPrincipal(id);
         saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
-        repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, 0L));
+        repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, null, 0L));
         ordenJpaRepository.flush();
         procesoJpaRepository.flush();
         assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor())).as("la satélite existe antes de purgar").isPresent();
@@ -403,15 +406,18 @@ class PersistenciaOrdenIntegrationTest {
     void ordenesBloqueadas_devuelveLasDeEscaleraConsumida() {
         var ahora = Instant.now();
         var idBloqueada = OrdenId.nuevo();
+        var error = new DetalleError("java.lang.RuntimeException", "boom");
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idBloqueada), 8, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, error, 0L));
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(OrdenId.nuevo()), 1, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
 
         var bloqueadas = consultas.ordenesBloqueadas();
 
         assertThat(bloqueadas).extracting(r -> r.id()).contains(idBloqueada);
         assertThat(bloqueadas).allSatisfy(r -> assertThat(r.intentos()).isGreaterThanOrEqualTo(8));
+        assertThat(bloqueadas).filteredOn(r -> r.id().equals(idBloqueada))
+                .extracting(r -> r.ultimoError()).containsExactly(error);
     }
 
     @Test
@@ -419,9 +425,9 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idEnEjecucion = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idEnEjecucion), 0, ahora,
-                UUID.randomUUID(), ahora.plusSeconds(3600), null, null, 0L));
+                UUID.randomUUID(), ahora.plusSeconds(3600), null, null, null, 0L));
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(OrdenId.nuevo()), 0, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
 
         var enEjecucion = consultas.ordenesEnEjecucion();
 
@@ -433,10 +439,10 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idPendiente = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idPendiente), 8, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, null, 0L));
         var idConTicketYaAbierto = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idConTicketYaAbierto), 8, ahora,
-                null, null, ahora, null, 0L));
+                null, null, ahora, null, null, 0L));
 
         var pendientes = consultas.ordenesConTicketPendiente();
 
@@ -447,7 +453,7 @@ class PersistenciaOrdenIntegrationTest {
     void buscar_filtraPorEstadoYRangosDeFecha() {
         var ahora = Instant.now();
         var id = OrdenId.nuevo();
-        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(id), 0, ahora, null, null, null, null, 0L));
+        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(id), 0, ahora, null, null, null, null, null, 0L));
 
         var porEstado = consultas.buscar(FiltroOrdenes.porEstado("INICIAL"));
         var porRangoIniciada = consultas.buscar(
@@ -532,13 +538,21 @@ class PersistenciaOrdenIntegrationTest {
     void buscar_devuelveLasOrdenesConEscaleraConsumidaYSinTicketAbierto() {
         var ahora = Instant.now();
         var idPendiente = OrdenId.nuevo();
+        var error = new DetalleError("java.lang.RuntimeException", "boom");
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idPendiente), 8, ahora,
-                null, null, null, null, 0L));
+                null, null, null, null, error, 0L));
+        var idPendienteSinError = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idPendienteSinError), 8, ahora,
+                null, null, null, null, null, 0L));
 
         var pendientes = ticketsPendientes.buscar();
 
-        assertThat(pendientes).extracting(p -> p.ordenId()).contains(idPendiente);
+        assertThat(pendientes).extracting(p -> p.ordenId()).contains(idPendiente, idPendienteSinError);
         assertThat(pendientes).extracting(p -> p.tipo()).contains(SagaPrincipal.TIPO);
+        assertThat(pendientes).filteredOn(p -> p.ordenId().equals(idPendiente))
+                .extracting(p -> p.ultimoError()).containsExactly(error);
+        assertThat(pendientes).filteredOn(p -> p.ordenId().equals(idPendienteSinError))
+                .extracting(p -> p.ultimoError()).containsExactly((DetalleError) null);
     }
 
     @Test

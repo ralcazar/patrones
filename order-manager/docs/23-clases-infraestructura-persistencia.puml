@@ -126,6 +126,7 @@ package "persistencia" {
     tokenExpiraEn : Instant
     ticketAbiertoEn : Instant
     completadaEn : Instant  «null = viva; no-null = finalizada (ok o cancelada)»
+    ultimoErrorTipo / ultimoErrorMensaje : String  «clase+mensaje del\núltimo fallo de paso, sin stacktrace»
     @Version version : long  «ÚNICA del agregado»
     creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
   }
@@ -146,7 +147,8 @@ package "persistencia" {
     tabla satélite, p. ej. proceso_saga_principal, ver 24 y 26) +
     orden (orden_id PK/FK a proceso, intentos, proximo_reintento_en,
     token_trabajador, token_expira_en, ticket_abierto_en,
-    completada_en, version, creada_en, actualizada_en). Sin índices
+    completada_en, ultimo_error_tipo, ultimo_error_mensaje, version,
+    creada_en, actualizada_en). Sin índices
     parciales en Oracle: idx_orden_candidatas es funcional sobre CASE
     WHEN completada_en IS NULL THEN proximo_reintento_en END;
     idx_orden_intentos indexa la bandeja de trabajo/tickets.
