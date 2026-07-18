@@ -24,6 +24,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion;
+import com.ejemplo.app.carga.analisis.AnalizadorEjecucion;
 import com.ejemplo.app.carga.esquema.InicializadorEsquemaH2;
 import com.ejemplo.app.carga.logging.ConfiguradorLogging;
 
@@ -51,9 +52,9 @@ import com.ejemplo.app.carga.logging.ConfiguradorLogging;
  *       duración.</li>
  *   <li>Espera el drenaje (que no queden órdenes vivas) hasta
  *       {@code drenaje-maximo}.</li>
- *   <li>Cierra los contextos ordenadamente y termina con exit code 0 (el
- *       veredicto del analizador de la fase 3, todavía no implementada, se
- *       enchufará en {@link #invocarAnalizadorSiExiste}).</li>
+ *   <li>Cierra los contextos ordenadamente, invoca el analizador determinista
+ *       de la fase 3 ({@link #invocarAnalizadorSiExiste}) y termina con su
+ *       veredicto como exit code (0 BUENO, 1 MALO).</li>
  * </ol>
  */
 public final class LanzadorPruebaCarga {
@@ -116,7 +117,7 @@ public final class LanzadorPruebaCarga {
             contextos[i].close();
         }
 
-        int codigoSalida = invocarAnalizadorSiExiste(carpetaSalida);
+        int codigoSalida = invocarAnalizadorSiExiste(carpetaSalida, escenario);
         log.info("evento=prueba_carga_finalizada escenario={} inyectadas={} pod=lanzador", escenario.nombre(), inyectadas);
         System.exit(codigoSalida);
     }
@@ -245,16 +246,21 @@ public final class LanzadorPruebaCarga {
     }
 
     /**
-     * Punto de extensión para la fase 3 del plan de pruebas de carga
-     * ({@code AnalizadorEjecucion}, todavía no implementada): aquí iría la
-     * invocación al analizador determinista sobre {@code carpetaSalida}
-     * (genera {@code informe.md} a partir de {@code pods.log} + la H2), y el
-     * código de salida de este lanzador pasaría a reflejar su veredicto (0
-     * invariantes OK, 1 violadas) en vez de ser siempre 0 como ahora.
+     * Invoca el analizador determinista de la fase 3 sobre {@code carpetaSalida}
+     * ({@link AnalizadorEjecucion}, genera {@code informe.md} a partir de
+     * {@code pods.log} + la H2) y devuelve su veredicto (0 invariantes OK, 1
+     * violadas) como código de salida de este lanzador. Se le pasa el lease
+     * REAL usado por los pods de esta ejecución (el del escenario si lo
+     * sobreescribe, si no el mismo por defecto de {@code application.yml}
+     * que {@link AnalizadorEjecucion#LEASE_POR_DEFECTO} documenta): la
+     * carpeta de salida no conserva el .yml del escenario, así que el
+     * invariante de solapes de ejecución necesita este dato para distinguir
+     * un takeover legítimo (lease vencido) de un solape real.
      */
-    private static int invocarAnalizadorSiExiste(Path carpetaSalida) {
-        log.info("evento=analizador_pendiente carpeta={} pod=lanzador", carpetaSalida);
-        return 0;
+    private static int invocarAnalizadorSiExiste(Path carpetaSalida, EscenarioCarga escenario) {
+        var lease = escenario.motor().lease() != null ? escenario.motor().lease() : AnalizadorEjecucion.LEASE_POR_DEFECTO;
+        log.info("evento=analizador_iniciado carpeta={} lease={} pod=lanzador", carpetaSalida, lease);
+        return AnalizadorEjecucion.analizar(carpetaSalida, lease);
     }
 
     private static void crearDirectorio(Path carpeta) {
