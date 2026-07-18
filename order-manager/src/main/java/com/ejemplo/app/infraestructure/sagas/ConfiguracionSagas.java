@@ -20,6 +20,8 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso5;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoDatosNegocio;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria1;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
@@ -47,11 +49,11 @@ public class ConfiguracionSagas {
 
     @Bean
     ServicioSagaPrincipal servicioSagaPrincipal(RepositorioOrden repo,
-            @Value("${ordermanager.lease}") Duration lease,
+            @Value("${ordermanager.lease}") Duration lease, RepositorioDatosNegocio repoDatos,
             PuertoPaso1 p1, PuertoPaso2 p2, PuertoPaso3 p3, PuertoPaso4 p4,
             PuertoPaso5 p5, PuertoPaso6 p6, PuertoPaso7 p7, PuertoPaso8 p8,
             @Lazy ServicioSagaPrincipal self) {
-        var servicio = new ServicioSagaPrincipal(repo, lease, p1, p2, p3, p4, p5, p6, p7, p8);
+        var servicio = new ServicioSagaPrincipal(repo, lease, repoDatos, p1, p2, p3, p4, p5, p6, p7, p8);
         servicio.establecerSelf(self);
         return servicio;
     }
@@ -83,8 +85,11 @@ public class ConfiguracionSagas {
     }
 
     @Bean
-    ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo) {
-        return new ServicioIniciarTramitacion(repo);
+    ServicioIniciarTramitacion servicioIniciarTramitacion(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
+            PuertoDatosNegocio puertoDatosNegocio, @Lazy ServicioIniciarTramitacion self) {
+        var servicio = new ServicioIniciarTramitacion(repo, repoDatos, puertoDatosNegocio);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 
     @Bean

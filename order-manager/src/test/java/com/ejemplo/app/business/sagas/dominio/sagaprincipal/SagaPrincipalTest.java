@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.ordermanager.dominio.DatosManualesRequeridosException;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
@@ -31,7 +32,7 @@ class SagaPrincipalTest {
 
     private static SagaPrincipal nueva() {
         return SagaPrincipal.crear(OrdenId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
-                new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
+                DatosNegocioId.nuevo());
     }
 
     /** Ejecuta el flujo feliz completo, paso a paso, aplicando el resultado que produciría cada REST. */
@@ -85,6 +86,43 @@ class SagaPrincipalTest {
         avanzarHastaTerminada(saga);
 
         assertThatThrownBy(saga::comandoActual).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void comandoActual_enInicial_esEjecutarPaso1ConElExternalIdYElDatosNegocioIdDelContexto() {
+        var saga = nueva();
+
+        var comando = (ComandoPasoPrincipal.EjecutarPaso1) saga.comandoActual();
+
+        assertThat(comando.externalId()).isEqualTo(saga.externalId());
+        assertThat(comando.datosNegocioId()).isEqualTo(saga.contexto().datosNegocioId());
+    }
+
+    @Test
+    void comandoActual_enPaso1Hecho_esEjecutarPaso2ConElDatosNegocioIdYLaRefPaso1() {
+        var saga = nueva();
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+
+        var comando = (ComandoPasoPrincipal.EjecutarPaso2) saga.comandoActual();
+
+        assertThat(comando.datosNegocioId()).isEqualTo(saga.contexto().datosNegocioId());
+        assertThat(comando.refPaso1()).isEqualTo(new RefPaso1("ref1"));
+    }
+
+    @Test
+    void comandoActual_enPaso6Hecho_esEjecutarPaso7ConLaRefPaso5YElDatosNegocioId() {
+        var saga = nueva();
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+
+        var comando = (ComandoPasoPrincipal.EjecutarPaso7) saga.comandoActual();
+
+        assertThat(comando.refPaso5()).isEqualTo(new RefPaso5("ref5"));
+        assertThat(comando.datosNegocioId()).isEqualTo(saga.contexto().datosNegocioId());
     }
 
     @Test

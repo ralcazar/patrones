@@ -17,8 +17,7 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso3;
@@ -43,8 +42,7 @@ class ServicioCancelarTramitacionTest {
 
     private OrdenId crearTramitacion() {
         var id = OrdenId.nuevo();
-        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
-                new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
+        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()), DatosNegocioId.nuevo());
         var orden = OrdenRoot.nueva(saga, Instant.now());
         orden.aparcar(java.time.Duration.ofDays(1), Instant.now());
         repo.crear(orden);

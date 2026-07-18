@@ -23,6 +23,8 @@ import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiez
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoDatosNegocio;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso1;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso2;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso3;
@@ -104,5 +106,8 @@ class ContextoCargaTest {
         @Bean PuertoSagaSecundaria2 puertoSagaSecundaria2() { return mock(PuertoSagaSecundaria2.class); }
         @Bean PuertoSagaSecundaria3 puertoSagaSecundaria3() { return mock(PuertoSagaSecundaria3.class); }
         @Bean PuertoConciliacionSecundaria2 puertoConciliacionSecundaria2() { return mock(PuertoConciliacionSecundaria2.class); }
+
+        @Bean PuertoDatosNegocio puertoDatosNegocio() { return mock(PuertoDatosNegocio.class); }
+        @Bean RepositorioDatosNegocio repositorioDatosNegocio() { return mock(RepositorioDatosNegocio.class); }
     }
 }

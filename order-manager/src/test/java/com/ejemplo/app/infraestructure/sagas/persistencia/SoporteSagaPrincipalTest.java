@@ -9,8 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ResultadoPasoPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
@@ -70,13 +69,15 @@ class SoporteSagaPrincipalTest {
     void desarmarYRearmar_conContextoInicialSinNingunaRefHaceIdaYVuelta() {
         var id = OrdenId.nuevo();
         var externalId = ExternalId.de(UUID.randomUUID().toString());
-        var saga = SagaPrincipal.crear(id, externalId, new DatoNegocio3("v1", "v2"), new DatoNegocio2("v3", "v4"));
+        var datosNegocioId = DatosNegocioId.nuevo();
+        var saga = SagaPrincipal.crear(id, externalId, datosNegocioId);
 
         var persistible = soporte.desarmar(saga);
         var rearmada = (SagaPrincipal) soporte.rearmar(id, externalId, persistible.estado(),
                 persistible.contexto(), List.of());
 
         assertThat(persistible.estado()).isEqualTo("INICIAL");
+        assertThat(persistible.contexto()).containsEntry("datosNegocioId", datosNegocioId.valor().toString());
         assertThat(persistible.contexto()).doesNotContainKeys("refPaso1", "refPaso2");
         assertThat(rearmada.estado()).isEqualTo(EstadoSagaPrincipal.INICIAL);
         assertThat(rearmada.contexto()).isEqualTo(saga.contexto());
@@ -86,7 +87,7 @@ class SoporteSagaPrincipalTest {
     void desarmarYRearmar_conTodasLasRefsRellenasHaceIdaYVuelta() {
         var id = OrdenId.nuevo();
         var externalId = ExternalId.de(UUID.randomUUID().toString());
-        var saga = SagaPrincipal.crear(id, externalId, new DatoNegocio3("v1", "v2"), new DatoNegocio2("v3", "v4"));
+        var saga = SagaPrincipal.crear(id, externalId, DatosNegocioId.nuevo());
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
         saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso2("ref2")));

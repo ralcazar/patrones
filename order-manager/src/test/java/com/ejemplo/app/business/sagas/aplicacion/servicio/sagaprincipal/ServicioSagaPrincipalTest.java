@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,6 +24,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso5;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
@@ -31,8 +34,11 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio1;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio2;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso2;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso3;
@@ -55,6 +61,7 @@ class ServicioSagaPrincipalTest {
     private static final Duration LEASE = Duration.ofMinutes(10);
 
     private RepositorioOrdenEnMemoria repo;
+    private RepositorioDatosNegocio repoDatos;
     private PuertoPaso1 puertoPaso1;
     private PuertoPaso2 puertoPaso2;
     private PuertoPaso3 puertoPaso3;
@@ -69,6 +76,7 @@ class ServicioSagaPrincipalTest {
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
+        repoDatos = mock(RepositorioDatosNegocio.class);
         puertoPaso1 = mock(PuertoPaso1.class);
         puertoPaso2 = mock(PuertoPaso2.class);
         puertoPaso3 = mock(PuertoPaso3.class);
@@ -77,25 +85,29 @@ class ServicioSagaPrincipalTest {
         puertoPaso6 = mock(PuertoPaso6.class);
         puertoPaso7 = mock(PuertoPaso7.class);
         puertoPaso8 = mock(PuertoPaso8.class);
-        servicioSaga = new ServicioSagaPrincipal(repo, LEASE, puertoPaso1, puertoPaso2, puertoPaso3,
+        servicioSaga = new ServicioSagaPrincipal(repo, LEASE, repoDatos, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
         servicioContinuar = new ServicioContinuarOrden(Map.of(SagaPrincipal.TIPO, servicioSaga), repo,
                 new com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos(), LEASE, 16);
 
-        when(puertoPaso1.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        when(puertoPaso2.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        var datosNegocio = DatosNegocio.crear(DatosNegocioId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
+                new DatoNegocio1(1), new DatoNegocio2(LocalDate.of(2026, 1, 1)), new DatoNegocio3("dato"));
+        when(repoDatos.cargar(any())).thenReturn(datosNegocio);
+        when(repoDatos.documentosDe(any())).thenReturn(List.of());
+
+        when(puertoPaso1.ejecutar(any(), any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        when(puertoPaso2.ejecutar(any(), any(), any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         when(puertoPaso3.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
         when(puertoPaso4.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
         when(puertoPaso5.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
         when(puertoPaso6.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
-        when(puertoPaso7.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
+        when(puertoPaso7.ejecutar(any(), any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
         when(puertoPaso8.ejecutar(any())).thenReturn(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
     }
 
     private OrdenId crearOrdenPrincipal() {
         var id = OrdenId.nuevo();
-        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
-                new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
+        var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()), DatosNegocioId.nuevo());
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
         return id;
     }

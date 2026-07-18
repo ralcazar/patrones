@@ -16,6 +16,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso5;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso6;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
+import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
@@ -54,6 +55,7 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
 
     private final RepositorioOrden repo;
     private final Duration lease;
+    private final RepositorioDatosNegocio repoDatos;
     private final PuertoPaso1 puertoPaso1;
     private final PuertoPaso2 puertoPaso2;
     private final PuertoPaso3 puertoPaso3;
@@ -64,12 +66,13 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
     private final PuertoPaso8 puertoPaso8;
     private ServicioSagaPrincipal self;
 
-    public ServicioSagaPrincipal(RepositorioOrden repo, Duration lease,
+    public ServicioSagaPrincipal(RepositorioOrden repo, Duration lease, RepositorioDatosNegocio repoDatos,
             PuertoPaso1 puertoPaso1, PuertoPaso2 puertoPaso2, PuertoPaso3 puertoPaso3,
             PuertoPaso4 puertoPaso4, PuertoPaso5 puertoPaso5, PuertoPaso6 puertoPaso6,
             PuertoPaso7 puertoPaso7, PuertoPaso8 puertoPaso8) {
         this.repo = repo;
         this.lease = lease;
+        this.repoDatos = repoDatos;
         this.puertoPaso1 = puertoPaso1;
         this.puertoPaso2 = puertoPaso2;
         this.puertoPaso3 = puertoPaso3;
@@ -174,13 +177,14 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
     // porque comandoActual() nunca las produce en estado no-COMPENSAR.
     ResultadoPasoPrincipal ejecutarComando(ComandoPaso cmd) {
         return switch ((ComandoPasoPrincipal) cmd) {
-            case ComandoPasoPrincipal.EjecutarPaso1 c -> puertoPaso1.ejecutar(c);
-            case ComandoPasoPrincipal.EjecutarPaso2 c -> puertoPaso2.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso1 c -> puertoPaso1.ejecutar(c, repoDatos.cargar(c.datosNegocioId()));
+            case ComandoPasoPrincipal.EjecutarPaso2 c -> puertoPaso2.ejecutar(c, repoDatos.cargar(c.datosNegocioId()),
+                    repoDatos.documentosDe(c.datosNegocioId()));
             case ComandoPasoPrincipal.EjecutarPaso3 c -> puertoPaso3.ejecutar(c);
             case ComandoPasoPrincipal.EjecutarPaso4 c -> puertoPaso4.ejecutar(c);
             case ComandoPasoPrincipal.EjecutarPaso5 c -> puertoPaso5.ejecutar(c);
             case ComandoPasoPrincipal.EjecutarPaso6 c -> puertoPaso6.ejecutar(c);
-            case ComandoPasoPrincipal.EjecutarPaso7 c -> puertoPaso7.ejecutar(c);
+            case ComandoPasoPrincipal.EjecutarPaso7 c -> puertoPaso7.ejecutar(c, repoDatos.cargar(c.datosNegocioId()));
             case ComandoPasoPrincipal.EjecutarPaso8 c -> puertoPaso8.ejecutar(c);
             case ComandoPasoPrincipal.CompensarPaso1 c -> throw new IllegalStateException(
                     "Las compensaciones no se ejecutan por esta vía: " + c);

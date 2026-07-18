@@ -8,6 +8,7 @@ import org.jmolecules.ddd.annotation.Entity;
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.ordermanager.dominio.DatosManualesRequeridosException;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
@@ -55,9 +56,8 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
         this.ctx = ctx;
     }
 
-    public static SagaPrincipal crear(OrdenId id, ExternalId externalId,
-                                          DatoNegocio3 datos, DatoNegocio2 datoNegocio2) {
-        return new SagaPrincipal(id, externalId, ContextoTramitacion.inicial(datos, datoNegocio2),
+    public static SagaPrincipal crear(OrdenId id, ExternalId externalId, DatosNegocioId datosNegocioId) {
+        return new SagaPrincipal(id, externalId, ContextoTramitacion.inicial(datosNegocioId),
                 EstadoSagaPrincipal.INICIAL);
     }
 
@@ -76,13 +76,13 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
     @Override
     public ComandoPaso comandoActual() {
         return switch (estado) {
-            case INICIAL -> new ComandoPasoPrincipal.EjecutarPaso1(externalId, ctx.datoNegocio3());
-            case PASO1_HECHO -> new ComandoPasoPrincipal.EjecutarPaso2(ctx.refPaso1());
+            case INICIAL -> new ComandoPasoPrincipal.EjecutarPaso1(externalId, ctx.datosNegocioId());
+            case PASO1_HECHO -> new ComandoPasoPrincipal.EjecutarPaso2(ctx.datosNegocioId(), ctx.refPaso1());
             case PASO2_HECHO -> new ComandoPasoPrincipal.EjecutarPaso3(externalId, ctx.refPaso2());
             case PASO3_HECHO -> new ComandoPasoPrincipal.EjecutarPaso4(ctx.refPaso1(), ctx.refPaso2());
             case PASO4_HECHO -> new ComandoPasoPrincipal.EjecutarPaso5(ctx.refPaso4());
             case PASO5_HECHO -> new ComandoPasoPrincipal.EjecutarPaso6(ctx.refPaso5());
-            case PASO6_HECHO -> new ComandoPasoPrincipal.EjecutarPaso7(ctx.refPaso5(), ctx.datoNegocio2());
+            case PASO6_HECHO -> new ComandoPasoPrincipal.EjecutarPaso7(ctx.refPaso5(), ctx.datosNegocioId());
             case PASO7_HECHO -> new ComandoPasoPrincipal.EjecutarPaso8(externalId, ctx.refPaso7());
             default -> throw new IllegalStateException(
                     "La saga " + id.valor() + " no tiene paso pendiente en estado " + estado);

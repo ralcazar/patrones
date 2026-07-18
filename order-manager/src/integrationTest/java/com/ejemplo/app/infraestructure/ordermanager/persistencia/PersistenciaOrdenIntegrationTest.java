@@ -36,8 +36,7 @@ import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
-import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
@@ -83,8 +82,7 @@ class PersistenciaOrdenIntegrationTest {
     }
 
     private static SagaPrincipal nuevaSagaPrincipal(OrdenId id) {
-        return SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()),
-                new DatoNegocio3("v1", "v2"), new DatoNegocio2("v1", "v2"));
+        return SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()), DatosNegocioId.nuevo());
     }
 
     // ------------------------------------------------------------------
@@ -403,8 +401,7 @@ class PersistenciaOrdenIntegrationTest {
     void porExternalId_devuelveTodasLasOrdenesDeLaTramitacion() {
         var externalId = ExternalId.de(UUID.randomUUID().toString());
         var idPrincipal = OrdenId.nuevo();
-        var principal = SagaPrincipal.crear(idPrincipal, externalId, new DatoNegocio3("v1", "v2"),
-                new DatoNegocio2("v1", "v2"));
+        var principal = SagaPrincipal.crear(idPrincipal, externalId, DatosNegocioId.nuevo());
         repo.crear(OrdenRoot.nueva(principal, Instant.now()));
         var idSecundaria = OrdenId.nuevo();
         var ctxSecundaria = new ContextoArranque.ArranqueSecundaria1(externalId, new RefPaso1("ref1"));
