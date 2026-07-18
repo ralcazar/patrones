@@ -24,7 +24,7 @@ class OrdenRootTest {
     }
 
     @Test
-    void nueva_arrancaSinTokenSinTicketSinResultadoYVersionCero() {
+    void nueva_arrancaSinTokenSinTicketSinCompletarYVersionCero() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
 
         assertThat(orden.intentos()).isZero();
@@ -32,7 +32,7 @@ class OrdenRootTest {
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.tokenExpiraEn()).isNull();
         assertThat(orden.ticketAbiertoEn()).isNull();
-        assertThat(orden.resultado()).isNull();
+        assertThat(orden.completadaEn()).isNull();
         assertThat(orden.estaViva()).isTrue();
         assertThat(orden.version()).isZero();
     }
@@ -159,13 +159,14 @@ class OrdenRootTest {
     }
 
     @Test
-    void finalizar_fijaResultadoYLiberaTokenYDejaDeEstarViva() {
+    void finalizar_fijaCompletadaEnYLiberaTokenYDejaDeEstarViva() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         orden.asignarToken(UUID.randomUUID(), LEASE, T0);
+        var completada = T0.plusSeconds(60);
 
-        orden.finalizar(ResultadoOrden.FINALIZADA_OK);
+        orden.finalizar(completada);
 
-        assertThat(orden.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
+        assertThat(orden.completadaEn()).isEqualTo(completada);
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.estaViva()).isFalse();
     }

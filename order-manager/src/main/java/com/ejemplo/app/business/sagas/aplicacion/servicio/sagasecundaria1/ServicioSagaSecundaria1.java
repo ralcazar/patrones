@@ -66,9 +66,9 @@ public class ServicioSagaSecundaria1 implements ProcesadorOrden {
     public SenalPaso aplicar(OrdenRoot orden, SagaSecundaria1 saga, ResultadoPasoSecundaria1 resultado) {
         saga.aplicarYAvanzar(resultado);
         if (saga.terminada()) {
-            orden.finalizar(saga.resultadoFinal());
+            orden.finalizar(Instant.now());
             repo.guardar(orden);
-            return new SenalPaso.Finalizada(saga.resultadoFinal());
+            return new SenalPaso.Finalizada();
         }
         orden.resetearIntentos();
         orden.renovarLease(lease, Instant.now());

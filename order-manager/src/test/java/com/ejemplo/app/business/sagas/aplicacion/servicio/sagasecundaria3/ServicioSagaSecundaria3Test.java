@@ -74,8 +74,7 @@ class ServicioSagaSecundaria3Test {
         var proxy = mock(ServicioSagaSecundaria3.class);
         var id = crearOrdenSecundaria3();
         when(puerto.ejecutar(any())).thenReturn(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
-        when(proxy.aplicar(any(), any(), any())).thenReturn(new SenalPaso.Finalizada(
-                com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden.FINALIZADA_OK));
+        when(proxy.aplicar(any(), any(), any())).thenReturn(new SenalPaso.Finalizada());
 
         servicioSaga.establecerSelf(proxy);
         var senal = servicioSaga.ejecutarPaso(repo.cargar(id));

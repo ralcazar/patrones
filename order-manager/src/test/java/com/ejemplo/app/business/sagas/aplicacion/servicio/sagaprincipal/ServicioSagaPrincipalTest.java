@@ -29,7 +29,6 @@ import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.DatoNegocio2;
@@ -49,7 +48,7 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3;
 /**
  * Orquestación real de la saga principal a través de ServicioContinuarOrden:
  * flujo feliz de los 8 pasos con arranque de las 3 secundarias, y
- * cancelación -&gt; compensación -&gt; FINALIZADA_COMPENSADA (Fase 4 del refactor).
+ * cancelación -&gt; compensación -&gt; orden completada (Fase 4 del refactor).
  */
 class ServicioSagaPrincipalTest {
 
@@ -108,7 +107,7 @@ class ServicioSagaPrincipalTest {
         servicioContinuar.continuarSiguiente();
 
         var ordenFinal = repo.estadoActual(id);
-        assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
+        assertThat(ordenFinal.completadaEn()).isNotNull();
         assertThat(ordenFinal.estaViva()).isFalse();
         assertThat(((SagaPrincipal) ordenFinal.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
 
@@ -141,7 +140,7 @@ class ServicioSagaPrincipalTest {
 
         var ordenFinal = repo.estadoActual(id);
         assertThat(((SagaPrincipal) ordenFinal.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
-        assertThat(ordenFinal.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_COMPENSADA);
+        assertThat(ordenFinal.completadaEn()).isNotNull();
         assertThat(ordenFinal.estaViva()).isFalse();
         verify(puertoPaso2).compensar(any());
         verify(puertoPaso1).compensar(any());

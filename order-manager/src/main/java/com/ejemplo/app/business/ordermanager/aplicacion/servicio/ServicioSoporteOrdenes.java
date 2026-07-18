@@ -37,7 +37,7 @@ public class ServicioSoporteOrdenes implements CasoUsoIntervenirOrden, CasoUsoCo
 
     @Override
     @Transactional
-    public void reintentarPaso(TipoOrden tipo, OrdenId id, String nombrePaso, UsuarioSoporte quien) {
+    public void reintentarPaso(TipoOrden tipo, OrdenId id, UsuarioSoporte quien) {
         var orden = repo.cargar(id);
         orden.resetearIntentos();
         orden.despertar(Instant.now());
@@ -46,7 +46,7 @@ public class ServicioSoporteOrdenes implements CasoUsoIntervenirOrden, CasoUsoCo
 
     @Override
     @Transactional
-    public void marcarPasoOk(TipoOrden tipo, OrdenId id, String nombrePaso, UsuarioSoporte quien,
+    public void marcarPasoOk(TipoOrden tipo, OrdenId id, UsuarioSoporte quien,
                              String justificacion, Map<String, String> datosManuales) {
         var orden = repo.cargar(id);
         orden.proceso().marcarPasoActualOkManual(quien, justificacion, datosManuales);

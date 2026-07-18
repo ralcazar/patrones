@@ -2,6 +2,10 @@ package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -27,8 +31,9 @@ import jakarta.persistence.Table;
 public class ProcesoEntity {
 
     @Id
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "orden_id", length = 36)
-    private String ordenId;
+    private UUID ordenId;
 
     @Column(nullable = false, length = 20)
     private String tipo;
@@ -52,7 +57,7 @@ public class ProcesoEntity {
         // requerido por JPA
     }
 
-    public ProcesoEntity(String ordenId, String tipo, String externalId, String estado, String contexto,
+    public ProcesoEntity(UUID ordenId, String tipo, String externalId, String estado, String contexto,
             List<AuditoriaEntity> auditoria) {
         this.ordenId = ordenId;
         this.tipo = tipo;
@@ -62,7 +67,7 @@ public class ProcesoEntity {
         this.auditoria = auditoria;
     }
 
-    public String getOrdenId() { return ordenId; }
+    public UUID getOrdenId() { return ordenId; }
     public String getTipo() { return tipo; }
     public String getExternalId() { return externalId; }
     public String getEstado() { return estado; }

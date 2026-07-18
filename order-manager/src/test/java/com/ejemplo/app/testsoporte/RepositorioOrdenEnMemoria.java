@@ -97,13 +97,13 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
 
     private static OrdenRoot incrementarVersion(OrdenRoot orden) {
         return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.intentos(), orden.proximoReintentoEn(),
-                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.resultado(),
+                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
                 orden.version() + 1);
     }
 
     private static OrdenRoot copiar(OrdenRoot orden) {
         return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.intentos(), orden.proximoReintentoEn(),
-                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.resultado(),
+                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
                 orden.version());
     }
 

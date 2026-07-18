@@ -11,7 +11,6 @@ import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
@@ -78,11 +77,6 @@ public final class SagaSecundaria3 extends Proceso<EstadoSagaSecundaria3> {
     @Override
     public boolean terminada() {
         return estado == EstadoSagaSecundaria3.TERMINADA;
-    }
-
-    @Override
-    public ResultadoOrden resultadoFinal() {
-        return ResultadoOrden.FINALIZADA_OK;
     }
 
     @Override

@@ -16,7 +16,6 @@ import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.ProcesoFalso;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 
 /**
  * Limpieza de datos: purga en una única llamada las órdenes finalizadas
@@ -40,7 +39,7 @@ class ServicioLimpiezaDatosTest {
         var id = OrdenId.nuevo();
         var proceso = ProcesoFalso.crear(id, ExternalId.de(UUID.randomUUID().toString()));
         var orden = OrdenRoot.nueva(proceso, Instant.parse("2020-01-01T00:00:00Z"));
-        orden.finalizar(ResultadoOrden.FINALIZADA_OK);
+        orden.finalizar(Instant.now());
         repo.crear(orden);
     }
 

@@ -27,7 +27,6 @@ import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.ordermanager.dominio.ProcesoFalso;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 
 /**
@@ -124,7 +123,7 @@ class ServicioContinuarOrdenTest {
         var invocaciones = new AtomicInteger();
         var procesadorPodB = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
             invocaciones.incrementAndGet();
-            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+            return new SenalPaso.Finalizada();
         });
         assertThat(servicio(procesadorPodB).continuarSiguiente()).isTrue();
 
@@ -162,7 +161,7 @@ class ServicioContinuarOrdenTest {
     @Test
     void continuarSiguiente_sinCandidatas_devuelveFalse() {
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
-                orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+                orden -> new SenalPaso.Finalizada());
 
         assertThat(servicio(procesador).continuarSiguiente()).isFalse();
     }
@@ -190,7 +189,7 @@ class ServicioContinuarOrdenTest {
         var procesadas = new ArrayList<OrdenId>();
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
             procesadas.add(orden.id());
-            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+            return new SenalPaso.Finalizada();
         });
 
         assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isTrue();
@@ -205,7 +204,7 @@ class ServicioContinuarOrdenTest {
         var invocaciones = new AtomicInteger();
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
             invocaciones.incrementAndGet();
-            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+            return new SenalPaso.Finalizada();
         });
 
         assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isFalse();
@@ -215,7 +214,7 @@ class ServicioContinuarOrdenTest {
     @Test
     void hayTrabajoPendiente_delegaEnElRepositorio() {
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
-                orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+                orden -> new SenalPaso.Finalizada());
         var servicio = servicio(procesador);
 
         assertThat(servicio.hayTrabajoPendiente()).isFalse();
@@ -224,21 +223,21 @@ class ServicioContinuarOrdenTest {
     }
 
     @Test
-    void reclamarToken_devuelveFalseSiLaOrdenYaEstaFinalizada_ramaDeEstadoNoDeExcepcion() {
+    void reclamarToken_devuelveOptionalVacioSiLaOrdenYaEstaFinalizada_ramaDeEstadoNoDeExcepcion() {
         var id = crearOrdenFalsa();
         var orden = repo.cargar(id);
-        orden.finalizar(ResultadoOrden.FINALIZADA_OK);
+        orden.finalizar(Instant.now());
         repo.guardar(orden);
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
                 o -> { throw new IllegalStateException("no debería ejecutarse: la orden ya está finalizada"); });
 
-        assertThat(servicio(procesador).reclamarToken(id)).isFalse();
+        assertThat(servicio(procesador).reclamarToken(id)).isEmpty();
 
         assertThat(repo.estadoActual(id).tokenTrabajador()).isNull();
     }
 
     @Test
-    void reclamarToken_devuelveFalseSiYaTieneTokenVigente_ramaDeEstadoNoDeExcepcion() {
+    void reclamarToken_devuelveOptionalVacioSiYaTieneTokenVigente_ramaDeEstadoNoDeExcepcion() {
         var id = crearOrdenFalsa();
         var orden = repo.cargar(id);
         orden.asignarToken(UUID.randomUUID(), LEASE, Instant.now());
@@ -247,7 +246,7 @@ class ServicioContinuarOrdenTest {
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
                 o -> { throw new IllegalStateException("no debería ejecutarse: el token sigue vigente"); });
 
-        assertThat(servicio(procesador).reclamarToken(id)).isFalse();
+        assertThat(servicio(procesador).reclamarToken(id)).isEmpty();
 
         assertThat(repo.estadoActual(id).tokenTrabajador()).isEqualTo(tokenPrevio);
     }
@@ -260,7 +259,7 @@ class ServicioContinuarOrdenTest {
         var procesadas = new ArrayList<OrdenId>();
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
             procesadas.add(orden.id());
-            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+            return new SenalPaso.Finalizada();
         });
 
         assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isTrue();
@@ -292,8 +291,9 @@ class ServicioContinuarOrdenTest {
     }
 
     @Test
-    void continuarSiguiente_conHayMasTrabajoSeguidoDeFinalizada_iteraDosVecesRecargandoElAgregado() {
+    void continuarSiguiente_conHayMasTrabajoSeguidoDeFinalizada_iteraDosVecesCargandoUnaVezPorReclamoYUnaVezParaElSegundoPaso() {
         var id = crearOrdenFalsa();
+        var repoContador = new RepositorioContadorDeCargas(repo, id);
         var invocaciones = new AtomicInteger();
         var idsVistos = new ArrayList<OrdenId>();
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
@@ -301,20 +301,25 @@ class ServicioContinuarOrdenTest {
             if (invocaciones.incrementAndGet() == 1) {
                 return new SenalPaso.HayMasTrabajo();
             }
-            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+            return new SenalPaso.Finalizada();
         });
 
-        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+        assertThat(servicio(procesador, repoContador).continuarSiguiente()).isTrue();
 
         assertThat(invocaciones.get()).isEqualTo(2);
-        assertThat(idsVistos).containsExactly(id, id); // recarga el agregado en cada iteración del while(true)
+        assertThat(idsVistos).containsExactly(id, id); // ambos pasos operan sobre la misma orden
+        // Una sola carga por reclamarToken (el primer paso reutiliza esa instancia
+        // sin recargar) + una recarga real para el segundo paso, porque el
+        // procesador ya guardó la instancia del primero: 2 cargas en total, no 3
+        // (antes: 1 del reclamo + 1 redundante antes del primer paso + 1 del segundo).
+        assertThat(repoContador.cargas()).isEqualTo(2);
     }
 
     @Test
     void establecerSelf_sustituyeElProxyUsadoParaReclamarTokenYProgramarReintento() {
         var id = crearOrdenFalsa();
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
-                orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+                orden -> new SenalPaso.Finalizada());
         var servicio = servicio(procesador);
         var proxy = spy(servicio);
         servicio.establecerSelf(proxy);
@@ -369,17 +374,18 @@ class ServicioContinuarOrdenTest {
     }
 
     /**
-     * Decorador que, tras el reclamo (2ª llamada a {@code cargar} para el
-     * objetivo, ya dentro del bucle de ejecución), simula que otro actor
-     * escribió entre medias: la instancia que ejecutará el paso queda con la
-     * versión desactualizada, de forma que el guardado del reintento posterior
-     * falla por optimistic lock.
+     * Decorador que, justo tras el guardado del reclamo (1er {@code guardar}
+     * para el objetivo, dentro de {@code self.reclamarToken}), simula que otro
+     * actor escribe entre medias: la instancia que {@code reclamarToken}
+     * devuelve para ejecutar el primer paso queda con la versión desactualizada
+     * (ya no por la conversión sin recarga, sino por esta escritura ajena real),
+     * de forma que el guardado del reintento posterior falla por optimistic lock.
      */
     private static final class RepositorioConCarreraTrasElReclamo implements RepositorioOrden {
 
         private final RepositorioOrdenEnMemoria delegado;
         private final OrdenId objetivo;
-        private int llamadasCargar = 0;
+        private int llamadasGuardar = 0;
 
         RepositorioConCarreraTrasElReclamo(RepositorioOrdenEnMemoria delegado, OrdenId objetivo) {
             this.delegado = delegado;
@@ -387,15 +393,58 @@ class ServicioContinuarOrdenTest {
         }
 
         @Override
-        public OrdenRoot cargar(OrdenId id) {
-            var orden = delegado.cargar(id);
-            if (id.equals(objetivo)) {
-                llamadasCargar++;
-                if (llamadasCargar == 2) {
-                    delegado.guardar(delegado.cargar(id)); // otro actor escribe entre medias: sube la versión
+        public OrdenRoot cargar(OrdenId id) { return delegado.cargar(id); }
+
+        @Override
+        public void crear(OrdenRoot orden) { delegado.crear(orden); }
+
+        @Override
+        public void guardar(OrdenRoot orden) {
+            delegado.guardar(orden);
+            if (orden.id().equals(objetivo)) {
+                llamadasGuardar++;
+                if (llamadasGuardar == 1) {
+                    delegado.guardar(delegado.cargar(objetivo)); // otro actor escribe entre medias: sube la versión
                 }
             }
-            return orden;
+        }
+
+        @Override
+        public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+            return delegado.buscarEjecutables(ahora, limite);
+        }
+
+        @Override
+        public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
+
+        @Override
+        public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+    }
+
+    /**
+     * Decorador que cuenta las llamadas a {@code cargar} para un id objetivo:
+     * sirve para verificar en el test cuántas cargas reales hace
+     * {@code reclamarYEjecutar} (ver {@code ServicioContinuarOrden}).
+     */
+    private static final class RepositorioContadorDeCargas implements RepositorioOrden {
+
+        private final RepositorioOrdenEnMemoria delegado;
+        private final OrdenId objetivo;
+        private int cargas = 0;
+
+        RepositorioContadorDeCargas(RepositorioOrdenEnMemoria delegado, OrdenId objetivo) {
+            this.delegado = delegado;
+            this.objetivo = objetivo;
+        }
+
+        int cargas() { return cargas; }
+
+        @Override
+        public OrdenRoot cargar(OrdenId id) {
+            if (id.equals(objetivo)) {
+                cargas++;
+            }
+            return delegado.cargar(id);
         }
 
         @Override

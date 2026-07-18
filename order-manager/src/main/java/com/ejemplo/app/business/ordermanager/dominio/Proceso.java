@@ -47,9 +47,6 @@ public abstract class Proceso<E extends Enum<E>> {
     /** La FSM alcanzó un estado final: no queda ningún paso que ejecutar. */
     public abstract boolean terminada();
 
-    /** Solo válido cuando {@link #terminada()} es cierto. */
-    public abstract ResultadoOrden resultadoFinal();
-
     /** Soporte marca OK a mano el paso pendiente actual, aportando los datos que ese paso habría producido. */
     public abstract void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion,
             Map<String, String> datos);

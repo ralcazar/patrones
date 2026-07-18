@@ -26,7 +26,9 @@ note over PLAN, CONT
   La hija SECUNDARIA2 nació en 03 con proximoReintentoEn = ahora:
   el planificador ve trabajo (hayTrabajoPendiente()) y despierta
   hasta N workers @Async — despacho detallado en 01; el reclamo de
-  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04.
+  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04
+  (incluida la reconstrucción de version sin recargar, que deja la
+  instancia lista para el primer paso sin una carga redundante).
 end note
 
 == INICIAL: solicitar y aparcar 3h a la espera del evento Kafka ==
@@ -35,9 +37,7 @@ activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
-return orden
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)  [reutiliza para este primer\npaso la instancia que reclamarToken ya cargó y guardó]
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga (SagaSecundaria2)
@@ -59,11 +59,11 @@ group Transacción única
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Guardar lleva la version de la carga hecha por CONT antes del
-    REST (aquí y en el resto de transacciones de este servicio):
-    si otro actor escribió con el REST en vuelo (takeover, consumer
-    de Kafka, soporte), guardar falla por version y el pod se
-    retira.
+    Guardar lleva la version de la instancia que CONT le pasó al
+    procesador (aquí y en el resto de transacciones de este
+    servicio): si otro actor escribió con el REST en vuelo (takeover,
+    consumer de Kafka, soporte), guardar falla por version y el pod
+    se retira.
   end note
 end
 return Aparcar(3h)
@@ -112,9 +112,7 @@ activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
-return orden
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)  [reutiliza para este primer\npaso la instancia que reclamarToken ya cargó y guardó]
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga
@@ -141,9 +139,7 @@ activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA2")), ...]
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
-return orden
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)  [reutiliza para este primer\npaso la instancia que reclamarToken ya cargó y guardó]
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga
@@ -182,7 +178,7 @@ else FalloRegistrado(motivo): el destino terminó con error
   note right of CONT
     ServicioContinuarOrden.reclamarYEjecutar() la atrapa como
     RuntimeException y programa el reintento sobre la MISMA orden
-    cargada arriba (backoff 1..180 min) — ver 07.
+    usada arriba (backoff 1..180 min) — ver 07.
   end note
 end
 

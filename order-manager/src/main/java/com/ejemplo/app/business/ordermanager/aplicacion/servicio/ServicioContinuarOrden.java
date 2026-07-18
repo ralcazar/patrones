@@ -3,6 +3,7 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import jakarta.transaction.Transactional;
@@ -20,11 +21,14 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 /**
  * Bucle de ejecución de una orden: reclama el token bajo optimistic lock y
  * encadena pasos síncronos hasta que el procesador de la orden aparca, termina o falla.
- * Carga el agregado una única vez por paso, antes del REST (ver
- * {@link ProcesadorOrden}), y reutiliza esa misma instancia si el paso falla
- * y hay que programar un reintento: así el guardado del reintento conserva
- * la protección por version frente a un takeover concurrente (otro pod que
- * reclamó tras vencer el lease).
+ * El primer paso reutiliza, sin recargar, la instancia que ya cargó y guardó
+ * {@code reclamarToken} (ver {@code conVersionRecienGuardada}); a partir del
+ * segundo paso (señal {@code HayMasTrabajo}) sí hace falta recargar de BD, porque
+ * el procesador de la orden (ver {@link ProcesadorOrden}) ya guardó esa misma
+ * instancia y su version en memoria queda obsoleta. La misma instancia usada en
+ * cada paso se reutiliza si el paso falla y hay que programar un reintento: así
+ * el guardado del reintento conserva la protección por version frente a un
+ * takeover concurrente (otro pod que reclamó tras vencer el lease).
  *
  * El reclamo del token y el guardado del reintento son transacciones propias
  * ({@code @Transactional}); entre medias corre el REST del paso (a través de
@@ -62,13 +66,13 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
     private boolean reclamarYEjecutar(OrdenId id, TipoOrden tipo) {
         // Reclamo con optimistic lock: si otro pod ya la tomó (o venció el
         // conflicto contra el guardado), nos retiramos en silencio.
-        boolean reclamada;
+        Optional<OrdenRoot> reclamada;
         try {
             reclamada = self.reclamarToken(id);
         } catch (ConcurrenciaOptimistaException e) {
-            reclamada = false;
+            reclamada = Optional.empty();
         }
-        if (!reclamada) {
+        if (reclamada.isEmpty()) {
             return false;
         }
 
@@ -76,38 +80,63 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
         if (procesador == null) {
             throw new IllegalStateException("No hay ProcesadorOrden registrado para el tipo " + tipo);
         }
-        while (true) {
-            var orden = repo.cargar(id); // una única carga por paso, antes del REST
+
+        // Para el primer paso reutilizamos la instancia que reclamarToken acaba
+        // de cargar y guardar (ya con version puesta al día, ver conVersionRecienGuardada):
+        // no hace falta una recarga redundante justo después de reclamar.
+        var orden = reclamada.get();
+        var hayMasPasos = true;
+        while (hayMasPasos) {
             SenalPaso senal;
             try {
                 senal = procesador.ejecutarPaso(orden);
             } catch (ConcurrenciaOptimistaException e) {
                 return true; // otro pod/actor tocó el agregado entre medias
             } catch (RuntimeException e) {
-                // Reintento sobre la MISMA orden cargada arriba (fix del takeover
+                // Reintento sobre la MISMA orden usada arriba (fix del takeover
                 // seguro): si otro actor escribió entre medias, este guardado falla
                 // por version igual que el de cualquier otro paso.
                 self.programarReintento(orden);
                 return true;
             }
             switch (senal) {
-                case SenalPaso.HayMasTrabajo() -> { /* el procesador ya reseteó intentos y renovó el lease */ }
-                case SenalPaso.Aparcar(var ventana) -> { return true; } // ya persistido por el procesador
-                case SenalPaso.Finalizada(var resultado) -> { return true; } // ya persistido por el procesador
+                // El procesador ya guardó esta instancia (reseteó intentos y renovó
+                // el lease): su version en memoria queda obsoleta, así que para el
+                // SIGUIENTE paso sí hace falta recargar de verdad.
+                case SenalPaso.HayMasTrabajo() -> orden = repo.cargar(id);
+                case SenalPaso.Aparcar(var ventana) -> hayMasPasos = false; // ya persistido por el procesador
+                case SenalPaso.Finalizada() -> hayMasPasos = false; // ya persistido por el procesador
             }
         }
+        return true;
     }
 
     @Transactional
-    public boolean reclamarToken(OrdenId id) {
+    public Optional<OrdenRoot> reclamarToken(OrdenId id) {
         var orden = repo.cargar(id);
         var ahora = Instant.now();
         if (!orden.estaViva() || orden.tieneTokenVigente(ahora)) {
-            return false;
+            return Optional.empty();
         }
         orden.asignarToken(UUID.randomUUID(), lease, ahora);
         repo.guardar(orden);
-        return true;
+        return Optional.of(conVersionRecienGuardada(orden));
+    }
+
+    /**
+     * Reconstruye, SIN volver a cargar de BD, el estado de {@code orden} tal
+     * como queda justo después de que {@code repo.guardar} la persista con
+     * éxito: un guardado con éxito incrementa la version en exactamente 1
+     * (ver {@code RepositorioOrdenEnMemoria.incrementarVersion} y el
+     * {@code @Version} de {@code OrdenEntity}, que Hibernate incrementa igual).
+     * {@code orden} sigue reportando su version VIEJA (es un campo final que el
+     * guardado no toca), así que reutilizarla tal cual en el siguiente guardado
+     * fallaría por optimistic lock aunque nadie más haya tocado la fila.
+     */
+    private static OrdenRoot conVersionRecienGuardada(OrdenRoot orden) {
+        return OrdenRoot.rehidratar(orden.proceso(), orden.intentos(), orden.proximoReintentoEn(),
+                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(),
+                orden.completadaEn(), orden.version() + 1);
     }
 
     @Transactional

@@ -116,10 +116,11 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
     public SenalPaso aplicarPasoNormal(OrdenRoot orden, SagaPrincipal saga, ResultadoPasoPrincipal resultado) {
         saga.aplicarYAvanzar(resultado);
         if (saga.terminada()) {
-            crearHijas(saga.contextosArranque(), Instant.now());
-            orden.finalizar(saga.resultadoFinal());
+            var ahora = Instant.now();
+            crearHijas(saga.contextosArranque(), ahora);
+            orden.finalizar(ahora);
             repo.guardar(orden);
-            return new SenalPaso.Finalizada(saga.resultadoFinal());
+            return new SenalPaso.Finalizada();
         }
         orden.resetearIntentos();
         orden.renovarLease(lease, Instant.now());
@@ -140,9 +141,9 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicarCancelacion(OrdenRoot orden, SagaPrincipal saga) {
-        orden.finalizar(saga.resultadoFinal());
+        orden.finalizar(Instant.now());
         repo.guardar(orden);
-        return new SenalPaso.Finalizada(saga.resultadoFinal());
+        return new SenalPaso.Finalizada();
     }
 
     @Transactional

@@ -9,7 +9,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-/** (De)serialización del contexto de una saga a JSON plano, ida y vuelta. */
+/** (De)serialización del contexto de una orden a JSON plano, ida y vuelta. */
 class ContextoCodecTest {
 
     @Test

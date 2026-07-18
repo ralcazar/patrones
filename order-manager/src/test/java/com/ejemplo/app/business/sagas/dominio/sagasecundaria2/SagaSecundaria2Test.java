@@ -13,7 +13,6 @@ import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefInicio;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
@@ -59,7 +58,6 @@ class SagaSecundaria2Test {
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
         assertThat(saga.terminada()).isTrue();
         assertThat(saga.refRespuesta().valor()).isEqualTo("resp-1");
-        assertThat(saga.resultadoFinal()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
     }
 
     @Test

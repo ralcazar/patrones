@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Backoff exponencial en minutos: 1, 3, 5, 10, 20, 45, 90, 180.
  * Los reintentos NUNCA se agotan: consumida la escalera se sigue reintentando
- * indefinidamente cada 180 minutos, pero la saga queda marcada con
+ * indefinidamente cada 180 minutos, pero la orden queda marcada con
  * "abrir ticket pendiente" para que el planificador de tickets avise a soporte
  * (el flag se borra si un reintento por fin termina bien).
  */

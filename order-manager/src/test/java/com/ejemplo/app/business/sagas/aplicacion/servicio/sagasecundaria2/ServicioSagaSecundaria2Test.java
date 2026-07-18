@@ -24,7 +24,6 @@ import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.RefRespuesta;
@@ -86,8 +85,8 @@ class ServicioSagaSecundaria2Test {
         var senal = servicioSaga.ejecutarPaso(repo.cargar(id));
 
         assertThat(senal).isInstanceOf(SenalPaso.Finalizada.class);
-        assertThat(((SenalPaso.Finalizada) senal).resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
         var orden = repo.estadoActual(id);
+        assertThat(orden.completadaEn()).isNotNull();
         assertThat(orden.estaViva()).isFalse();
         assertThat(((SagaSecundaria2) orden.proceso()).estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
         assertThat(((SagaSecundaria2) orden.proceso()).refRespuesta().valor()).isEqualTo("resp-1");

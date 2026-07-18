@@ -14,7 +14,7 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.Repositori
  * Limpieza de datos antiguos. Todo va en UNA transacción: o se purga el corte
  * completo (órdenes + dedup) o no se purga nada.
  *
- * Solo borra órdenes finalizadas ({@code resultado} no nulo) y ya viejas;
+ * Solo borra órdenes finalizadas ({@code completadaEn} no nula) y ya viejas;
  * cualquier orden viva sobrevive a la limpieza, sea cual sea su estado.
  */
 @Service

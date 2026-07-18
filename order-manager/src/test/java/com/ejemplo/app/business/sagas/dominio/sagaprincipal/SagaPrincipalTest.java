@@ -19,7 +19,6 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefInicio;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenYaCompletadaException;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
@@ -56,7 +55,6 @@ class SagaPrincipalTest {
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
         assertThat(saga.terminada()).isTrue();
-        assertThat(saga.resultadoFinal()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
     }
 
     @Test
@@ -114,7 +112,6 @@ class SagaPrincipalTest {
         saga.compensacionCompletada();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
         assertThat(saga.terminada()).isTrue();
-        assertThat(saga.resultadoFinal()).isEqualTo(ResultadoOrden.FINALIZADA_COMPENSADA);
     }
 
     @Test

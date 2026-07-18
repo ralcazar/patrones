@@ -15,7 +15,6 @@ import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -52,7 +51,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
 
     @Override
     public OrdenRoot cargar(OrdenId id) {
-        var ordenId = id.valor().toString();
+        var ordenId = id.valor();
         var procesoEntity = procesos.findById(ordenId)
                 .orElseThrow(() -> new IllegalArgumentException("No existe el proceso " + ordenId));
         var ordenEntity = ordenes.findById(ordenId)
@@ -60,7 +59,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         return OrdenRoot.rehidratar(procesoDesde(procesoEntity), ordenEntity.getIntentos(),
                 ordenEntity.getProximoReintentoEn(), uuidONull(ordenEntity.getTokenTrabajador()),
                 ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
-                resultadoONull(ordenEntity.getResultado()), ordenEntity.getVersion());
+                ordenEntity.getCompletadaEn(), ordenEntity.getVersion());
     }
 
     @Override
@@ -102,18 +101,14 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     // ------------------------------------------------------------------
 
     private static OrdenEntity entidadOrdenDe(OrdenRoot orden) {
-        return new OrdenEntity(orden.id().valor().toString(), orden.intentos(), orden.proximoReintentoEn(),
+        return new OrdenEntity(orden.id().valor(), orden.intentos(), orden.proximoReintentoEn(),
                 orden.tokenTrabajador() == null ? null : orden.tokenTrabajador().toString(),
                 orden.tokenExpiraEn(), orden.ticketAbiertoEn(),
-                orden.resultado() == null ? null : orden.resultado().name(), orden.version());
+                orden.completadaEn(), orden.version());
     }
 
     private static UUID uuidONull(String valor) {
         return valor == null ? null : UUID.fromString(valor);
-    }
-
-    private static ResultadoOrden resultadoONull(String valor) {
-        return valor == null ? null : ResultadoOrden.valueOf(valor);
     }
 
     // ------------------------------------------------------------------
@@ -125,7 +120,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         for (var a : proceso.auditoria()) {
             auditoria.add(new AuditoriaEntity(a.cuando(), a.quien().usuario(), a.accion(), a.detalle()));
         }
-        var ordenId = proceso.id().valor().toString();
+        var ordenId = proceso.id().valor();
         var externalId = proceso.externalId().valor().toString();
         var persistible = mapeadorDe(proceso.tipo()).desarmar(proceso);
         return new ProcesoEntity(ordenId, proceso.tipo().valor(), externalId, persistible.estado(),
@@ -133,7 +128,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     private Proceso<?> procesoDesde(ProcesoEntity entity) {
-        var id = OrdenId.de(entity.getOrdenId());
+        var id = new OrdenId(entity.getOrdenId());
         var externalId = ExternalId.de(entity.getExternalId());
         var auditoria = entity.getAuditoria().stream()
                 .map(a -> new AuditoriaIntervencion(a.getCuando(), new UsuarioSoporte(a.getQuien()),

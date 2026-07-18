@@ -84,7 +84,7 @@ package "persistencia" {
   interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository, package-private>> {
     +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
     +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
-    +idsFinalizadasAntesDe(corte) : List<String>
+    +idsFinalizadasAntesDe(corte) : List<UUID>
     +borrarPorIds(ids)
     +buscarTicketsPendientes() : List<TicketPendienteFila>
     +ordenesBloqueadas() / ordenesEnEjecucion(ahora)
@@ -99,7 +99,7 @@ package "persistencia" {
   }
 
   class OrdenEntity <<@Entity orden>> {
-    @Id ordenId : String  «FK a proceso»
+    @Id ordenId : UUID  «FK a proceso; @JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
     intentos : int
     proximoReintentoEn : Instant
     tokenTrabajador : String
@@ -110,7 +110,7 @@ package "persistencia" {
     creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
   }
   class ProcesoEntity <<@Entity proceso>> {
-    @Id ordenId : String
+    @Id ordenId : UUID  «@JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
     tipo / externalId / estado : String
     @Lob contexto : String  «JSON plano (ContextoCodec)»
     auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»

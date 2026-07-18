@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
 
 /**
- * Worker pull: encadena sagas (al acabar una, va a la BD a por la siguiente)
+ * Worker pull: encadena órdenes (al acabar una, va a la BD a por la siguiente)
  * hasta que no queda trabajo, y entonces muere. Lo despierta el planificador;
  * el tope de N concurrentes lo impone el pool "ejecutorContinuacion"
  * (maxPool = N, sin cola, descarte silencioso de los envíos sobrantes).

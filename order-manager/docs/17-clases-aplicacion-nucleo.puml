@@ -21,28 +21,35 @@ package "servicio" {
     -self : ServicioContinuarOrden  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionOrderManager); establecerSelf(self)»
     +continuarSiguiente() : boolean
     +hayTrabajoPendiente() : boolean
-    +reclamarToken(id) : boolean  «@Transactional»
+    +reclamarToken(id) : Optional<OrdenRoot>  «@Transactional»
     +programarReintento(orden)  «@Transactional»
     -reclamarYEjecutar(id, tipo) : boolean
   }
   note right of ServicioContinuarOrden
     reclamarYEjecutar() llama a self.reclamarToken(id) -- vía el
     proxy, para que @Transactional no se ignore por auto-invocación
-    --: estaViva()+tieneTokenVigente()+asignarToken(); catch
-    ConcurrenciaOptimistaException -> false (otro worker/pod la
-    tiene). Si reclama: procesadores.get(tipo) (si no hay
-    ProcesadorOrden registrado para ese tipo -> IllegalStateException)
-    y bucle while(true): carga la orden (ÚNICA carga del paso, antes
-    del REST) y llama a procesador.ejecutarPaso(orden) (otro bean:
-    cross-bean, el proxy de ESE bean aplica sin truco); catch
-    ConcurrenciaOptimistaException -> return; catch RuntimeException
-    -> self.programarReintento(orden) -- vía proxy -- sobre esa
-    MISMA orden + return; según la señal: HayMasTrabajo -> continue,
-    Aparcar/Finalizada -> return (ya persistido por el procesador).
-    continuarSiguiente() (pull de cada worker): recorre
-    repo.buscarEjecutables(ahora, lote) y procesa la PRIMERA que
-    gane el reclamo -> true; lote agotado sin ganar -> false.
-    hayTrabajoPendiente(): repo.hayEjecutables(ahora).
+    --: carga la orden, estaViva()+tieneTokenVigente()+asignarToken()
+    +guardar(orden); catch ConcurrenciaOptimistaException ->
+    Optional.empty() (otro worker/pod la tiene). Como guardar()
+    incrementa la version en exactamente 1 (JPA @Version /
+    RepositorioOrdenEnMemoria), reclamarToken NO recarga: reconstruye
+    esa MISMA instancia con version+1 (conVersionRecienGuardada) y
+    devuelve Optional.of(orden) -- lista para el primer paso sin una
+    2ª carga redundante. Si reclama: procesadores.get(tipo) (si no
+    hay ProcesadorOrden registrado para ese tipo ->
+    IllegalStateException) y bucle (hayMasPasos, sin while(true)):
+    el PRIMER paso reutiliza esa instancia; llama a
+    procesador.ejecutarPaso(orden) (otro bean: cross-bean, el proxy
+    de ESE bean aplica sin truco); catch ConcurrenciaOptimistaException
+    -> return; catch RuntimeException -> self.programarReintento(orden)
+    -- vía proxy -- sobre esa MISMA orden + return; según la señal:
+    HayMasTrabajo -> repo.cargar(id) de verdad (el procesador ya
+    guardó esa instancia: su version en memoria quedó obsoleta) y
+    continúa con la orden recargada; Aparcar/Finalizada -> return (ya
+    persistido por el procesador). continuarSiguiente() (pull de cada
+    worker): recorre repo.buscarEjecutables(ahora, lote) y procesa la
+    PRIMERA que gane el reclamo -> true; lote agotado sin ganar ->
+    false. hayTrabajoPendiente(): repo.hayEjecutables(ahora).
   end note
 
   interface ProcesadorOrden {
@@ -58,8 +65,10 @@ package "servicio" {
     Map&lt;TipoOrden, ProcesadorOrden&gt; que arma ConfiguracionOrderManager
     (ver 23) a partir de un List&lt;ProcesadorOrden&gt; inyectado por
     Spring: cada una recibe el agregado YA CARGADO por
-    ServicioContinuarOrden (una única carga por paso, antes del
-    REST), hace el REST del paso FUERA de tx (puede lanzar) y llama
+    ServicioContinuarOrden (la instancia recién reclamada en el
+    primer paso, o recargada de verdad en los siguientes -- ver nota
+    de ServicioContinuarOrden), hace el REST del paso FUERA de tx
+    (puede lanzar) y llama
     a self.aplicarX(...) -- vía su propio proxy auto-inyectado,
     @Transactional -- que aplica el resultado a esa MISMA instancia
     (sin recargar) y la parte operativa de la señal

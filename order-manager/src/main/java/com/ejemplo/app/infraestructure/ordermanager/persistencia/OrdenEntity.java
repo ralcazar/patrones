@@ -1,6 +1,10 @@
 package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 
 import java.time.Instant;
+import java.util.UUID;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -23,8 +27,9 @@ import jakarta.persistence.Version;
 public class OrdenEntity {
 
     @Id
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "orden_id", length = 36)
-    private String ordenId;
+    private UUID ordenId;
 
     @Column(nullable = false)
     private int intentos;
@@ -41,8 +46,8 @@ public class OrdenEntity {
     @Column(name = "ticket_abierto_en")
     private Instant ticketAbiertoEn;
 
-    @Column(length = 30)
-    private String resultado;
+    @Column(name = "completada_en")
+    private Instant completadaEn;
 
     @Version
     @Column(nullable = false)
@@ -58,15 +63,15 @@ public class OrdenEntity {
         // requerido por JPA
     }
 
-    public OrdenEntity(String ordenId, int intentos, Instant proximoReintentoEn, String tokenTrabajador,
-            Instant tokenExpiraEn, Instant ticketAbiertoEn, String resultado, long version) {
+    public OrdenEntity(UUID ordenId, int intentos, Instant proximoReintentoEn, String tokenTrabajador,
+            Instant tokenExpiraEn, Instant ticketAbiertoEn, Instant completadaEn, long version) {
         this.ordenId = ordenId;
         this.intentos = intentos;
         this.proximoReintentoEn = proximoReintentoEn;
         this.tokenTrabajador = tokenTrabajador;
         this.tokenExpiraEn = tokenExpiraEn;
         this.ticketAbiertoEn = ticketAbiertoEn;
-        this.resultado = resultado;
+        this.completadaEn = completadaEn;
         this.version = version;
     }
 
@@ -84,13 +89,13 @@ public class OrdenEntity {
         actualizadaEn = Instant.now();
     }
 
-    public String getOrdenId() { return ordenId; }
+    public UUID getOrdenId() { return ordenId; }
     public int getIntentos() { return intentos; }
     public Instant getProximoReintentoEn() { return proximoReintentoEn; }
     public String getTokenTrabajador() { return tokenTrabajador; }
     public Instant getTokenExpiraEn() { return tokenExpiraEn; }
     public Instant getTicketAbiertoEn() { return ticketAbiertoEn; }
-    public String getResultado() { return resultado; }
+    public Instant getCompletadaEn() { return completadaEn; }
     public long getVersion() { return version; }
     public Instant getCreadaEn() { return creadaEn; }
     public Instant getActualizadaEn() { return actualizadaEn; }

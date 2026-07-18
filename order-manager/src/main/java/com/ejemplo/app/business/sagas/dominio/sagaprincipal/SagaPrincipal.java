@@ -15,7 +15,6 @@ import com.ejemplo.app.business.sagas.dominio.sagaprincipal.PuntoNoRetornoSupera
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ResultadoPaso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
@@ -102,13 +101,6 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
     @Override
     public boolean terminada() {
         return estado == EstadoSagaPrincipal.TERMINADA || estado == EstadoSagaPrincipal.CANCELADA;
-    }
-
-    @Override
-    public ResultadoOrden resultadoFinal() {
-        return estado == EstadoSagaPrincipal.CANCELADA
-                ? ResultadoOrden.FINALIZADA_COMPENSADA
-                : ResultadoOrden.FINALIZADA_OK;
     }
 
     @Override

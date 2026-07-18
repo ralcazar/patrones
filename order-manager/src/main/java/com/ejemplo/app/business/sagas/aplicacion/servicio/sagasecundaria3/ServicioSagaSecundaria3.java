@@ -1,5 +1,7 @@
 package com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria3;
 
+import java.time.Instant;
+
 import jakarta.transaction.Transactional;
 
 import org.jmolecules.ddd.annotation.Service;
@@ -59,8 +61,8 @@ public class ServicioSagaSecundaria3 implements ProcesadorOrden {
     @Transactional
     public SenalPaso aplicar(OrdenRoot orden, SagaSecundaria3 saga, ResultadoPasoSecundaria3 resultado) {
         saga.aplicarYAvanzar(resultado);
-        orden.finalizar(saga.resultadoFinal());
+        orden.finalizar(Instant.now());
         repo.guardar(orden);
-        return new SenalPaso.Finalizada(saga.resultadoFinal());
+        return new SenalPaso.Finalizada();
     }
 }

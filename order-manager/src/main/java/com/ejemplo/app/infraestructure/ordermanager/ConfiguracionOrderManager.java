@@ -22,8 +22,9 @@ import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTickets
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 
 /**
- * Wiring del motor de órdenes: genérico en el tipo de orden, no conoce las
- * sagas concretas (ver {@link ConfiguracionSagas} en {@code infraestructure.sagas}).
+ * Wiring del motor de órdenes: genérico en el tipo de orden, no conoce los
+ * tipos de orden concretos (ver la configuración de wiring correspondiente en
+ * la aplicación que registre esos tipos de orden).
  * Los procesadores de orden que participan del bucle de continuación llegan
  * aquí como {@code List<ProcesadorOrden>}: cada uno se registra a sí mismo por
  * su {@code tipo()}, sin que este motor tenga que enumerarlos a mano.

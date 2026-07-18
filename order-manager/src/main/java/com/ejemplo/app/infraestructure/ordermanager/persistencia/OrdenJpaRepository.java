@@ -3,13 +3,14 @@ package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
+public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
 
     String RESUMEN_SELECT = """
             SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, p.estado AS estado,
@@ -28,7 +29,7 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
             SELECT o.orden_id AS ordenId, p.tipo AS tipo
             FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
             WHERE o.proximo_reintento_en <= :ahora
-              AND o.resultado IS NULL
+              AND o.completada_en IS NULL
               AND (o.token_trabajador IS NULL OR o.token_expira_en <= :ahora)
             ORDER BY o.proximo_reintento_en
             FETCH FIRST :limite ROWS ONLY
@@ -43,27 +44,27 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
     @Query(value = """
             SELECT COUNT(*) FROM orden o
             WHERE o.proximo_reintento_en <= :ahora
-              AND o.resultado IS NULL
+              AND o.completada_en IS NULL
               AND (o.token_trabajador IS NULL OR o.token_expira_en <= :ahora)
               AND ROWNUM = 1
             """, nativeQuery = true)
     int existeCandidata(@Param("ahora") Instant ahora);
 
     @Query(value = """
-            SELECT orden_id FROM orden WHERE resultado IS NOT NULL AND actualizada_en < :corte
+            SELECT orden_id FROM orden WHERE completada_en IS NOT NULL AND actualizada_en < :corte
             """, nativeQuery = true)
-    List<String> idsFinalizadasAntesDe(@Param("corte") Instant corte);
+    List<UUID> idsFinalizadasAntesDe(@Param("corte") Instant corte);
 
     // clearAutomatically: ver el mismo comentario en ProcesoJpaRepository.borrarPorIds.
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM orden WHERE orden_id IN :ids", nativeQuery = true)
-    void borrarPorIds(@Param("ids") List<String> ids);
+    void borrarPorIds(@Param("ids") List<UUID> ids);
 
     /** Escalera de reintentos consumida: candidata a bandeja de trabajo y a ticket. */
     @Query(value = """
             SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, o.intentos AS intentos
             FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
-            WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.resultado IS NULL
+            WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.completada_en IS NULL
             """, nativeQuery = true)
     List<TicketPendienteFila> buscarTicketsPendientes();
 
@@ -71,12 +72,12 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
     List<OrdenResumenFila> ordenesBloqueadas();
 
     @Query(value = RESUMEN_SELECT
-            + "WHERE o.token_trabajador IS NOT NULL AND o.token_expira_en > :ahora AND o.resultado IS NULL",
+            + "WHERE o.token_trabajador IS NOT NULL AND o.token_expira_en > :ahora AND o.completada_en IS NULL",
             nativeQuery = true)
     List<OrdenResumenFila> ordenesEnEjecucion(@Param("ahora") Instant ahora);
 
     @Query(value = RESUMEN_SELECT
-            + "WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.resultado IS NULL",
+            + "WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.completada_en IS NULL",
             nativeQuery = true)
     List<OrdenResumenFila> ordenesConTicketPendiente();
 
@@ -95,5 +96,5 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
     List<OrdenResumenFila> porExternalId(@Param("externalId") String externalId);
 
     @Query(value = RESUMEN_SELECT + "WHERE p.tipo = :tipo AND o.orden_id = :ordenId", nativeQuery = true)
-    Optional<OrdenResumenFila> resumenDe(@Param("tipo") String tipo, @Param("ordenId") String ordenId);
+    Optional<OrdenResumenFila> resumenDe(@Param("tipo") String tipo, @Param("ordenId") UUID ordenId);
 }

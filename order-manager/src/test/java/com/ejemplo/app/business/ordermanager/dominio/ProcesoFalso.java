@@ -43,9 +43,6 @@ public final class ProcesoFalso extends Proceso<ProcesoFalso.Estado> {
     public boolean terminada() { return estado == Estado.TERMINADO; }
 
     @Override
-    public ResultadoOrden resultadoFinal() { return ResultadoOrden.FINALIZADA_OK; }
-
-    @Override
     public void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
         this.estado = Estado.TERMINADO;
     }

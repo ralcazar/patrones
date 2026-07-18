@@ -6,8 +6,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * (De)serializa el {@code contexto} de una saga a JSON plano. Todos los
- * campos propios de cada tipo de saga son, en el dominio, wrappers de un
+ * (De)serializa el {@code contexto} de una orden a JSON plano. Todos los
+ * campos propios de cada tipo de orden son, en el dominio, wrappers de un
  * único String, así que un {@code Map<String,String>} basta para las 4 formas.
  */
 final class ContextoCodec {
@@ -21,7 +21,7 @@ final class ContextoCodec {
         try {
             return MAPPER.writeValueAsString(valores);
         } catch (Exception e) {
-            throw new IllegalStateException("No se pudo serializar el contexto de la saga", e);
+            throw new IllegalStateException("No se pudo serializar el contexto de la orden", e);
         }
     }
 
@@ -29,7 +29,7 @@ final class ContextoCodec {
         try {
             return json == null ? Map.of() : MAPPER.readValue(json, TIPO_MAPA);
         } catch (Exception e) {
-            throw new IllegalStateException("No se pudo deserializar el contexto de la saga", e);
+            throw new IllegalStateException("No se pudo deserializar el contexto de la orden", e);
         }
     }
 }

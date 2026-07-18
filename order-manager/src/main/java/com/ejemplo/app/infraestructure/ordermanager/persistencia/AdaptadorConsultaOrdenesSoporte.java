@@ -74,7 +74,7 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
 
     @Override
     public OrdenDetalle detalle(TipoOrden tipo, OrdenId id) {
-        var ordenId = id.valor().toString();
+        var ordenId = id.valor();
         var fila = ordenes.resumenDe(tipo.valor(), ordenId)
                 .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + ordenId));
         var resumen = resumenDe(fila);

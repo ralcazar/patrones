@@ -47,11 +47,15 @@ group Transacción: reclamarToken
   return
   CONT -> REPO ++ : guardar(orden)
   return
+  CONT -> CONT : orden = conVersionRecienGuardada(orden)  [reconstruye la version SIN\nrecargar: guardar la incrementa en 1,\nver 17-clases-aplicacion-nucleo]
 end
 
 == Paso INICIO (primer método REST) ==
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
-return orden
+note right of CONT
+  Primer paso: reutiliza la MISMA instancia que reclamarToken ya
+  cargó, mutó y guardó -- sin una 2ª carga redundante justo después
+  del reclamo.
+end note
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga (SagaSecundaria1)
@@ -78,7 +82,7 @@ return HayMasTrabajo()
 CONT -> CONT : switch(señal): HayMasTrabajo -> continue
 
 == Paso CONFIRMACION (segundo método REST) y finalización ==
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
+CONT -> REPO ++ : cargar(ordenId)  [el procesador ya guardó la instancia\ndel paso anterior: recarga real para este paso,\nver 17-clases-aplicacion-nucleo]
 return orden
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
@@ -116,7 +120,7 @@ deactivate TRAB
 note over ORQ, PSEC
   Ante ExcepcionServicioExterno en cualquiera de los dos métodos:
   se propaga fuera de tx; ServicioContinuarOrden.reclamarYEjecutar()
-  la atrapa y programa el reintento sobre la MISMA orden cargada
+  la atrapa y programa el reintento sobre la MISMA orden usada
   arriba (backoff 1..180 min, indefinido) — ver
   07-error-ticket-soporte. Nunca se cancela ni compensa: nace tras
   el punto de no retorno de la principal.

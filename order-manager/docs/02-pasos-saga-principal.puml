@@ -30,7 +30,7 @@ return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
 CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
 
 CONT -> CONT ++ : self.reclamarToken(ordenId)  -- vía proxy (@Transactional; auto-invocación\nsaltaría el proxy, ver ConfiguracionOrderManager)
-group Transacción (ConcurrenciaOptimistaException -> false, otro pod la tiene)
+group Transacción (ConcurrenciaOptimistaException -> Optional.empty(), otro pod la tiene)
   CONT -> REPO ++ : cargar(ordenId)
   return orden
   CONT -> ORDEN ++ : estaViva()
@@ -41,15 +41,19 @@ group Transacción (ConcurrenciaOptimistaException -> false, otro pod la tiene)
   return tokenExpiraEn = ahora + lease
   CONT -> REPO ++ : guardar(orden)
   return
+  CONT -> CONT : orden = conVersionRecienGuardada(orden)  [reconstruye la version SIN\nrecargar: guardar la incrementa en 1,\nver 17-clases-aplicacion-nucleo]
 end
-return true
+return Optional.of(orden)
 
 CONT -> CONT : procesador = procesadores.get(tipo)  -- Map<TipoOrden, ProcesadorOrden>\n(ServicioSagaPrincipal registrado bajo SagaPrincipal.TIPO)
 
-loop while (true) hasta Aparcar / Finalizada / excepción
-  CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nesta MISMA instancia (con su version) es la que\nse guarda al terminar el paso o al reintentar]
-  return orden
+note right of CONT
+  Primer paso: reutiliza la MISMA instancia que reclamarToken ya
+  cargó, mutó y guardó -- sin una 2ª carga redundante justo después
+  del reclamo.
+end note
 
+loop hasta Aparcar / Finalizada / excepción
   CONT -> ORQ ++ : ejecutarPaso(orden)
   ORQ -> ORDEN ++ : orden.proceso()
   return saga (SagaPrincipal)
@@ -77,15 +81,19 @@ loop while (true) hasta Aparcar / Finalizada / excepción
       ORQ -> REPO ++ : guardar(orden)
       return
       note right of REPO
-        Guardar lleva la version de la carga hecha por CONT antes
-        del REST. Si otro actor escribió mientras el REST estaba en
-        vuelo (takeover de un pod zombi, soporte), falla con
-        ConcurrenciaOptimistaException y el pod se retira.
+        Guardar lleva la version de la instancia que le pasó CONT: en
+        el primer paso, la reconstruida sin recargar por
+        reclamarToken; en los siguientes, la recargada tras el
+        guardado del paso anterior. Si otro actor escribió mientras
+        el REST estaba en vuelo (takeover de un pod zombi, soporte),
+        falla con ConcurrenciaOptimistaException y el pod se retira.
       end note
     end
     return HayMasTrabajo()
     return HayMasTrabajo()
-    CONT -> CONT : switch(señal): HayMasTrabajo -> continue el bucle
+    CONT -> REPO ++ : cargar(ordenId)  [el procesador ya guardó esta instancia:\nrecarga real para el siguiente paso, ver 17-clases-aplicacion-nucleo]
+    return orden
+    CONT -> CONT : switch(señal): HayMasTrabajo -> orden = orden recargada; continúa el bucle
   else falla
     PASOS --> ORQ : lanza ExcepcionServicioExterno(motivo)
     deactivate PASOS
@@ -93,7 +101,7 @@ loop while (true) hasta Aparcar / Finalizada / excepción
     deactivate ORQ
     note right of CONT
       reclamarYEjecutar() la atrapa como RuntimeException y programa
-      el reintento sobre la MISMA orden cargada arriba (fix del
+      el reintento sobre la MISMA orden usada en este paso (fix del
       takeover seguro) — ver 07-error-ticket-soporte.
     end note
     CONT -> CONT ++ : self.programarReintento(orden)  -- vía proxy (@Transactional)

@@ -109,9 +109,9 @@ public class ServicioSagaSecundaria2 implements ProcesadorOrden {
     @Transactional
     public SenalPaso aplicarConciliacionDisponible(OrdenRoot orden, SagaSecundaria2 saga, RefRespuesta ref) {
         saga.respuestaRecibida(ref);
-        orden.finalizar(saga.resultadoFinal());
+        orden.finalizar(Instant.now());
         repo.guardar(orden);
-        return new SenalPaso.Finalizada(saga.resultadoFinal());
+        return new SenalPaso.Finalizada();
     }
 
     @Transactional
@@ -124,8 +124,8 @@ public class ServicioSagaSecundaria2 implements ProcesadorOrden {
     /** El consumer de Kafka ya dejó la saga en TERMINADA; solo falta el cierre operativo de la orden. */
     @Transactional
     public SenalPaso aplicarFinalizacionYaResuelta(OrdenRoot orden, SagaSecundaria2 saga) {
-        orden.finalizar(saga.resultadoFinal());
+        orden.finalizar(Instant.now());
         repo.guardar(orden);
-        return new SenalPaso.Finalizada(saga.resultadoFinal());
+        return new SenalPaso.Finalizada();
     }
 }

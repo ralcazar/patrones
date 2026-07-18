@@ -3,6 +3,7 @@ package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
@@ -16,25 +17,27 @@ class OrdenEntityTest {
 
     @Test
     void constructorYGetters_exponenTodosLosCampos() {
+        var ordenId = UUID.randomUUID();
         var proximoReintentoEn = Instant.now();
         var tokenExpiraEn = proximoReintentoEn.plusSeconds(600);
         var ticketAbiertoEn = proximoReintentoEn.minusSeconds(60);
-        var entity = new OrdenEntity("orden-1", 3, proximoReintentoEn, "token-1", tokenExpiraEn,
-                ticketAbiertoEn, "FINALIZADA_OK", 5L);
+        var completadaEn = proximoReintentoEn.plusSeconds(120);
+        var entity = new OrdenEntity(ordenId, 3, proximoReintentoEn, "token-1", tokenExpiraEn,
+                ticketAbiertoEn, completadaEn, 5L);
 
-        assertThat(entity.getOrdenId()).isEqualTo("orden-1");
+        assertThat(entity.getOrdenId()).isEqualTo(ordenId);
         assertThat(entity.getIntentos()).isEqualTo(3);
         assertThat(entity.getProximoReintentoEn()).isEqualTo(proximoReintentoEn);
         assertThat(entity.getTokenTrabajador()).isEqualTo("token-1");
         assertThat(entity.getTokenExpiraEn()).isEqualTo(tokenExpiraEn);
         assertThat(entity.getTicketAbiertoEn()).isEqualTo(ticketAbiertoEn);
-        assertThat(entity.getResultado()).isEqualTo("FINALIZADA_OK");
+        assertThat(entity.getCompletadaEn()).isEqualTo(completadaEn);
         assertThat(entity.getVersion()).isEqualTo(5L);
     }
 
     @Test
     void alCrear_fijaCreadaEnSoloLaPrimeraVez() {
-        var entity = new OrdenEntity("orden-1", 0, Instant.now(), null, null, null, null, 0L);
+        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, 0L);
 
         entity.alCrear();
         var creadaEnOriginal = entity.getCreadaEn();
@@ -47,7 +50,7 @@ class OrdenEntityTest {
 
     @Test
     void alActualizar_refrescaActualizadaEn() {
-        var entity = new OrdenEntity("orden-1", 0, Instant.now(), null, null, null, null, 0L);
+        var entity = new OrdenEntity(UUID.randomUUID(), 0, Instant.now(), null, null, null, null, 0L);
         entity.alCrear();
         var actualizadaEnTrasCrear = entity.getActualizadaEn();
 

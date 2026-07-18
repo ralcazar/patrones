@@ -56,13 +56,18 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 Regla de oro en todos los flujos: **dentro de la transacción solo BBDD**
 (el agregado `OrdenRoot` completo: negocio + ejecución, un único `guardar`);
 **fuera de ella solo I/O externo** (REST del paso, tickets). Y en el bucle de
-`ServicioContinuarOrden`, **una única carga por paso**: carga el agregado
-antes del REST y se lo pasa ya cargado al `ProcesadorOrden`
-(`ejecutarPaso(orden)`); tanto la transacción que cierra el paso como, si el
-REST falla, la que programa el reintento guardan esa MISMA instancia (con su
-`version`), de modo que si otro actor escribió entre medias el `guardar`
-falla por `version` y el pod se retira (takeover seguro, sin recargas que
-anulen el optimistic locking).
+`ServicioContinuarOrden`, **sin cargas redundantes**: el primer paso reutiliza
+la MISMA instancia que `reclamarToken` ya cargó, mutó (token) y guardó —
+como `guardar` incrementa la `version` en exactamente 1 (JPA `@Version`),
+`reclamarToken` la reconstruye con `version + 1` sin una 2ª carga a BBDD y la
+devuelve (`Optional<OrdenRoot>`) lista para el `ProcesadorOrden`
+(`ejecutarPaso(orden)`); a partir del segundo paso (señal `HayMasTrabajo`) sí
+hace falta una carga real, porque el procesador ya guardó esa instancia y su
+`version` en memoria queda obsoleta. En todos los casos, tanto la transacción
+que cierra el paso como, si el REST falla, la que programa el reintento
+guardan esa MISMA instancia (con su `version`), de modo que si otro actor
+escribió entre medias el `guardar` falla por `version` y el pod se retira
+(takeover seguro, sin recargas que anulen el optimistic locking).
 
 La frontera transaccional es `@Transactional` (`jakarta.transaction`)
 directamente en los métodos de los servicios de aplicación: no hay puerto

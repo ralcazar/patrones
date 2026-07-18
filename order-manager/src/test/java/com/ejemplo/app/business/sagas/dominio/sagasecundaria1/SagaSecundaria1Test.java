@@ -12,7 +12,6 @@ import com.ejemplo.app.business.ordermanager.dominio.DatosManualesRequeridosExce
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
@@ -60,7 +59,6 @@ class SagaSecundaria1Test {
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria1.TERMINADA);
         assertThat(saga.terminada()).isTrue();
         assertThat(saga.refConfirmacion().valor()).isEqualTo("conf1");
-        assertThat(saga.resultadoFinal()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
     }
 
     @Test

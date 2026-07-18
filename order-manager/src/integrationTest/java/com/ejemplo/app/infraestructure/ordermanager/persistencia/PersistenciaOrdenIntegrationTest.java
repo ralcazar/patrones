@@ -27,7 +27,6 @@ import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaExcept
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
@@ -112,7 +111,7 @@ class PersistenciaOrdenIntegrationTest {
         var id = OrdenId.nuevo();
         // Fila de proceso sin su correspondiente fila de orden (inconsistencia entre las dos
         // tablas del agregado): ejercita el segundo orElseThrow de cargar(), distinto del primero.
-        procesoJpaRepository.save(new ProcesoEntity(id.valor().toString(), SagaPrincipal.TIPO.valor(),
+        procesoJpaRepository.save(new ProcesoEntity(id.valor(), SagaPrincipal.TIPO.valor(),
                 UUID.randomUUID().toString(), "INICIAL", "{}", List.of()));
 
         assertThatThrownBy(() -> repo.cargar(id)).isInstanceOf(IllegalArgumentException.class);
@@ -124,12 +123,12 @@ class PersistenciaOrdenIntegrationTest {
         var token = UUID.randomUUID();
         var ahora = Instant.now();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(id), 0, ahora,
-                token, ahora.plusSeconds(600), null, ResultadoOrden.FINALIZADA_OK, 0L));
+                token, ahora.plusSeconds(600), null, ahora, 0L));
 
         var recargada = repo.cargar(id);
 
         assertThat(recargada.tokenTrabajador()).isEqualTo(token);
-        assertThat(recargada.resultado()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
+        assertThat(recargada.completadaEn()).isEqualTo(ahora);
     }
 
     @Test
@@ -172,7 +171,7 @@ class PersistenciaOrdenIntegrationTest {
                 UUID.randomUUID(), ahora.plusSeconds(3600), null, null, 0L));
         var idFinalizada = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idFinalizada), 0, ahora.minusSeconds(5),
-                null, null, null, ResultadoOrden.FINALIZADA_OK, 0L));
+                null, null, null, ahora, 0L));
 
         var candidatas = repo.buscarEjecutables(ahora, 16);
 
@@ -203,7 +202,7 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idVieja = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idVieja), 0, ahora,
-                null, null, null, ResultadoOrden.FINALIZADA_OK, 0L));
+                null, null, null, ahora, 0L));
         var idNoFinalizada = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idNoFinalizada), 0, ahora,
                 null, null, null, null, 0L));
@@ -383,9 +382,9 @@ class PersistenciaOrdenIntegrationTest {
         var id = OrdenId.nuevo();
         repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), Instant.now()));
 
-        var entity = ordenJpaRepository.findById(id.valor().toString()).orElseThrow();
+        var entity = ordenJpaRepository.findById(id.valor()).orElseThrow();
 
-        assertThat(entity.getOrdenId()).isEqualTo(id.valor().toString());
+        assertThat(entity.getOrdenId()).isEqualTo(id.valor());
         assertThat(entity.getCreadaEn()).isNotNull();
         assertThat(entity.getActualizadaEn()).isNotNull();
     }

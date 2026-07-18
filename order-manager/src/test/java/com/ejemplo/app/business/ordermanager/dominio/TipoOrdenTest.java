@@ -10,7 +10,7 @@ class TipoOrdenTest {
 
     @Test
     void constructor_aceptaUnValorNoBlanco() {
-        assertThat(new TipoOrden("SAGA_PRINCIPAL").valor()).isEqualTo("SAGA_PRINCIPAL");
+        assertThat(new TipoOrden("TIPO_EJEMPLO").valor()).isEqualTo("TIPO_EJEMPLO");
     }
 
     @Test

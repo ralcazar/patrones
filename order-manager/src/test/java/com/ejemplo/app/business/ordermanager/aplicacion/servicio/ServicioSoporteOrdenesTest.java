@@ -74,7 +74,7 @@ class ServicioSoporteOrdenesTest {
         assertThat(repo.estadoActual(id).intentos()).isEqualTo(8);
 
         var antes = Instant.now();
-        servicio.reintentarPaso(ProcesoFalso.TIPO, id, "PASO1", new UsuarioSoporte("ana"));
+        servicio.reintentarPaso(ProcesoFalso.TIPO, id, new UsuarioSoporte("ana"));
         var despues = Instant.now();
 
         var actualizada = repo.estadoActual(id);
@@ -87,7 +87,7 @@ class ServicioSoporteOrdenesTest {
     void marcarPasoOk_aplicaLaMarcaManualEnElProcesoYDespiertaLaOrden() {
         var id = crearOrden();
 
-        servicio.marcarPasoOk(ProcesoFalso.TIPO, id, "PASO1", new UsuarioSoporte("ana"),
+        servicio.marcarPasoOk(ProcesoFalso.TIPO, id, new UsuarioSoporte("ana"),
                 "arreglado a mano", Map.of("refInicio", "ABC"));
 
         var actualizada = repo.estadoActual(id);

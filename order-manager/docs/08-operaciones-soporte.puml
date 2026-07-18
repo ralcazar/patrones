@@ -118,9 +118,7 @@ activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo) (reclamo de token: ver 02)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
-return orden
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo) -- reclama el token\n(cargar+asignarToken+guardar, ver 02) y reutiliza esa MISMA\ninstancia para este primer paso, sin recargar
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga
@@ -143,15 +141,18 @@ group Transacción única
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Guardar lleva la version de la carga hecha por CONT antes del
-    REST: si otro actor escribió con el REST en vuelo, guardar
-    falla por version (ConcurrenciaOptimistaException) y el pod se
-    retira.
+    Guardar lleva la version de la instancia que le pasó CONT (la
+    reconstruida sin recargar por reclamarToken en el primer paso, ver
+    17-clases-aplicacion-nucleo): si otro actor escribió con el REST
+    en vuelo, guardar falla por version (ConcurrenciaOptimistaException)
+    y el pod se retira.
   end note
 end
 return HayMasTrabajo()
 return HayMasTrabajo()
-CONT -> CONT : switch(señal): HayMasTrabajo -> continue\n(siguiente vuelta compensa PASO1, luego CANCELADA)
+CONT -> REPO ++ : cargar(ordenId)  [el procesador ya guardó esta instancia:\nrecarga real para el siguiente paso, ver 17-clases-aplicacion-nucleo]
+return orden
+CONT -> CONT : switch(señal): HayMasTrabajo -> orden = orden recargada; continúa\n(siguiente vuelta compensa PASO1, luego CANCELADA)
 
 note over ORQ, SAGA
   Última vuelta: ejecutarPaso despacha por estado con un switch;

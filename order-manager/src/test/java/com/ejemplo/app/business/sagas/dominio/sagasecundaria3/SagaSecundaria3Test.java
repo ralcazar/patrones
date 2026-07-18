@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
@@ -44,7 +43,6 @@ class SagaSecundaria3Test {
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria3.TERMINADA);
         assertThat(saga.terminada()).isTrue();
         assertThat(saga.refEjecucion().valor()).isEqualTo("ejec1");
-        assertThat(saga.resultadoFinal()).isEqualTo(ResultadoOrden.FINALIZADA_OK);
     }
 
     @Test

@@ -2,8 +2,6 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import java.time.Duration;
 
-import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
-
 /** Lo que deja un paso de ejecución. Ya persistido por el procesador de la orden; ServicioContinuarOrden solo la interpreta. */
 public sealed interface SenalPaso {
 
@@ -14,5 +12,5 @@ public sealed interface SenalPaso {
     record Aparcar(Duration ventana) implements SenalPaso {}
 
     /** La orden terminó. */
-    record Finalizada(ResultadoOrden resultado) implements SenalPaso {}
+    record Finalizada() implements SenalPaso {}
 }

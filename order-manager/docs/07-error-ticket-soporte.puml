@@ -22,16 +22,14 @@ end box
 == Un paso falla: ServicioContinuarOrden programa el reintento sobre la orden ya cargada ==
 [-> CONT : continuarSiguiente() (ver 02/04/05/06)
 activate CONT
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST]
-return orden (intentos = N)
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo) -- self.reclamarToken(ordenId)\ncarga+asignarToken+guardar (ver 02) y devuelve esa MISMA\ninstancia (intentos = N) reutilizable para este primer paso
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORQ : puertoPasoN.ejecutar(cmd) -- REST fuera de tx
 ORQ --> CONT : lanza ExcepcionServicioExterno(motivo)
 deactivate ORQ
-CONT -> CONT : catch (RuntimeException e): programar el reintento\nsobre la MISMA orden cargada arriba (no se recarga:\nfix del takeover seguro)
+CONT -> CONT : catch (RuntimeException e): programar el reintento\nsobre la MISMA orden usada arriba (no se recarga:\nfix del takeover seguro)
 
-group Transacción: reintento sobre la orden ya cargada
+group Transacción: reintento sobre la orden ya reclamada
   CONT -> ORDEN ++ : programarReintento(politica, Instant.now())
   ORDEN -> POL ++ : esperaTras(N + 1)
   POL -> POL : escalera 1, 3, 5, 10, 20, 45,\n90, 180 min (desde el 8º, 180)
@@ -41,11 +39,13 @@ group Transacción: reintento sobre la orden ya cargada
   CONT -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Al reutilizar la MISMA instancia cargada antes del REST (en vez
-    de recargar), este guardado sigue protegido por su version: si
-    otro actor la tocó entre medias (takeover tras lease vencido,
-    soporte), falla con ConcurrenciaOptimistaException y el pod se
-    retira, igual que el guardado de cualquier otro paso.
+    Al reutilizar la MISMA instancia que reclamarToken ya cargó,
+    mutó y guardó (en vez de recargar), este guardado sigue
+    protegido por su version -- reconstruida sin ir a BD, ver
+    17-clases-aplicacion-nucleo: si otro actor la tocó entre medias
+    (takeover tras lease vencido, soporte), falla con
+    ConcurrenciaOptimistaException y el pod se retira, igual que el
+    guardado de cualquier otro paso.
   end note
 end
 [<- CONT

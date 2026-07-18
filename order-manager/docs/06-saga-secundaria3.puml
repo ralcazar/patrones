@@ -22,7 +22,9 @@ note over PLAN, CONT
   La hija SECUNDARIA3 nació en 03 con proximoReintentoEn = ahora:
   el planificador ve trabajo (hayTrabajoPendiente()) y despierta
   hasta N workers @Async — despacho detallado en 01; el reclamo de
-  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04.
+  token dentro de reclamarYEjecutar se omite aquí, igual que en 02/04
+  (incluida la reconstrucción de version sin recargar, que deja la
+  instancia lista para este único paso sin una carga redundante).
 end note
 
 PLAN ->> TRAB : trabajar()
@@ -30,9 +32,7 @@ activate TRAB
 TRAB -> CONT ++ : continuarSiguiente()
 CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
 return [CandidataOrden(ordenId, TipoOrden("SECUNDARIA3")), ...]
-CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
-CONT -> REPO ++ : cargar(ordenId)  [ÚNICA carga del paso, antes del REST:\nla misma instancia (con su version) llega al guardar\no al reintento si el REST falla]
-return orden
+CONT -> CONT : reclamarYEjecutar(ordenId, tipo)  [reutiliza para este único\npaso la instancia que reclamarToken ya cargó y guardó]
 CONT -> ORQ ++ : ejecutarPaso(orden)
 ORQ -> ORDEN ++ : orden.proceso()
 return saga (SagaSecundaria3)
@@ -52,10 +52,11 @@ group Transacción única: checkpoint del paso
   ORQ -> REPO ++ : guardar(orden)
   return
   note right of REPO
-    Guardar lleva la version de la carga hecha por CONT antes del
-    REST: si otro actor escribió con el REST en vuelo, guardar
-    falla por version (ConcurrenciaOptimistaException) y el pod se
-    retira.
+    Guardar lleva la version de la instancia que CONT le pasó al
+    procesador (reconstruida sin recargar por reclamarToken, ver
+    17-clases-aplicacion-nucleo): si otro actor escribió con el REST
+    en vuelo, guardar falla por version (ConcurrenciaOptimistaException)
+    y el pod se retira.
   end note
 end
 return Finalizada(FINALIZADA_OK)
@@ -71,7 +72,7 @@ note over ORQ, PSIM
   ejecutarPaso() va derecho a finalizar(). Ante
   ExcepcionServicioExterno: propaga fuera de tx y
   ServicioContinuarOrden.reclamarYEjecutar() programa el reintento
-  sobre la MISMA orden cargada arriba (backoff 1..180 min) — ver
+  sobre la MISMA orden usada arriba (backoff 1..180 min) — ver
   07. Nunca se cancela ni compensa.
 end note
 @enduml
