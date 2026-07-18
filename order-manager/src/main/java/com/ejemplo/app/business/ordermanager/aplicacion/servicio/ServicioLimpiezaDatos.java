@@ -8,6 +8,7 @@ import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoLimpiarDatosAntiguos;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 
 /**
@@ -22,15 +23,21 @@ public class ServicioLimpiezaDatos implements CasoUsoLimpiarDatosAntiguos {
 
     private final RepositorioOrden repo;
     private final PuertoMensajesProcesados dedup;
+    private final PuertoObservadorEjecucion observador;
 
-    public ServicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup) {
+    public ServicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup,
+            PuertoObservadorEjecucion observador) {
         this.repo = repo;
         this.dedup = dedup;
+        this.observador = observador;
     }
 
     @Override
     @Transactional
     public ResultadoLimpieza purgarAnterioresA(Instant corte) {
-        return new ResultadoLimpieza(repo.purgarFinalizadasAntesDe(corte), dedup.purgarAnterioresA(corte));
+        var ordenesEliminadas = repo.purgarFinalizadasAntesDe(corte);
+        var mensajesEliminados = dedup.purgarAnterioresA(corte);
+        observador.datosAntiguosPurgados(ordenesEliminadas, mensajesEliminados);
+        return new ResultadoLimpieza(ordenesEliminadas, mensajesEliminados);
     }
 }

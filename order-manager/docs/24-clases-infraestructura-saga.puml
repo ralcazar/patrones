@@ -5,16 +5,43 @@ hide empty members
 skinparam classAttributeIconSize 0
 
 package "infraestructure.ordermanager.eventos" {
-  ' --- adaptador de SALIDA (implementa un puerto de salida) ---
+  ' --- adaptadores de SALIDA (implementan puertos de salida) ---
   class AdaptadorTicketsLog <<@Component>> {
-    +abrir(ordenes)  «log.error("TICKET-SOPORTE-ORDERMANAGER: ...")\nun texto en el log = el ticket; sin id»
+    -pod : String  «ordermanager.pod, "local"»
+    +abrir(ordenes)  «una línea log.error por orden:\nevento=ticket_abierto orden=... tipo=... pod=...»
   }
+  note right of AdaptadorTicketsLog
+    "Ticket abierto" nace ya aquí (no pasa por
+    PuertoObservadorEjecucion): la decisión de abrir el ticket es de
+    aplicación (ServicioTicketsSoporte, ver 22), pero el texto del
+    ticket ya vivía en este adaptador antes del catálogo de eventos.
+    Una línea por orden del barrido (antes: un único mensaje para
+    todas), mismo formato clave=valor que AdaptadorObservadorLog.
+  end note
+
+  class AdaptadorObservadorLog <<@Component>> {
+    -pod : String  «ordermanager.pod, "local"»
+    +reclamoGanado/reclamoPerdido/colisionOptimista/\npasoCompletado/pasoFallido/reintentoProgramado/\nordenAparcada/ordenFinalizada/datosAntiguosPurgados
+  }
+  note right of AdaptadorObservadorLog
+    Implementa PuertoObservadorEjecucion (ver 17) con SLF4J: una
+    línea log.info por evento, formato
+    evento=&lt;nombre&gt; orden=&lt;id&gt; tipo=&lt;tipo&gt; ... pod=&lt;valor&gt;.
+    Catálogo exacto de eventos y formato en
+    src/pruebaCarga/resources/escenarios/README.md (contrato para el
+    analizador de la fase 3 del plan de pruebas de carga). @Component
+    auto-detectado (igual que AdaptadorTicketsLog): ConfiguracionOrderManager
+    solo enhebra el puerto como parámetro de los @Bean que lo
+    necesitan (ServicioContinuarOrden, ServicioLimpiezaDatos), no lo
+    declara con un @Bean propio.
+  end note
 }
 
 package "infraestructure.sagas.eventos" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class ConsumidorRespuestaSecundaria2 <<@Component>> {
     -registro : CasoUsoRegistrarRespuestaSecundaria2
+    -pod : String  «ordermanager.pod, "local"»
     -mapper : ObjectMapper
     +onRespuesta(mensaje, key)  «@KafkaListener\ntopic sagas.topics.respuesta-secundaria2»
   }
@@ -26,7 +53,10 @@ package "infraestructure.sagas.eventos" {
     arquitectura del CLAUDE.md). CasoUsoRegistrarRespuestaSecundaria2
     es específico de la saga secundaria 2 y vive en business.sagas
     (ver 20): por eso este consumer vive en infraestructure.sagas,
-    no en infraestructure.ordermanager.
+    no en infraestructure.ordermanager. Tras delegar, loguea
+    evento=respuesta_secundaria2_registrada orden=... tipo=SECUNDARIA2
+    exito=... mensaje_id=... pod=... (evento nacido en infraestructura,
+    no pasa por PuertoObservadorEjecucion — ver 17).
   end note
 }
 
@@ -34,6 +64,7 @@ package "infraestructure.sagas.rest" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class ControladorTramitaciones <<@RestController>> {
     -casoUso : CasoUsoIniciarTramitacion
+    -pod : String  «ordermanager.pod, "local"»
     +iniciar(PeticionTramitacion) : ResponseEntity<RespuestaTramitacion>\n«@PostMapping("/tramitaciones"), 202 Accepted»
     +alFallarElServicioExterno(ExcepcionServicioExterno)\n«@ExceptionHandler, 502 Bad Gateway»
     record PeticionTramitacion(externalId)
@@ -46,7 +77,10 @@ package "infraestructure.sagas.rest" {
     directamente. Si el servicio externo de datos de negocio falla
     (ExcepcionServicioExterno, lanzada dentro de
     ServicioIniciarTramitacion.iniciar — ver 01 y 22), no queda nada
-    persistido: basta con traducir a 502 sin compensación.
+    persistido: basta con traducir a 502 sin compensación. Si tiene
+    éxito, loguea evento=tramitacion_creada orden=... tipo=PRINCIPAL
+    external_id=... pod=... (nace en este adaptador de entrada, no
+    pasa por PuertoObservadorEjecucion — ver 17).
   end note
 }
 
@@ -119,6 +153,7 @@ interface PuertoOrdenesTicketPendiente
 interface PuertoTicketsSoporte
 interface "PuertoBusquedaTramitacion (ver 22)" as PuertoBusquedaTramitacion
 interface "MapeadorProceso,\nDescriptorSoporteOrden (ver 23)" as SPIs
+interface "PuertoObservadorEjecucion (ver 17)" as PuertoObservadorEjecucion
 
 package "infraestructure.ordermanager.persistencia" {
   ' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
@@ -166,7 +201,11 @@ package "infraestructure.ordermanager (config)" {
     toUnmodifiableMap (tipo duplicado -> falla el arranque). Mismo
     patrón @Lazy self que antes (ver 17), ahora repartido en dos
     @Configuration: aquí para ServicioContinuarOrden y
-    ServicioTicketsSoporte.
+    ServicioTicketsSoporte. servicioContinuarOrden y
+    servicioLimpiezaDatos reciben además PuertoObservadorEjecucion
+    como parámetro (ver 17): Spring lo resuelve solo con
+    AdaptadorObservadorLog, un @Component más (no hay un @Bean propio
+    para él aquí, igual que AdaptadorTicketsLog).
   end note
 }
 
@@ -227,6 +266,7 @@ PlanificadorPurgaDatosNegocio --> CasoUsoPurgarDatosNegocioHuerfanos
 PuertoConsultaOrdenesSoporte <|.. AdaptadorConsultaOrdenesSoporte
 PuertoOrdenesTicketPendiente <|.. AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
+PuertoObservadorEjecucion <|.. AdaptadorObservadorLog
 SPIs <|.. SoporteSaga
 PuertoBusquedaTramitacion <|.. AdaptadorBusquedaTramitacion
 

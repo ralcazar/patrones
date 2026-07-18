@@ -26,6 +26,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso7;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoPaso8;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
+import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
@@ -88,7 +89,8 @@ class ServicioSagaPrincipalTest {
         servicioSaga = new ServicioSagaPrincipal(repo, LEASE, repoDatos, puertoPaso1, puertoPaso2, puertoPaso3,
                 puertoPaso4, puertoPaso5, puertoPaso6, puertoPaso7, puertoPaso8);
         servicioContinuar = new ServicioContinuarOrden(Map.of(SagaPrincipal.TIPO, servicioSaga), repo,
-                new com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos(), LEASE, 16);
+                new com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos(), LEASE, 16,
+                new ObservadorEjecucionEnMemoria());
 
         var datosNegocio = DatosNegocio.crear(DatosNegocioId.nuevo(), ExternalId.de(UUID.randomUUID().toString()),
                 new DatoNegocio1(1), new DatoNegocio2(LocalDate.of(2026, 1, 1)), new DatoNegocio3("dato"));

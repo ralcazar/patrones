@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Lazy;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
@@ -51,10 +52,11 @@ public class ConfiguracionOrderManager {
             RepositorioOrden repo, PoliticaReintentos politica,
             @Value("${ordermanager.lease}") Duration lease,
             @Value("${ordermanager.planificador.lote:16}") int lote,
+            PuertoObservadorEjecucion observador,
             @Lazy ServicioContinuarOrden self) {
         var procesadoresPorTipo = procesadores.stream()
                 .collect(Collectors.toUnmodifiableMap(ProcesadorOrden::tipo, s -> s));
-        var servicio = new ServicioContinuarOrden(procesadoresPorTipo, repo, politica, lease, lote);
+        var servicio = new ServicioContinuarOrden(procesadoresPorTipo, repo, politica, lease, lote, observador);
         servicio.establecerSelf(self);
         return servicio;
     }
@@ -73,7 +75,8 @@ public class ConfiguracionOrderManager {
     }
 
     @Bean
-    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup) {
-        return new ServicioLimpiezaDatos(repo, dedup);
+    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup,
+            PuertoObservadorEjecucion observador) {
+        return new ServicioLimpiezaDatos(repo, dedup, observador);
     }
 }

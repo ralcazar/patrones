@@ -85,13 +85,19 @@ package "business.ordermanager.aplicacion.servicio" {
   class ServicioLimpiezaDatos <<@Service>> {
     -repo : RepositorioOrden
     -dedup : PuertoMensajesProcesados
+    -observador : PuertoObservadorEjecucion  «ver 17»
     +purgarAnterioresA(corte) : ResultadoLimpieza  «@Transactional»
   }
   note bottom of ServicioLimpiezaDatos
     @Transactional directo en el método (cross-bean, sin self):
     repo.purgarFinalizadasAntesDe(corte) +
-    dedup.purgarAnterioresA(corte). Solo borra completadaEn != null
-    y antigua; cualquier orden viva sobrevive.
+    dedup.purgarAnterioresA(corte), y
+    observador.datosAntiguosPurgados(ordenesEliminadas,
+    mensajesEliminados) -- único evento de este servicio que pasa por
+    el puerto (ver 17); "ticket abierto" NO pasa por él, ver
+    ServicioTicketsSoporte/AdaptadorTicketsLog más arriba/24. Solo
+    borra completadaEn != null y antigua; cualquier orden viva
+    sobrevive.
   }
 
   class "ReintentoOptimista" as Reintento <<package-private>> {
@@ -120,7 +126,7 @@ package "business.ordermanager.aplicacion.puerto.salida" {
     +abrir(List<OrdenTicketPendiente>)
     «UN ticket para todas: texto en el log, sin id»
   }
-  interface "RepositorioOrden,\nPuertoMensajesProcesados (ver 17)" as PuertosNucleo
+  interface "RepositorioOrden, PuertoMensajesProcesados,\nPuertoObservadorEjecucion (ver 17)" as PuertosNucleo
 }
 
 CasoUsoIntervenirOrden <|.. ServicioSoporteOrdenes

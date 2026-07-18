@@ -1,5 +1,8 @@
 package com.ejemplo.app.infraestructure.sagas.rest;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -11,6 +14,7 @@ import com.ejemplo.app.business.ordermanager.dominio.ExcepcionServicioExterno;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion.ComandoIniciarTramitacion;
+import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 
 /**
  * Adaptador de entrada REST de {@code POST /tramitaciones}: SOLO invoca el
@@ -21,19 +25,31 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTr
  * salta antes de crear los agregados (ver
  * {@link com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion}),
  * así que basta con traducirla a 502 sin ninguna compensación.
+ *
+ * La creación de la tramitación nace ya en este adaptador de entrada (no hay
+ * puerto de salida para ella en el motor): se loguea aquí mismo, con el mismo
+ * formato que {@code PuertoObservadorEjecucion} (ver catálogo de eventos en
+ * {@code src/pruebaCarga/resources/escenarios/README.md}).
  */
 @RestController
 public class ControladorTramitaciones {
 
-    private final CasoUsoIniciarTramitacion casoUso;
+    private static final Logger log = LoggerFactory.getLogger(ControladorTramitaciones.class);
 
-    public ControladorTramitaciones(CasoUsoIniciarTramitacion casoUso) {
+    private final CasoUsoIniciarTramitacion casoUso;
+    private final String pod;
+
+    public ControladorTramitaciones(CasoUsoIniciarTramitacion casoUso,
+            @Value("${ordermanager.pod:local}") String pod) {
         this.casoUso = casoUso;
+        this.pod = pod;
     }
 
     @PostMapping("/tramitaciones")
     public ResponseEntity<RespuestaTramitacion> iniciar(@RequestBody PeticionTramitacion peticion) {
         var ordenId = casoUso.iniciar(new ComandoIniciarTramitacion(ExternalId.de(peticion.externalId())));
+        log.info("evento=tramitacion_creada orden={} tipo={} external_id={} pod={}",
+                ordenId.valor(), SagaPrincipal.TIPO.valor(), peticion.externalId(), pod);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new RespuestaTramitacion(ordenId.valor().toString()));
     }
 

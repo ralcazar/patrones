@@ -49,7 +49,7 @@ class ConsumidorRespuestaSecundaria2Test {
     @Test
     void onRespuesta_conExitoTrueDelegaEnRespuestaOk() throws Exception {
         var registro = new RegistroFalso();
-        var consumer = new ConsumidorRespuestaSecundaria2(registro);
+        var consumer = new ConsumidorRespuestaSecundaria2(registro, "pod-test");
         var id = UUID.randomUUID();
         var mensaje = """
                 {"sagaId":"%s","mensajeId":"msg-1","exito":true,"ref":"ref-solicitud"}
@@ -66,7 +66,7 @@ class ConsumidorRespuestaSecundaria2Test {
     @Test
     void onRespuesta_conExitoFalseYReintentableExplicitoDelegaEnRespuestaError() throws Exception {
         var registro = new RegistroFalso();
-        var consumer = new ConsumidorRespuestaSecundaria2(registro);
+        var consumer = new ConsumidorRespuestaSecundaria2(registro, "pod-test");
         var id = UUID.randomUUID();
         var mensaje = """
                 {"sagaId":"%s","mensajeId":"msg-2","exito":false,"codigo":"ERR-1","detalle":"fallo remoto","reintentable":false}
@@ -85,7 +85,7 @@ class ConsumidorRespuestaSecundaria2Test {
     @Test
     void onRespuesta_conExitoFalseSinCampoReintentableUsaTrueComoDefecto() throws Exception {
         var registro = new RegistroFalso();
-        var consumer = new ConsumidorRespuestaSecundaria2(registro);
+        var consumer = new ConsumidorRespuestaSecundaria2(registro, "pod-test");
         var id = UUID.randomUUID();
         var mensaje = """
                 {"sagaId":"%s","mensajeId":"msg-3","exito":false,"codigo":"ERR-2","detalle":"timeout"}

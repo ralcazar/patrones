@@ -17,7 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion.MotivoReclamoPerdido;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
+import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria;
+import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria.Evento;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.soporte.ProcesadorOrdenFalso;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
@@ -44,10 +47,12 @@ class ServicioContinuarOrdenTest {
     private static final int LOTE = 16;
 
     private RepositorioOrdenEnMemoria repo;
+    private ObservadorEjecucionEnMemoria observador;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
+        observador = new ObservadorEjecucionEnMemoria();
     }
 
     private OrdenId crearOrdenFalsa() {
@@ -63,7 +68,7 @@ class ServicioContinuarOrdenTest {
 
     private ServicioContinuarOrden servicio(ProcesadorOrden procesador, RepositorioOrden repositorio) {
         return new ServicioContinuarOrden(Map.of(ProcesoFalso.TIPO, procesador), repositorio, POLITICA,
-                LEASE, LOTE);
+                LEASE, LOTE, observador);
     }
 
     /** Simula que ya pasó el tiempo del reintento programado: la orden vuelve a ser candidata YA. */
@@ -273,7 +278,7 @@ class ServicioContinuarOrdenTest {
     @Test
     void reclamarYEjecutar_sinProcesadorRegistradoParaElTipo_lanzaIllegalStateException() {
         crearOrdenFalsa();
-        var servicioSinProcesadores = new ServicioContinuarOrden(Map.of(), repo, POLITICA, LEASE, LOTE);
+        var servicioSinProcesadores = new ServicioContinuarOrden(Map.of(), repo, POLITICA, LEASE, LOTE, observador);
 
         assertThatThrownBy(servicioSinProcesadores::continuarSiguiente)
                 .isInstanceOf(IllegalStateException.class)
@@ -332,6 +337,124 @@ class ServicioContinuarOrdenTest {
         assertThat(servicio.continuarSiguiente()).isTrue();
 
         verify(proxy).reclamarToken(id);
+    }
+
+    // --- Eventos emitidos vía PuertoObservadorEjecucion (uno por rama) ---
+
+    @Test
+    void reclamarToken_ordenViva_emiteReclamoGanado() {
+        var id = crearOrdenFalsa();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> new SenalPaso.Finalizada());
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(observador.eventos()).contains(new Evento.ReclamoGanado(id, ProcesoFalso.TIPO));
+    }
+
+    @Test
+    void reclamarToken_ordenYaFinalizada_emiteReclamoPerdidoNoViva() {
+        var id = crearOrdenFalsa();
+        var orden = repo.cargar(id);
+        orden.finalizar(Instant.now());
+        repo.guardar(orden);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                o -> { throw new IllegalStateException("no debería ejecutarse: la orden ya está finalizada"); });
+
+        servicio(procesador).reclamarToken(id);
+
+        assertThat(observador.eventos())
+                .containsExactly(new Evento.ReclamoPerdido(id, ProcesoFalso.TIPO, MotivoReclamoPerdido.NO_VIVA));
+    }
+
+    @Test
+    void reclamarToken_conTokenVigente_emiteReclamoPerdidoTokenVigente() {
+        var id = crearOrdenFalsa();
+        var orden = repo.cargar(id);
+        orden.asignarToken(UUID.randomUUID(), LEASE, Instant.now());
+        repo.guardar(orden);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                o -> { throw new IllegalStateException("no debería ejecutarse: el token sigue vigente"); });
+
+        servicio(procesador).reclamarToken(id);
+
+        assertThat(observador.eventos())
+                .containsExactly(new Evento.ReclamoPerdido(id, ProcesoFalso.TIPO, MotivoReclamoPerdido.TOKEN_VIGENTE));
+    }
+
+    @Test
+    void continuarSiguiente_colisionAlReclamarElToken_emiteReclamoPerdidoColisionYColisionOptimistaDeReclamarToken() {
+        var idPerdida = crearOrdenFalsa();
+        crearOrdenFalsa();
+        var repoConCarrera = new RepositorioConCarrera(repo, List.of(idPerdida));
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> new SenalPaso.Finalizada());
+
+        assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isTrue();
+
+        assertThat(observador.eventos()).contains(
+                new Evento.ReclamoPerdido(idPerdida, ProcesoFalso.TIPO, MotivoReclamoPerdido.COLISION_OPTIMISTA),
+                new Evento.ColisionOptimista(idPerdida, ProcesoFalso.TIPO, "reclamarToken"));
+    }
+
+    @Test
+    void ejecutarPaso_colisionOptimista_emiteColisionOptimistaDeEjecutarPaso() {
+        var id = crearOrdenFalsa();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                orden -> { throw new ConcurrenciaOptimistaException(orden.id(), 0); });
+
+        servicio(procesador).continuarSiguiente();
+
+        assertThat(observador.eventos()).contains(new Evento.ColisionOptimista(id, ProcesoFalso.TIPO, "ejecutarPaso"));
+    }
+
+    @Test
+    void pasoCompletadoYOrdenAparcada_seEmitenCuandoElProcesadorAparca() {
+        var id = crearOrdenFalsa();
+        var ventana = Duration.ofMinutes(5);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> new SenalPaso.Aparcar(ventana));
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(observador.eventos()).anyMatch(e -> e instanceof Evento.PasoCompletado pc && pc.id().equals(id));
+        assertThat(observador.eventos()).contains(new Evento.OrdenAparcada(id, ProcesoFalso.TIPO, ventana));
+    }
+
+    @Test
+    void ordenFinalizada_seEmiteCuandoElProcesadorFinaliza() {
+        var id = crearOrdenFalsa();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> new SenalPaso.Finalizada());
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(observador.eventos()).contains(new Evento.OrdenFinalizada(id, ProcesoFalso.TIPO));
+    }
+
+    @Test
+    void pasoFallidoYReintentoProgramado_seEmitenCuandoElPasoLanza() {
+        var id = crearOrdenFalsa();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                orden -> { throw new ExcepcionServicioExterno(MotivoFallo.timeout(), null); });
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(observador.eventos()).anyMatch(e -> e instanceof Evento.PasoFallido pf
+                && pf.id().equals(id) && pf.intento() == 1);
+        assertThat(observador.eventos()).anyMatch(e -> e instanceof Evento.ReintentoProgramado rp
+                && rp.id().equals(id) && rp.intento() == 1 && rp.espera().equals(Duration.ofMinutes(1)));
+    }
+
+    @Test
+    void programarReintento_colisionOptimista_emiteColisionOptimistaDeProgramarReintentoSinReintentoProgramado() {
+        var id = crearOrdenFalsa();
+        var repoConCarrera = new RepositorioConCarreraTrasElReclamo(repo, id);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                orden -> { throw new ExcepcionServicioExterno(MotivoFallo.timeout(), null); });
+
+        assertThatThrownBy(() -> servicio(procesador, repoConCarrera).continuarSiguiente())
+                .isInstanceOf(ConcurrenciaOptimistaException.class);
+
+        assertThat(observador.eventos())
+                .contains(new Evento.ColisionOptimista(id, ProcesoFalso.TIPO, "programarReintento"))
+                .noneMatch(e -> e instanceof Evento.ReintentoProgramado);
     }
 
     /**

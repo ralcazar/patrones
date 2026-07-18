@@ -15,6 +15,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
@@ -95,6 +96,7 @@ class ContextoCargaTest {
         @Bean PuertoMensajesProcesados puertoMensajesProcesados() { return mock(PuertoMensajesProcesados.class); }
         @Bean PuertoOrdenesTicketPendiente puertoOrdenesTicketPendiente() { return mock(PuertoOrdenesTicketPendiente.class); }
         @Bean PuertoTicketsSoporte puertoTicketsSoporte() { return mock(PuertoTicketsSoporte.class); }
+        @Bean PuertoObservadorEjecucion puertoObservadorEjecucion() { return mock(PuertoObservadorEjecucion.class); }
 
         @Bean PuertoPaso1 puertoPaso1() { return mock(PuertoPaso1.class); }
         @Bean PuertoPaso2 puertoPaso2() { return mock(PuertoPaso2.class); }

@@ -11,6 +11,8 @@ import jakarta.transaction.Transactional;
 import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoContinuarOrden;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion.MotivoReclamoPerdido;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
@@ -46,15 +48,17 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
     private final PoliticaReintentos politica;
     private final Duration lease;
     private final int lote;
+    private final PuertoObservadorEjecucion observador;
     private ServicioContinuarOrden self;
 
     public ServicioContinuarOrden(Map<TipoOrden, ProcesadorOrden> procesadores, RepositorioOrden repo,
-            PoliticaReintentos politica, Duration lease, int lote) {
+            PoliticaReintentos politica, Duration lease, int lote, PuertoObservadorEjecucion observador) {
         this.procesadores = procesadores;
         this.repo = repo;
         this.politica = politica;
         this.lease = lease;
         this.lote = lote;
+        this.observador = observador;
         this.self = this; // valor por defecto (tests unitarios); ConfiguracionOrderManager lo sustituye por el proxy
     }
 
@@ -71,6 +75,8 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
         try {
             reclamada = self.reclamarToken(id);
         } catch (ConcurrenciaOptimistaException e) {
+            observador.reclamoPerdido(id, tipo, MotivoReclamoPerdido.COLISION_OPTIMISTA);
+            observador.colisionOptimista(id, tipo, "reclamarToken");
             reclamada = Optional.empty();
         }
         if (reclamada.isEmpty()) {
@@ -89,23 +95,41 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
         var hayMasPasos = true;
         while (hayMasPasos) {
             SenalPaso senal;
+            var inicio = System.nanoTime();
             try {
                 senal = procesador.ejecutarPaso(orden);
             } catch (ConcurrenciaOptimistaException e) {
+                observador.colisionOptimista(id, tipo, "ejecutarPaso");
                 return true; // otro pod/actor tocó el agregado entre medias
             } catch (RuntimeException e) {
+                var error = DetalleError.de(e);
+                observador.pasoFallido(id, tipo, orden.intentos() + 1, error);
                 // Reintento sobre la MISMA orden usada arriba (fix del takeover
                 // seguro): si otro actor escribió entre medias, este guardado falla
                 // por version igual que el de cualquier otro paso.
-                self.programarReintento(orden, DetalleError.de(e));
+                try {
+                    self.programarReintento(orden, error);
+                } catch (ConcurrenciaOptimistaException ex) {
+                    observador.colisionOptimista(id, tipo, "programarReintento");
+                    throw ex;
+                }
+                observador.reintentoProgramado(id, tipo, orden.intentos(), politica.esperaTras(orden.intentos()));
                 return true;
             }
+            var duracionMs = (System.nanoTime() - inicio) / 1_000_000;
+            observador.pasoCompletado(id, tipo, duracionMs);
             switch (senal) {
                 // El procesador ya guardó esta instancia (reseteó intentos y renovó
                 // el lease) y la señal trae la persistida: no hace falta recargar.
                 case SenalPaso.HayMasTrabajo(var ordenActualizada) -> orden = ordenActualizada;
-                case SenalPaso.Aparcar(var ventana) -> hayMasPasos = false; // ya persistido por el procesador
-                case SenalPaso.Finalizada() -> hayMasPasos = false; // ya persistido por el procesador
+                case SenalPaso.Aparcar(var ventana) -> { // ya persistido por el procesador
+                    observador.ordenAparcada(id, tipo, ventana);
+                    hayMasPasos = false;
+                }
+                case SenalPaso.Finalizada() -> { // ya persistido por el procesador
+                    observador.ordenFinalizada(id, tipo);
+                    hayMasPasos = false;
+                }
             }
         }
         return true;
@@ -115,11 +139,18 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
     public Optional<OrdenRoot> reclamarToken(OrdenId id) {
         var orden = repo.cargar(id);
         var ahora = Instant.now();
-        if (!orden.estaViva() || orden.tieneTokenVigente(ahora)) {
+        if (!orden.estaViva()) {
+            observador.reclamoPerdido(id, orden.tipo(), MotivoReclamoPerdido.NO_VIVA);
+            return Optional.empty();
+        }
+        if (orden.tieneTokenVigente(ahora)) {
+            observador.reclamoPerdido(id, orden.tipo(), MotivoReclamoPerdido.TOKEN_VIGENTE);
             return Optional.empty();
         }
         orden.asignarToken(UUID.randomUUID(), lease, ahora);
-        return Optional.of(repo.guardar(orden));
+        var guardada = repo.guardar(orden);
+        observador.reclamoGanado(id, orden.tipo());
+        return Optional.of(guardada);
     }
 
     @Transactional

@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria;
+import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria.Evento;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
@@ -26,13 +28,15 @@ class ServicioLimpiezaDatosTest {
 
     private RepositorioOrdenEnMemoria repo;
     private PuertoMensajesProcesados dedup;
+    private ObservadorEjecucionEnMemoria observador;
     private ServicioLimpiezaDatos servicio;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
         dedup = mock(PuertoMensajesProcesados.class);
-        servicio = new ServicioLimpiezaDatos(repo, dedup);
+        observador = new ObservadorEjecucionEnMemoria();
+        servicio = new ServicioLimpiezaDatos(repo, dedup, observador);
     }
 
     private void crearOrdenFinalizada() {
@@ -55,5 +59,6 @@ class ServicioLimpiezaDatosTest {
         assertThat(resultado.ordenes()).isEqualTo(2);
         assertThat(resultado.mensajesDedup()).isEqualTo(5);
         assertThat(resultado.total()).isEqualTo(7);
+        assertThat(observador.eventos()).containsExactly(new Evento.DatosAntiguosPurgados(2, 5));
     }
 }
