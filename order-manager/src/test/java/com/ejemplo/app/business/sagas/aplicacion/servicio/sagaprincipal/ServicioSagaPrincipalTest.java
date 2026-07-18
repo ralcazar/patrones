@@ -191,7 +191,8 @@ class ServicioSagaPrincipalTest {
     void establecerSelf_sustituyeElProxyUsadoParaLaAutoInvocacionTransaccional() {
         var proxy = mock(ServicioSagaPrincipal.class);
         var id = crearOrdenPrincipal();
-        when(proxy.aplicarPasoNormal(any(), any(), any())).thenReturn(new com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso.HayMasTrabajo());
+        when(proxy.aplicarPasoNormal(any(), any(), any())).thenReturn(
+                new com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso.HayMasTrabajo(repo.cargar(id)));
 
         servicioSaga.establecerSelf(proxy);
         var senal = servicioSaga.ejecutarPaso(repo.cargar(id));

@@ -7,6 +7,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +22,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarOrdenesSoporte.FiltroOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
@@ -66,6 +72,9 @@ class PersistenciaOrdenIntegrationTest {
 
     @Autowired
     private ProcesoJpaRepository procesoJpaRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @AfterEach
     void limpiarBaseDeDatos() {
@@ -143,6 +152,108 @@ class PersistenciaOrdenIntegrationTest {
 
         copiaB.resetearIntentos();
         assertThatThrownBy(() -> repo.guardar(copiaB)).isInstanceOf(ConcurrenciaOptimistaException.class);
+    }
+
+    @Test
+    void guardar_dentroDeTransaccionExterna_devuelveLaVersionRealYPermiteEncadenarGuardadosSinRecargar() {
+        var id = OrdenId.nuevo();
+        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), Instant.now()));
+        var tx = new TransactionTemplate(transactionManager);
+
+        // Misma forma que aplicarPasoNormal: varios guardar de la MISMA orden
+        // encadenados sobre la instancia que devuelve el anterior, sin recargar.
+        tx.executeWithoutResult(estado -> {
+            var orden = repo.cargar(id);
+            orden.asignarToken(UUID.randomUUID(), Duration.ofMinutes(10), Instant.now());
+
+            var primera = repo.guardar(orden);
+            assertThat(primera.version())
+                    .as("el flush de guardar() deja en la instancia devuelta la version real, no la de entrada")
+                    .isEqualTo(orden.version() + 1);
+
+            primera.renovarLease(Duration.ofMinutes(10), Instant.now().plusSeconds(60));
+            var segunda = repo.guardar(primera);
+            assertThat(segunda.version()).isEqualTo(orden.version() + 2);
+        });
+
+        // Tras el commit la BD refleja DOS incrementos de version: sin el flush de
+        // guardar(), ambos UPDATE colapsarían en uno solo al commit (version +1) y las
+        // instancias devueltas dentro de la transacción llevarían la version vieja.
+        assertThat(repo.cargar(id).version()).isEqualTo(2L);
+    }
+
+    @Test
+    void guardar_conVersionObsoletaDentroDeTransaccionExterna_lanzaLaExcepcionDeDominioEnLaLlamadaNoEnElCommit() {
+        var id = OrdenId.nuevo();
+        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), Instant.now()));
+        var copiaObsoleta = repo.cargar(id); // instantánea con la version vieja
+        var ganadora = repo.cargar(id);
+        ganadora.asignarToken(UUID.randomUUID(), Duration.ofMinutes(10), Instant.now());
+        repo.guardar(ganadora); // otro actor escribe primero: la BD avanza de version
+
+        var tx = new TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(estado -> {
+            copiaObsoleta.resetearIntentos();
+            // El conflicto sale de guardar() como la excepción de dominio DENTRO de la
+            // transacción (donde ServicioContinuarOrden puede distinguirla del fallo de un
+            // paso), no como excepción de Spring en el commit de la frontera @Transactional.
+            assertThatThrownBy(() -> repo.guardar(copiaObsoleta))
+                    .isInstanceOf(ConcurrenciaOptimistaException.class);
+            estado.setRollbackOnly(); // tras el conflicto la transacción ya solo puede deshacerse
+        });
+
+        var trasElConflicto = repo.cargar(id);
+        assertThat(trasElConflicto.version()).as("el estado de la ganadora queda intacto").isEqualTo(1L);
+        assertThat(trasElConflicto.tokenTrabajador()).isEqualTo(ganadora.tokenTrabajador());
+    }
+
+    @Test
+    void guardar_carreraRealEntreDosHilos_exactamenteUnoGanaYElOtroRecibeConcurrenciaOptimista() throws Exception {
+        var id = OrdenId.nuevo();
+        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), Instant.now()));
+        var copiaA = repo.cargar(id); // dos pods con la misma instantánea (misma version),
+        var copiaB = repo.cargar(id); // como dos workers que vieron la misma candidata
+        copiaA.asignarToken(UUID.randomUUID(), Duration.ofMinutes(10), Instant.now());
+        copiaB.asignarToken(UUID.randomUUID(), Duration.ofMinutes(10), Instant.now());
+
+        var listos = new CountDownLatch(2);
+        var disparo = new CountDownLatch(1);
+        var conflictos = new AtomicInteger();
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var futuros = List.of(copiaA, copiaB).stream()
+                    .map(copia -> executor.submit(() -> {
+                        listos.countDown();
+                        if (!disparo.await(5, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("la carrera no llegó a dispararse");
+                        }
+                        try {
+                            repo.guardar(copia);
+                            return true;
+                        } catch (ConcurrenciaOptimistaException e) {
+                            conflictos.incrementAndGet();
+                            return false;
+                        }
+                    }))
+                    .toList();
+            assertThat(listos.await(5, TimeUnit.SECONDS)).isTrue();
+            disparo.countDown(); // ambos hilos guardan a la vez sobre la MISMA fila de H2
+
+            var ganadores = 0;
+            for (var futuro : futuros) {
+                if (futuro.get(10, TimeUnit.SECONDS)) {
+                    ganadores++;
+                }
+            }
+            assertThat(ganadores).isEqualTo(1);
+            assertThat(conflictos.get()).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        var trasLaCarrera = repo.cargar(id);
+        assertThat(trasLaCarrera.version()).as("una sola escritura ganadora").isEqualTo(1L);
+        assertThat(trasLaCarrera.tokenTrabajador()).isIn(copiaA.tokenTrabajador(), copiaB.tokenTrabajador());
     }
 
     @Test

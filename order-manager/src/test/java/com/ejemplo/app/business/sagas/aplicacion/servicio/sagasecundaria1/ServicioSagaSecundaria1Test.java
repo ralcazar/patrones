@@ -99,7 +99,7 @@ class ServicioSagaSecundaria1Test {
         var proxy = mock(ServicioSagaSecundaria1.class);
         var id = crearOrdenSecundaria1();
         when(puerto.iniciar(any())).thenReturn(new ResultadoPasoSecundaria1.Iniciada(new RefInicio("ini1")));
-        when(proxy.aplicar(any(), any(), any())).thenReturn(new SenalPaso.HayMasTrabajo());
+        when(proxy.aplicar(any(), any(), any())).thenReturn(new SenalPaso.HayMasTrabajo(repo.cargar(id)));
 
         servicioSaga.establecerSelf(proxy);
         var senal = servicioSaga.ejecutarPaso(repo.cargar(id));

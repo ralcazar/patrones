@@ -47,12 +47,14 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
     }
 
     @Override
-    public void guardar(OrdenRoot orden) {
+    public OrdenRoot guardar(OrdenRoot orden) {
         var actual = almacen.get(orden.id());
         if (actual == null || actual.version() != orden.version()) {
             throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
         }
-        almacen.put(orden.id(), incrementarVersion(orden));
+        var guardada = incrementarVersion(orden);
+        almacen.put(orden.id(), guardada);
+        return guardada;
     }
 
     @Override

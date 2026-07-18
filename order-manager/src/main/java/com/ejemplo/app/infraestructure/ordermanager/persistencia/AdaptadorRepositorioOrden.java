@@ -63,11 +63,14 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     @Override
-    public void guardar(OrdenRoot orden) {
+    public OrdenRoot guardar(OrdenRoot orden) {
         try {
             procesos.save(entidadProcesoDe(orden.proceso()));
-            ordenes.save(entidadOrdenDe(orden));
-            ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera
+            var ordenEntity = ordenes.save(entidadOrdenDe(orden));
+            ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera; ya deja la version real en ordenEntity
+            return OrdenRoot.rehidratar(orden.proceso(), ordenEntity.getIntentos(), ordenEntity.getProximoReintentoEn(),
+                    orden.tokenTrabajador(), ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
+                    ordenEntity.getCompletadaEn(), ordenEntity.getVersion());
         } catch (OptimisticLockingFailureException e) {
             throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
         }

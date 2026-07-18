@@ -11,7 +11,11 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
  * instancia) y, en UNA sola transacción, aplica el resultado a la orden y la
  * parte operativa de la señal devuelta (reset de intentos + renovación de
  * lease, o aparcar, o finalizar), y guarda esa misma instancia una única vez.
- * Una implementación por TipoOrden.
+ * Cuando la señal es {@link SenalPaso.HayMasTrabajo}, debe llevar la instancia
+ * tal como quedó persistida (con su version real, la que devuelve
+ * {@code RepositorioOrden.guardar}), para que el llamante encadene el
+ * siguiente paso sin tener que recargar de BD. Una implementación por
+ * TipoOrden.
  */
 public interface ProcesadorOrden {
 

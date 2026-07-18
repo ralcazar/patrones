@@ -144,12 +144,13 @@ class FronteraTransaccionalIntegrationTest {
         @Override public OrdenRoot cargar(OrdenId id) { return delegado.cargar(id); }
 
         @Override
-        public void guardar(OrdenRoot orden) {
+        public OrdenRoot guardar(OrdenRoot orden) {
             txActivaAlGuardar = TransactionSynchronizationManager.isActualTransactionActive();
-            delegado.guardar(orden); // el flush del adaptador real llega a la BD dentro de esta tx
+            var guardada = delegado.guardar(orden); // el flush del adaptador real llega a la BD dentro de esta tx
             if (fallarDespuesDeGuardar) {
                 throw new FalloSimuladoException();
             }
+            return guardada;
         }
 
         @Override

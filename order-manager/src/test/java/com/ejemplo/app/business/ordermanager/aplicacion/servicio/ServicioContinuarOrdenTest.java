@@ -291,7 +291,7 @@ class ServicioContinuarOrdenTest {
     }
 
     @Test
-    void continuarSiguiente_conHayMasTrabajoSeguidoDeFinalizada_iteraDosVecesCargandoUnaVezPorReclamoYUnaVezParaElSegundoPaso() {
+    void continuarSiguiente_conHayMasTrabajoSeguidoDeFinalizada_iteraDosVecesSinNingunaRecargaMasAlaDeLaInicialDelReclamo() {
         var id = crearOrdenFalsa();
         var repoContador = new RepositorioContadorDeCargas(repo, id);
         var invocaciones = new AtomicInteger();
@@ -299,7 +299,8 @@ class ServicioContinuarOrdenTest {
         var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
             idsVistos.add(orden.id());
             if (invocaciones.incrementAndGet() == 1) {
-                return new SenalPaso.HayMasTrabajo();
+                var ordenGuardada = repoContador.guardar(orden);
+                return new SenalPaso.HayMasTrabajo(ordenGuardada);
             }
             return new SenalPaso.Finalizada();
         });
@@ -308,11 +309,12 @@ class ServicioContinuarOrdenTest {
 
         assertThat(invocaciones.get()).isEqualTo(2);
         assertThat(idsVistos).containsExactly(id, id); // ambos pasos operan sobre la misma orden
-        // Una sola carga por reclamarToken (el primer paso reutiliza esa instancia
-        // sin recargar) + una recarga real para el segundo paso, porque el
-        // procesador ya guardó la instancia del primero: 2 cargas en total, no 3
-        // (antes: 1 del reclamo + 1 redundante antes del primer paso + 1 del segundo).
-        assertThat(repoContador.cargas()).isEqualTo(2);
+        // Una sola carga en todo el bucle, la de reclamarToken: el primer paso
+        // reutiliza la instancia que devuelve el guardado del reclamo, y el
+        // segundo paso reutiliza la que trae la señal HayMasTrabajo (la que
+        // devolvió el guardado del propio procesador). Cero recargas reales,
+        // sea cual sea el número de pasos.
+        assertThat(repoContador.cargas()).isEqualTo(1);
     }
 
     @Test
@@ -359,7 +361,7 @@ class ServicioContinuarOrdenTest {
         public void crear(OrdenRoot orden) { delegado.crear(orden); }
 
         @Override
-        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+        public OrdenRoot guardar(OrdenRoot orden) { return delegado.guardar(orden); }
 
         @Override
         public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
@@ -399,14 +401,15 @@ class ServicioContinuarOrdenTest {
         public void crear(OrdenRoot orden) { delegado.crear(orden); }
 
         @Override
-        public void guardar(OrdenRoot orden) {
-            delegado.guardar(orden);
+        public OrdenRoot guardar(OrdenRoot orden) {
+            var guardada = delegado.guardar(orden);
             if (orden.id().equals(objetivo)) {
                 llamadasGuardar++;
                 if (llamadasGuardar == 1) {
                     delegado.guardar(delegado.cargar(objetivo)); // otro actor escribe entre medias: sube la versión
                 }
             }
+            return guardada;
         }
 
         @Override
@@ -451,7 +454,7 @@ class ServicioContinuarOrdenTest {
         public void crear(OrdenRoot orden) { delegado.crear(orden); }
 
         @Override
-        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+        public OrdenRoot guardar(OrdenRoot orden) { return delegado.guardar(orden); }
 
         @Override
         public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
@@ -494,7 +497,7 @@ class ServicioContinuarOrdenTest {
         public void crear(OrdenRoot orden) { delegado.crear(orden); }
 
         @Override
-        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+        public OrdenRoot guardar(OrdenRoot orden) { return delegado.guardar(orden); }
 
         @Override
         public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {

@@ -72,8 +72,8 @@ public class ServicioSagaSecundaria1 implements ProcesadorOrden {
         }
         orden.resetearIntentos();
         orden.renovarLease(lease, Instant.now());
-        repo.guardar(orden);
-        return new SenalPaso.HayMasTrabajo();
+        var ordenGuardada = repo.guardar(orden);
+        return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }
 
     private ResultadoPasoSecundaria1 ejecutarComando(ComandoPaso cmd) {

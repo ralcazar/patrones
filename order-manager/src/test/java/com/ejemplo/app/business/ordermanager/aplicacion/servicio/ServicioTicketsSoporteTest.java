@@ -174,12 +174,12 @@ class ServicioTicketsSoporteTest {
         public OrdenRoot cargar(OrdenId id) { return delegado.cargar(id); }
 
         @Override
-        public void guardar(OrdenRoot orden) {
+        public OrdenRoot guardar(OrdenRoot orden) {
             if (orden.id().equals(objetivo) && fallosRestantes > 0) {
                 fallosRestantes--;
                 throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
             }
-            delegado.guardar(orden);
+            return delegado.guardar(orden);
         }
 
         @Override

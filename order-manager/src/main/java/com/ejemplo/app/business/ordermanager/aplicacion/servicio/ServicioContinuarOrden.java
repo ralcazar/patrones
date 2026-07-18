@@ -21,11 +21,11 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 /**
  * Bucle de ejecución de una orden: reclama el token bajo optimistic lock y
  * encadena pasos síncronos hasta que el procesador de la orden aparca, termina o falla.
- * El primer paso reutiliza, sin recargar, la instancia que ya cargó y guardó
- * {@code reclamarToken} (ver {@code conVersionRecienGuardada}); a partir del
- * segundo paso (señal {@code HayMasTrabajo}) sí hace falta recargar de BD, porque
- * el procesador de la orden (ver {@link ProcesadorOrden}) ya guardó esa misma
- * instancia y su version en memoria queda obsoleta. La misma instancia usada en
+ * Nunca recarga de BD dentro del bucle: {@code reclamarToken} usa la instancia
+ * que {@code RepositorioOrden.guardar} devuelve ya persistida (con su version
+ * real) para el primer paso, y cada señal {@code HayMasTrabajo} que devuelve
+ * el procesador de la orden (ver {@link ProcesadorOrden}) lleva, por el mismo
+ * motivo, la instancia actualizada para el siguiente. La misma instancia usada en
  * cada paso se reutiliza si el paso falla y hay que programar un reintento: así
  * el guardado del reintento conserva la protección por version frente a un
  * takeover concurrente (otro pod que reclamó tras vencer el lease).
@@ -82,8 +82,8 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
         }
 
         // Para el primer paso reutilizamos la instancia que reclamarToken acaba
-        // de cargar y guardar (ya con version puesta al día, ver conVersionRecienGuardada):
-        // no hace falta una recarga redundante justo después de reclamar.
+        // de cargar y guardar, ya persistida (con su version real): no hace
+        // falta una recarga redundante justo después de reclamar.
         var orden = reclamada.get();
         var hayMasPasos = true;
         while (hayMasPasos) {
@@ -101,9 +101,8 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
             }
             switch (senal) {
                 // El procesador ya guardó esta instancia (reseteó intentos y renovó
-                // el lease): su version en memoria queda obsoleta, así que para el
-                // SIGUIENTE paso sí hace falta recargar de verdad.
-                case SenalPaso.HayMasTrabajo() -> orden = repo.cargar(id);
+                // el lease) y la señal trae la persistida: no hace falta recargar.
+                case SenalPaso.HayMasTrabajo(var ordenActualizada) -> orden = ordenActualizada;
                 case SenalPaso.Aparcar(var ventana) -> hayMasPasos = false; // ya persistido por el procesador
                 case SenalPaso.Finalizada() -> hayMasPasos = false; // ya persistido por el procesador
             }
@@ -119,24 +118,7 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
             return Optional.empty();
         }
         orden.asignarToken(UUID.randomUUID(), lease, ahora);
-        repo.guardar(orden);
-        return Optional.of(conVersionRecienGuardada(orden));
-    }
-
-    /**
-     * Reconstruye, SIN volver a cargar de BD, el estado de {@code orden} tal
-     * como queda justo después de que {@code repo.guardar} la persista con
-     * éxito: un guardado con éxito incrementa la version en exactamente 1
-     * (ver {@code RepositorioOrdenEnMemoria.incrementarVersion} y el
-     * {@code @Version} de {@code OrdenEntity}, que Hibernate incrementa igual).
-     * {@code orden} sigue reportando su version VIEJA (es un campo final que el
-     * guardado no toca), así que reutilizarla tal cual en el siguiente guardado
-     * fallaría por optimistic lock aunque nadie más haya tocado la fila.
-     */
-    private static OrdenRoot conVersionRecienGuardada(OrdenRoot orden) {
-        return OrdenRoot.rehidratar(orden.proceso(), orden.intentos(), orden.proximoReintentoEn(),
-                orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(),
-                orden.completadaEn(), orden.version() + 1);
+        return Optional.of(repo.guardar(orden));
     }
 
     @Transactional

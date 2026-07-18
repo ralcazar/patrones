@@ -124,8 +124,8 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
         }
         orden.resetearIntentos();
         orden.renovarLease(lease, Instant.now());
-        repo.guardar(orden);
-        return new SenalPaso.HayMasTrabajo();
+        var ordenGuardada = repo.guardar(orden);
+        return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }
 
     private SenalPaso ejecutarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
@@ -151,8 +151,8 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
         saga.compensacionCompletada();
         orden.resetearIntentos();
         orden.renovarLease(lease, Instant.now());
-        repo.guardar(orden);
-        return new SenalPaso.HayMasTrabajo();
+        var ordenGuardada = repo.guardar(orden);
+        return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }
 
     private void crearHijas(List<ContextoArranque> contextos, Instant ahora) {

@@ -23,8 +23,13 @@ public interface RepositorioOrden {
     /** Rehidrata el agregado completo, despachando la subclase de Proceso por su tipo. */
     OrdenRoot cargar(OrdenId id);
 
-    /** Lanza ConcurrenciaOptimistaException si la versión no coincide. */
-    void guardar(OrdenRoot orden);
+    /**
+     * Lanza ConcurrenciaOptimistaException si la versión no coincide. Devuelve
+     * el agregado tal como queda persistido, con su version real actualizada,
+     * para que el llamante pueda seguir operando sobre él sin recargar de BD
+     * ni asumir cómo incrementa la version el motor de persistencia.
+     */
+    OrdenRoot guardar(OrdenRoot orden);
 
     /**
      * Candidatas para el planificador: {@code proximo_reintento_en <= ahora AND
