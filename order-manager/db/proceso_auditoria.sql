@@ -1,4 +1,6 @@
--- Tabla hija de auditoría: una fila por intervención de soporte.
+-- Tabla hija de auditoría: una fila por intervención de soporte. Sin
+-- ON DELETE CASCADE (prohibido, ver CLAUDE.md): el borrado de huérfanos es
+-- explícito, en el adaptador de persistencia, hijas antes que padre.
 
 CREATE TABLE proceso_auditoria (
     orden_id  VARCHAR2(36)   NOT NULL,
@@ -9,5 +11,5 @@ CREATE TABLE proceso_auditoria (
     detalle   VARCHAR2(500),
     CONSTRAINT pk_proceso_auditoria PRIMARY KEY (orden_id, secuencia),
     CONSTRAINT fk_proceso_auditoria_proceso FOREIGN KEY (orden_id)
-        REFERENCES proceso (orden_id) ON DELETE CASCADE
+        REFERENCES proceso (orden_id)
 );

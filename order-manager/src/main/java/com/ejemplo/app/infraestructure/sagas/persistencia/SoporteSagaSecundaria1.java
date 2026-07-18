@@ -1,11 +1,7 @@
 package com.ejemplo.app.infraestructure.sagas.persistencia;
 
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.ponerSiNoNulo;
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.refONull;
-
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
@@ -25,6 +21,12 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso
 /** {@link MapeadorProceso} y {@link DescriptorSoporteOrden} de la saga secundaria 1. */
 @Component
 public class SoporteSagaSecundaria1 implements MapeadorProceso, DescriptorSoporteOrden {
+
+    private final ProcesoSagaSecundaria1JpaRepository repo;
+
+    public SoporteSagaSecundaria1(ProcesoSagaSecundaria1JpaRepository repo) {
+        this.repo = repo;
+    }
 
     @Override
     public TipoOrden tipo() {
@@ -51,21 +53,30 @@ public class SoporteSagaSecundaria1 implements MapeadorProceso, DescriptorSoport
     }
 
     @Override
-    public ProcesoPersistible desarmar(Proceso<?> saga) {
-        var s = (SagaSecundaria1) saga;
-        var m = new LinkedHashMap<String, String>();
-        m.put("refPaso1", s.refPaso1().valor());
-        ponerSiNoNulo(m, "refInicio", s.refInicio() == null ? null : s.refInicio().valor());
-        ponerSiNoNulo(m, "refConfirmacion", s.refConfirmacion() == null ? null : s.refConfirmacion().valor());
-        return new ProcesoPersistible(s.estado().name(), m);
+    public String estado(Proceso<?> proceso) {
+        return ((SagaSecundaria1) proceso).estado().name();
     }
 
     @Override
-    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, Map<String, String> contexto,
-            List<AuditoriaIntervencion> auditoria) {
-        return SagaSecundaria1.rehidratar(id, externalId, new RefPaso1(contexto.get("refPaso1")),
-                refONull(contexto, "refInicio", RefInicio::new),
-                refONull(contexto, "refConfirmacion", RefConfirmacion::new),
+    public void guardarContexto(Proceso<?> proceso) {
+        var s = (SagaSecundaria1) proceso;
+        repo.save(new ProcesoSagaSecundaria1Entity(s.id().valor(), s.refPaso1().valor(),
+                s.refInicio() == null ? null : s.refInicio().valor(),
+                s.refConfirmacion() == null ? null : s.refConfirmacion().valor()));
+    }
+
+    @Override
+    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, List<AuditoriaIntervencion> auditoria) {
+        var entity = repo.findById(id.valor())
+                .orElseThrow(() -> new IllegalArgumentException("No existe el contexto de la saga secundaria 1 " + id.valor()));
+        return SagaSecundaria1.rehidratar(id, externalId, new RefPaso1(entity.getRefPaso1()),
+                entity.getRefInicio() == null ? null : new RefInicio(entity.getRefInicio()),
+                entity.getRefConfirmacion() == null ? null : new RefConfirmacion(entity.getRefConfirmacion()),
                 EstadoSagaSecundaria1.valueOf(estado), auditoria);
+    }
+
+    @Override
+    public void borrarContexto(List<UUID> ordenIds) {
+        repo.borrarPorIds(ordenIds);
     }
 }

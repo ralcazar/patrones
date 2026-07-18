@@ -14,17 +14,15 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 
 /**
  * Entidad JPA del Proceso: SIN {@code @Version} (la controla OrdenEntity,
  * la única del agregado). Los campos propios de cada tipo de orden (las refs y
- * datos de negocio) son, en el dominio, siempre wrappers de un único String,
- * así que se guardan como un JSON plano en {@code contexto} en vez de mapear
- * columna a columna cuatro formas distintas: el adaptador despacha por
- * {@code tipo} al (de)serializarlo.
+ * datos de negocio) viven en una tabla satélite relacional por tipo (ver
+ * {@link MapeadorProceso#guardarContexto}/{@link MapeadorProceso#rearmar}),
+ * no aquí: esta entidad solo lleva el estado de la FSM común a todos los tipos.
  */
 @Entity
 @Table(name = "proceso")
@@ -44,10 +42,6 @@ public class ProcesoEntity {
     @Column(nullable = false, length = 40)
     private String estado;
 
-    @Lob
-    @Column(nullable = false)
-    private String contexto;
-
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "proceso_auditoria", joinColumns = @JoinColumn(name = "orden_id"))
     @OrderColumn(name = "secuencia")
@@ -57,13 +51,12 @@ public class ProcesoEntity {
         // requerido por JPA
     }
 
-    public ProcesoEntity(UUID ordenId, String tipo, String externalId, String estado, String contexto,
+    public ProcesoEntity(UUID ordenId, String tipo, String externalId, String estado,
             List<AuditoriaEntity> auditoria) {
         this.ordenId = ordenId;
         this.tipo = tipo;
         this.externalId = externalId;
         this.estado = estado;
-        this.contexto = contexto;
         this.auditoria = auditoria;
     }
 
@@ -71,6 +64,5 @@ public class ProcesoEntity {
     public String getTipo() { return tipo; }
     public String getExternalId() { return externalId; }
     public String getEstado() { return estado; }
-    public String getContexto() { return contexto; }
     public List<AuditoriaEntity> getAuditoria() { return auditoria; }
 }

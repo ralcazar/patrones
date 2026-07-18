@@ -17,4 +17,11 @@ public interface ProcesoJpaRepository extends JpaRepository<ProcesoEntity, UUID>
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM proceso WHERE orden_id IN :ids", nativeQuery = true)
     void borrarPorIds(@Param("ids") List<UUID> ids);
+
+    // clearAutomatically: ver el mismo comentario en borrarPorIds. Sin ON DELETE CASCADE
+    // (prohibido, ver CLAUDE.md) el borrado de la hija proceso_auditoria es explícito, y
+    // tiene que ocurrir ANTES del borrado del padre (proceso) en purgarFinalizadasAntesDe.
+    @Modifying(clearAutomatically = true)
+    @Query(value = "DELETE FROM proceso_auditoria WHERE orden_id IN :ids", nativeQuery = true)
+    void borrarAuditoriaPorIds(@Param("ids") List<UUID> ids);
 }

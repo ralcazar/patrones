@@ -1,11 +1,7 @@
 package com.ejemplo.app.infraestructure.sagas.persistencia;
 
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.ponerSiNoNulo;
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.refONull;
-
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
@@ -24,6 +20,12 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso
 /** {@link MapeadorProceso} y {@link DescriptorSoporteOrden} de la saga secundaria 3. */
 @Component
 public class SoporteSagaSecundaria3 implements MapeadorProceso, DescriptorSoporteOrden {
+
+    private final ProcesoSagaSecundaria3JpaRepository repo;
+
+    public SoporteSagaSecundaria3(ProcesoSagaSecundaria3JpaRepository repo) {
+        this.repo = repo;
+    }
 
     @Override
     public TipoOrden tipo() {
@@ -46,19 +48,28 @@ public class SoporteSagaSecundaria3 implements MapeadorProceso, DescriptorSoport
     }
 
     @Override
-    public ProcesoPersistible desarmar(Proceso<?> saga) {
-        var s = (SagaSecundaria3) saga;
-        var m = new LinkedHashMap<String, String>();
-        m.put("refPaso7", s.refPaso7().valor());
-        ponerSiNoNulo(m, "refEjecucion", s.refEjecucion() == null ? null : s.refEjecucion().valor());
-        return new ProcesoPersistible(s.estado().name(), m);
+    public String estado(Proceso<?> proceso) {
+        return ((SagaSecundaria3) proceso).estado().name();
     }
 
     @Override
-    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, Map<String, String> contexto,
-            List<AuditoriaIntervencion> auditoria) {
-        return SagaSecundaria3.rehidratar(id, externalId, new RefPaso7(contexto.get("refPaso7")),
-                refONull(contexto, "refEjecucion", RefEjecucion::new),
+    public void guardarContexto(Proceso<?> proceso) {
+        var s = (SagaSecundaria3) proceso;
+        repo.save(new ProcesoSagaSecundaria3Entity(s.id().valor(), s.refPaso7().valor(),
+                s.refEjecucion() == null ? null : s.refEjecucion().valor()));
+    }
+
+    @Override
+    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, List<AuditoriaIntervencion> auditoria) {
+        var entity = repo.findById(id.valor())
+                .orElseThrow(() -> new IllegalArgumentException("No existe el contexto de la saga secundaria 3 " + id.valor()));
+        return SagaSecundaria3.rehidratar(id, externalId, new RefPaso7(entity.getRefPaso7()),
+                entity.getRefEjecucion() == null ? null : new RefEjecucion(entity.getRefEjecucion()),
                 EstadoSagaSecundaria3.valueOf(estado), auditoria);
+    }
+
+    @Override
+    public void borrarContexto(List<UUID> ordenIds) {
+        repo.borrarPorIds(ordenIds);
     }
 }

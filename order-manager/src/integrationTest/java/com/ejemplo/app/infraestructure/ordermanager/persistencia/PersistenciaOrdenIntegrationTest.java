@@ -26,6 +26,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.entrada.CasoUsoConsultarOrdenesSoporte.FiltroOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden.CandidataOrden;
@@ -39,7 +42,14 @@ import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
+import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaPrincipalEntity;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaPrincipalJpaRepository;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria1JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria2JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria3JpaRepository;
 import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaPrincipal;
 import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria1;
 import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria2;
@@ -73,11 +83,18 @@ class PersistenciaOrdenIntegrationTest {
     private ProcesoJpaRepository procesoJpaRepository;
 
     @Autowired
+    private ProcesoSagaPrincipalJpaRepository procesoSagaPrincipalJpaRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @AfterEach
     void limpiarBaseDeDatos() {
         ordenJpaRepository.deleteAll();
+        procesoSagaPrincipalJpaRepository.deleteAll();
         procesoJpaRepository.deleteAll();
     }
 
@@ -109,6 +126,24 @@ class PersistenciaOrdenIntegrationTest {
     }
 
     @Test
+    void crearYCargar_conSagaSecundaria2_rehidrataElContextoDesdeSuPropiaSatelite() {
+        // Único test que hace un round-trip de SagaSecundaria2 contra JPA/H2 real (los demás
+        // tests de este fichero la registran pero no llegan a persistirla ni cargarla): cubre
+        // el camino real de guardarContexto/rearmar de SoporteSagaSecundaria2 contra su propia
+        // tabla satélite, con Hibernate hidratando ProcesoSagaSecundaria2Entity de verdad.
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var ctx = new ContextoArranque.ArranqueSecundaria2(externalId, new RefPaso5("ref5"));
+        repo.crear(OrdenRoot.nueva(SagaSecundaria2.crear(id, ctx), Instant.now()));
+
+        var recargada = (SagaSecundaria2) repo.cargar(id).proceso();
+
+        assertThat(recargada.estado().name()).isEqualTo("INICIAL");
+        assertThat(recargada.refPaso5().valor()).isEqualTo("ref5");
+        assertThat(recargada.refRespuesta()).isNull();
+    }
+
+    @Test
     void cargar_procesoInexistente_lanzaIllegalArgumentException() {
         assertThatThrownBy(() -> repo.cargar(OrdenId.nuevo())).isInstanceOf(IllegalArgumentException.class);
     }
@@ -119,7 +154,7 @@ class PersistenciaOrdenIntegrationTest {
         // Fila de proceso sin su correspondiente fila de orden (inconsistencia entre las dos
         // tablas del agregado): ejercita el segundo orElseThrow de cargar(), distinto del primero.
         procesoJpaRepository.save(new ProcesoEntity(id.valor(), SagaPrincipal.TIPO.valor(),
-                UUID.randomUUID().toString(), "INICIAL", "{}", List.of()));
+                UUID.randomUUID().toString(), "INICIAL", List.of()));
 
         assertThatThrownBy(() -> repo.cargar(id)).isInstanceOf(IllegalArgumentException.class);
     }
@@ -257,7 +292,7 @@ class PersistenciaOrdenIntegrationTest {
     @Test
     void mapeadorDe_tipoNoRegistrado_lanzaIllegalStateException() {
         var repoIncompleto = new AdaptadorRepositorioOrden(ordenJpaRepository, procesoJpaRepository,
-                List.of(new SoporteSagaPrincipal())); // sin el mapeador de SECUNDARIA1
+                List.of(new SoporteSagaPrincipal(procesoSagaPrincipalJpaRepository))); // sin el mapeador de SECUNDARIA1
         var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria1(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso1("ref1"));
@@ -328,6 +363,36 @@ class PersistenciaOrdenIntegrationTest {
         assertThat(borradas).isGreaterThanOrEqualTo(1);
         assertThatThrownBy(() -> repo.cargar(idVieja)).isInstanceOf(IllegalArgumentException.class);
         assertThat(repo.cargar(idNoFinalizada)).isNotNull(); // nunca finalizada: la purga no la toca
+    }
+
+    @Test
+    @Transactional
+    void purgarFinalizadasAntesDe_borraExplicitamenteLaAuditoriaYLaSateliteDeSuTipo() {
+        // Ya no hay ON DELETE CASCADE (prohibido, ver CLAUDE.md): si el borrado explícito de
+        // las hijas (proceso_auditoria y la satélite) no ocurriera ANTES que el del padre
+        // (proceso), el DELETE nativo de proceso violaría la FK real que genera Hibernate
+        // para proceso_auditoria (@ElementCollection) y este test fallaría con una excepción
+        // en vez de completar.
+        var ahora = Instant.now();
+        var id = OrdenId.nuevo();
+        var saga = nuevaSagaPrincipal(id);
+        saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
+        repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, 0L));
+        ordenJpaRepository.flush();
+        procesoJpaRepository.flush();
+        assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor())).as("la satélite existe antes de purgar").isPresent();
+        var corteFuturo = Instant.now().plusSeconds(3600);
+
+        var borradas = repo.purgarFinalizadasAntesDe(corteFuturo);
+
+        assertThat(borradas).isEqualTo(1);
+        assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor()))
+                .as("la satélite queda borrada de forma explícita en la purga").isEmpty();
+        var auditoriaRestante = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM proceso_auditoria WHERE orden_id = :id")
+                .setParameter("id", id.valor().toString())
+                .getSingleResult()).longValue();
+        assertThat(auditoriaRestante).as("la auditoría queda borrada de forma explícita en la purga").isZero();
     }
 
     // ------------------------------------------------------------------
@@ -449,7 +514,7 @@ class PersistenciaOrdenIntegrationTest {
     @Test
     void descriptorDe_tipoNoRegistrado_lanzaIllegalStateException() {
         var consultasIncompletas = new AdaptadorConsultaOrdenesSoporte(ordenJpaRepository, procesoJpaRepository,
-                List.of(new SoporteSagaPrincipal())); // sin el descriptor de SECUNDARIA1
+                List.of(new SoporteSagaPrincipal(procesoSagaPrincipalJpaRepository))); // sin el descriptor de SECUNDARIA1
         var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria1(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso1("ref1"));
@@ -504,22 +569,26 @@ class PersistenciaOrdenIntegrationTest {
      */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = OrdenEntity.class)
-    @EnableJpaRepositories(basePackageClasses = OrdenEntity.class)
+    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
+    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
     static class ContextoTest {
 
         @Bean
-        AdaptadorRepositorioOrden adaptadorRepositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos) {
+        AdaptadorRepositorioOrden adaptadorRepositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
+                ProcesoSagaPrincipalJpaRepository repoPrincipal, ProcesoSagaSecundaria1JpaRepository repoSecundaria1,
+                ProcesoSagaSecundaria2JpaRepository repoSecundaria2, ProcesoSagaSecundaria3JpaRepository repoSecundaria3) {
             return new AdaptadorRepositorioOrden(ordenes, procesos, List.of(
-                    new SoporteSagaPrincipal(), new SoporteSagaSecundaria1(),
-                    new SoporteSagaSecundaria2(), new SoporteSagaSecundaria3()));
+                    new SoporteSagaPrincipal(repoPrincipal), new SoporteSagaSecundaria1(repoSecundaria1),
+                    new SoporteSagaSecundaria2(repoSecundaria2), new SoporteSagaSecundaria3(repoSecundaria3)));
         }
 
         @Bean
-        AdaptadorConsultaOrdenesSoporte adaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos) {
+        AdaptadorConsultaOrdenesSoporte adaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
+                ProcesoSagaPrincipalJpaRepository repoPrincipal, ProcesoSagaSecundaria1JpaRepository repoSecundaria1,
+                ProcesoSagaSecundaria2JpaRepository repoSecundaria2, ProcesoSagaSecundaria3JpaRepository repoSecundaria3) {
             return new AdaptadorConsultaOrdenesSoporte(ordenes, procesos, List.of(
-                    new SoporteSagaPrincipal(), new SoporteSagaSecundaria1(),
-                    new SoporteSagaSecundaria2(), new SoporteSagaSecundaria3()));
+                    new SoporteSagaPrincipal(repoPrincipal), new SoporteSagaSecundaria1(repoSecundaria1),
+                    new SoporteSagaSecundaria2(repoSecundaria2), new SoporteSagaSecundaria3(repoSecundaria3)));
         }
 
         @Bean

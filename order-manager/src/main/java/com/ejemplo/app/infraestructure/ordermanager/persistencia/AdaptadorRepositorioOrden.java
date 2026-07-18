@@ -45,7 +45,10 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
 
     @Override
     public void crear(OrdenRoot orden) {
+        // La fila proceso (padre) tiene que existir antes de que la satélite (hija, FK a
+        // proceso) se pueda insertar.
         procesos.save(entidadProcesoDe(orden.proceso()));
+        mapeadorDe(orden.proceso().tipo()).guardarContexto(orden.proceso());
         ordenes.save(entidadOrdenDe(orden));
     }
 
@@ -66,6 +69,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     public OrdenRoot guardar(OrdenRoot orden) {
         try {
             procesos.save(entidadProcesoDe(orden.proceso()));
+            mapeadorDe(orden.proceso().tipo()).guardarContexto(orden.proceso());
             var ordenEntity = ordenes.save(entidadOrdenDe(orden));
             ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera; ya deja la version real en ordenEntity
             return OrdenRoot.rehidratar(orden.proceso(), ordenEntity.getIntentos(), ordenEntity.getProximoReintentoEn(),
@@ -94,8 +98,15 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         if (ids.isEmpty()) {
             return 0;
         }
-        ordenes.borrarPorIds(ids);
-        procesos.borrarPorIds(ids);
+        // Sin ON DELETE CASCADE (prohibido, ver CLAUDE.md): el borrado de las hijas es
+        // explícito, en la misma transacción, hijas antes que padre.
+        ordenes.borrarPorIds(ids); // orden es hija de proceso por FK
+        procesos.borrarAuditoriaPorIds(ids); // proceso_auditoria es hija de proceso por FK
+        // Cada mapeador borra en SU propia satélite; las filas de otros tipos no matchean.
+        for (var mapeador : mapeadores.values()) {
+            mapeador.borrarContexto(ids);
+        }
+        procesos.borrarPorIds(ids); // el padre, ahora libre de FKs de sus hijas
         return ids.size();
     }
 
@@ -125,9 +136,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         }
         var ordenId = proceso.id().valor();
         var externalId = proceso.externalId().valor().toString();
-        var persistible = mapeadorDe(proceso.tipo()).desarmar(proceso);
-        return new ProcesoEntity(ordenId, proceso.tipo().valor(), externalId, persistible.estado(),
-                ContextoCodec.escribir(persistible.contexto()), auditoria);
+        var estado = mapeadorDe(proceso.tipo()).estado(proceso);
+        return new ProcesoEntity(ordenId, proceso.tipo().valor(), externalId, estado, auditoria);
     }
 
     private Proceso<?> procesoDesde(ProcesoEntity entity) {
@@ -137,9 +147,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                 .map(a -> new AuditoriaIntervencion(a.getCuando(), new UsuarioSoporte(a.getQuien()),
                         a.getAccion(), a.getDetalle()))
                 .toList();
-        var contexto = ContextoCodec.leer(entity.getContexto());
         var tipo = new TipoOrden(entity.getTipo());
-        return mapeadorDe(tipo).rearmar(id, externalId, entity.getEstado(), contexto, auditoria);
+        return mapeadorDe(tipo).rearmar(id, externalId, entity.getEstado(), auditoria);
     }
 
     private MapeadorProceso mapeadorDe(TipoOrden tipo) {

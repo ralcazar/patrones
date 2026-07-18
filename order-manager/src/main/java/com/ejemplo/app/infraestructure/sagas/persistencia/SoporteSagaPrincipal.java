@@ -1,11 +1,6 @@
 package com.ejemplo.app.infraestructure.sagas.persistencia;
 
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.ponerSiNoNulo;
-import static com.ejemplo.app.infraestructure.sagas.persistencia.AyudanteContexto.refONull;
-
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -33,6 +28,12 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.MapeadorProceso
 /** {@link MapeadorProceso} y {@link DescriptorSoporteOrden} de la saga principal. */
 @Component
 public class SoporteSagaPrincipal implements MapeadorProceso, DescriptorSoporteOrden {
+
+    private final ProcesoSagaPrincipalJpaRepository repo;
+
+    public SoporteSagaPrincipal(ProcesoSagaPrincipalJpaRepository repo) {
+        this.repo = repo;
+    }
 
     @Override
     public TipoOrden tipo() {
@@ -72,38 +73,43 @@ public class SoporteSagaPrincipal implements MapeadorProceso, DescriptorSoporteO
     }
 
     @Override
-    public ProcesoPersistible desarmar(Proceso<?> saga) {
-        var s = (SagaPrincipal) saga;
-        return new ProcesoPersistible(s.estado().name(), contextoDePrincipal(s.contexto()));
+    public String estado(Proceso<?> proceso) {
+        return ((SagaPrincipal) proceso).estado().name();
     }
 
     @Override
-    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, Map<String, String> contexto,
-            List<AuditoriaIntervencion> auditoria) {
-        return SagaPrincipal.rehidratar(id, externalId, contextoTramitacionDesde(contexto),
-                EstadoSagaPrincipal.valueOf(estado), auditoria);
+    public void guardarContexto(Proceso<?> proceso) {
+        var s = (SagaPrincipal) proceso;
+        var ctx = s.contexto();
+        repo.save(new ProcesoSagaPrincipalEntity(s.id().valor(), ctx.datosNegocioId().valor(),
+                ctx.refPaso1() == null ? null : ctx.refPaso1().valor(),
+                ctx.refPaso2() == null ? null : ctx.refPaso2().valor(),
+                ctx.refPaso3() == null ? null : ctx.refPaso3().valor(),
+                ctx.refPaso4() == null ? null : ctx.refPaso4().valor(),
+                ctx.refPaso5() == null ? null : ctx.refPaso5().valor(),
+                ctx.refPaso6() == null ? null : ctx.refPaso6().valor(),
+                ctx.refPaso7() == null ? null : ctx.refPaso7().valor(),
+                ctx.refPaso8() == null ? null : ctx.refPaso8().valor()));
     }
 
-    private static Map<String, String> contextoDePrincipal(ContextoTramitacion ctx) {
-        var m = new LinkedHashMap<String, String>();
-        m.put("datosNegocioId", ctx.datosNegocioId().valor().toString());
-        ponerSiNoNulo(m, "refPaso1", ctx.refPaso1() == null ? null : ctx.refPaso1().valor());
-        ponerSiNoNulo(m, "refPaso2", ctx.refPaso2() == null ? null : ctx.refPaso2().valor());
-        ponerSiNoNulo(m, "refPaso3", ctx.refPaso3() == null ? null : ctx.refPaso3().valor());
-        ponerSiNoNulo(m, "refPaso4", ctx.refPaso4() == null ? null : ctx.refPaso4().valor());
-        ponerSiNoNulo(m, "refPaso5", ctx.refPaso5() == null ? null : ctx.refPaso5().valor());
-        ponerSiNoNulo(m, "refPaso6", ctx.refPaso6() == null ? null : ctx.refPaso6().valor());
-        ponerSiNoNulo(m, "refPaso7", ctx.refPaso7() == null ? null : ctx.refPaso7().valor());
-        ponerSiNoNulo(m, "refPaso8", ctx.refPaso8() == null ? null : ctx.refPaso8().valor());
-        return m;
+    @Override
+    public Proceso<?> rearmar(OrdenId id, ExternalId externalId, String estado, List<AuditoriaIntervencion> auditoria) {
+        var entity = repo.findById(id.valor())
+                .orElseThrow(() -> new IllegalArgumentException("No existe el contexto de la saga principal " + id.valor()));
+        var ctx = ContextoTramitacion.rehidratar(new DatosNegocioId(entity.getDatosnegocioId()),
+                entity.getRefPaso1() == null ? null : new RefPaso1(entity.getRefPaso1()),
+                entity.getRefPaso2() == null ? null : new RefPaso2(entity.getRefPaso2()),
+                entity.getRefPaso3() == null ? null : new RefPaso3(entity.getRefPaso3()),
+                entity.getRefPaso4() == null ? null : new RefPaso4(entity.getRefPaso4()),
+                entity.getRefPaso5() == null ? null : new RefPaso5(entity.getRefPaso5()),
+                entity.getRefPaso6() == null ? null : new RefPaso6(entity.getRefPaso6()),
+                entity.getRefPaso7() == null ? null : new RefPaso7(entity.getRefPaso7()),
+                entity.getRefPaso8() == null ? null : new RefPaso8(entity.getRefPaso8()));
+        return SagaPrincipal.rehidratar(id, externalId, ctx, EstadoSagaPrincipal.valueOf(estado), auditoria);
     }
 
-    private static ContextoTramitacion contextoTramitacionDesde(Map<String, String> ctx) {
-        return ContextoTramitacion.rehidratar(
-                new DatosNegocioId(UUID.fromString(ctx.get("datosNegocioId"))),
-                refONull(ctx, "refPaso1", RefPaso1::new), refONull(ctx, "refPaso2", RefPaso2::new),
-                refONull(ctx, "refPaso3", RefPaso3::new), refONull(ctx, "refPaso4", RefPaso4::new),
-                refONull(ctx, "refPaso5", RefPaso5::new), refONull(ctx, "refPaso6", RefPaso6::new),
-                refONull(ctx, "refPaso7", RefPaso7::new), refONull(ctx, "refPaso8", RefPaso8::new));
+    @Override
+    public void borrarContexto(List<UUID> ordenIds) {
+        repo.borrarPorIds(ordenIds);
     }
 }

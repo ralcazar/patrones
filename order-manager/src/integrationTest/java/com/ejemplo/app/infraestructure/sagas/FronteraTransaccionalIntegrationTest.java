@@ -37,6 +37,8 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.AdaptadorReposi
 import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenEntity;
 import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenJpaRepository;
 import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoJpaRepository;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria3Entity;
+import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria3JpaRepository;
 import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria3;
 
 /**
@@ -187,14 +189,15 @@ class FronteraTransaccionalIntegrationTest {
      */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = OrdenEntity.class)
-    @EnableJpaRepositories(basePackageClasses = OrdenEntity.class)
+    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaSecundaria3Entity.class})
+    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaSecundaria3Entity.class})
     static class ContextoTest {
 
         @Bean
-        RepositorioOrdenEspiaTx repositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos) {
+        RepositorioOrdenEspiaTx repositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
+                ProcesoSagaSecundaria3JpaRepository repoSecundaria3) {
             return new RepositorioOrdenEspiaTx(
-                    new AdaptadorRepositorioOrden(ordenes, procesos, List.of(new SoporteSagaSecundaria3())));
+                    new AdaptadorRepositorioOrden(ordenes, procesos, List.of(new SoporteSagaSecundaria3(repoSecundaria3))));
         }
 
         @Bean
