@@ -1,0 +1,143 @@
+package com.ejemplo.app.infraestructure.sagas.persistencia;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.test.context.ActiveProfiles;
+
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio1;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio2;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio;
+
+/**
+ * Adaptador JPA real sobre H2 en memoria (modo Oracle, ver
+ * application-test.yml): ejercita {@link AdaptadorDatosNegocio}, el agregado
+ * nuevo de datos de negocio de la Fase 1 (autocontenido: todavía nadie lo usa
+ * en producción).
+ */
+@SpringBootTest(classes = AdaptadorDatosNegocioIntegrationTest.ContextoTest.class)
+@ActiveProfiles("test")
+class AdaptadorDatosNegocioIntegrationTest {
+
+    @Autowired
+    private AdaptadorDatosNegocio repo;
+
+    @Autowired
+    private DatosNegocioJpaRepository datosNegocioJpaRepository;
+
+    @Autowired
+    private DocumentoNegocioJpaRepository documentoNegocioJpaRepository;
+
+    private static DatosNegocio nuevoDatosNegocio(DatosNegocioId id, ExternalId externalId) {
+        return DatosNegocio.crear(id, externalId, new DatoNegocio1(10),
+                new DatoNegocio2(LocalDate.of(2026, 7, 18)), new DatoNegocio3("dato de negocio"));
+    }
+
+    @Test
+    void crearYDocumentosDe_recuperaLosBlobsIdenticosByteAByte() {
+        var id = DatosNegocioId.nuevo();
+        var datosNegocio = nuevoDatosNegocio(id, ExternalId.de(UUID.randomUUID().toString()));
+        var doc1 = new DocumentoNegocio("factura.pdf", "application/pdf", new byte[] {1, 2, 3, 4, 5});
+        var doc2 = new DocumentoNegocio("anexo.png", "image/png", new byte[] {9, 8, 7});
+
+        repo.crear(datosNegocio, List.of(doc1, doc2));
+
+        var documentos = repo.documentosDe(id);
+
+        assertThat(documentos).hasSize(2);
+        assertThat(documentos.get(0).nombre()).isEqualTo("factura.pdf");
+        assertThat(documentos.get(0).mimeType()).isEqualTo("application/pdf");
+        assertThat(documentos.get(0).contenido()).isEqualTo(new byte[] {1, 2, 3, 4, 5});
+        assertThat(documentos.get(1).nombre()).isEqualTo("anexo.png");
+        assertThat(documentos.get(1).contenido()).isEqualTo(new byte[] {9, 8, 7});
+    }
+
+    @Test
+    void crear_sinDocumentos_noGuardaNingunDocumento() {
+        var id = DatosNegocioId.nuevo();
+        repo.crear(nuevoDatosNegocio(id, ExternalId.de(UUID.randomUUID().toString())), List.of());
+
+        assertThat(repo.documentosDe(id)).isEmpty();
+    }
+
+    @Test
+    void cargar_devuelveSoloLosEscalaresSinTocarLosDocumentos() {
+        var id = DatosNegocioId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var datosNegocio = nuevoDatosNegocio(id, externalId);
+        repo.crear(datosNegocio, List.of(new DocumentoNegocio("f.pdf", "application/pdf", new byte[] {1})));
+
+        var recargado = repo.cargar(id);
+
+        assertThat(recargado.id()).isEqualTo(id);
+        assertThat(recargado.externalId()).isEqualTo(externalId);
+        assertThat(recargado.datoNegocio1()).isEqualTo(datosNegocio.datoNegocio1());
+        assertThat(recargado.datoNegocio2()).isEqualTo(datosNegocio.datoNegocio2());
+        assertThat(recargado.datoNegocio3()).isEqualTo(datosNegocio.datoNegocio3());
+    }
+
+    @Test
+    void cargar_inexistente_lanzaIllegalArgumentException() {
+        assertThatThrownBy(() -> repo.cargar(DatosNegocioId.nuevo()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void crear_conExternalIdDuplicado_violaElIndiceUnico() {
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        repo.crear(nuevoDatosNegocio(DatosNegocioId.nuevo(), externalId), List.of());
+
+        assertThatThrownBy(() -> repo.crear(nuevoDatosNegocio(DatosNegocioId.nuevo(), externalId), List.of()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void buscarPorExternalId_existente_loEncuentra() {
+        var id = DatosNegocioId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        repo.crear(nuevoDatosNegocio(id, externalId), List.of());
+
+        var encontrado = repo.buscarPorExternalId(externalId);
+
+        assertThat(encontrado).isPresent();
+        assertThat(encontrado.get().id()).isEqualTo(id);
+    }
+
+    @Test
+    void buscarPorExternalId_inexistente_devuelveVacio() {
+        var encontrado = repo.buscarPorExternalId(ExternalId.de(UUID.randomUUID().toString()));
+
+        assertThat(encontrado).isEmpty();
+    }
+
+    /** Contexto Spring mínimo: solo persistencia real (JPA sobre H2) de este agregado. */
+    @Configuration
+    @EnableAutoConfiguration
+    @EntityScan(basePackageClasses = DatosNegocioEntity.class)
+    @EnableJpaRepositories(basePackageClasses = DatosNegocioEntity.class)
+    static class ContextoTest {
+
+        @Bean
+        AdaptadorDatosNegocio adaptadorDatosNegocio(DatosNegocioJpaRepository datosNegocio,
+                DocumentoNegocioJpaRepository documentos) {
+            return new AdaptadorDatosNegocio(datosNegocio, documentos);
+        }
+    }
+}

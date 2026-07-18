@@ -12,3 +12,5 @@ Las FKs obligan este orden:
 1. `proceso.sql` — tabla `proceso` (sin dependencias).
 2. `proceso_auditoria.sql` — tabla `proceso_auditoria`, FK a `proceso`.
 3. `orden.sql` — tabla `orden`, FK a `proceso`.
+4. `datos_negocio.sql` — tabla `datos_negocio` (sin dependencias).
+5. `datos_negocio_documento.sql` — tabla `datos_negocio_documento`, FK a `datos_negocio`.
