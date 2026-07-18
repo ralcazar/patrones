@@ -1,5 +1,7 @@
 package com.ejemplo.app;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
@@ -88,4 +90,27 @@ class ReglasArquitecturaTest {
             .that().resideInAnyPackage("..ordermanager..")
             .should().haveNameMatching(".*Saga.*")
             .because("ordermanager es el motor genérico: \"saga\" es vocabulario de business.sagas, no suyo");
+
+    /**
+     * Endurecimiento de la separación de source sets: src/test son los tests
+     * UNITARIOS (Java puro + dobles en memoria, ver CLAUDE.md); si alguno
+     * necesita Spring de verdad, va a src/integrationTest, no aquí. Se detecta
+     * por la ubicación real del .class (compilado bajo .../classes/java/test/),
+     * no por convención de nombre, para que no se pueda colar sin que salte.
+     */
+    private static final DescribedPredicate<JavaClass> RESIDE_EN_SRC_TEST =
+            new DescribedPredicate<>("residen en el source set src/test") {
+                @Override
+                public boolean test(JavaClass javaClass) {
+                    return javaClass.getSource()
+                            .map(source -> source.getUri().toString().contains("/classes/java/test/"))
+                            .orElse(false);
+                }
+            };
+
+    @ArchTest
+    static final ArchRule srcTestNoDependeDeSpring = noClasses()
+            .that(RESIDE_EN_SRC_TEST)
+            .should().dependOnClassesThat().resideInAPackage("org.springframework..")
+            .because("src/test son los tests unitarios (sin Spring); los que necesiten Spring van a src/integrationTest");
 }

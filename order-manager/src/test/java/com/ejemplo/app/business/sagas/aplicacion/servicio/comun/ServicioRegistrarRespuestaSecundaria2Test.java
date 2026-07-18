@@ -96,4 +96,16 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         assertThat(orden.proximoReintentoEn())
                 .isBetween(Instant.now().plus(Duration.ofSeconds(55)), Instant.now().plus(Duration.ofMinutes(1).plusSeconds(5)));
     }
+
+    @Test
+    void respuestaError_siYaSeProceso_noHaceNadaMas() {
+        var id = crearOrdenEsperandoRespuesta();
+        when(dedup.yaProcesado(any())).thenReturn(true);
+
+        servicio.respuestaError(id, "ERR", "detalle", true, "msg-1");
+
+        assertThat(((SagaSecundaria2) repo.estadoActual(id).proceso()).estado())
+                .isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
+        verify(dedup, never()).registrar(any());
+    }
 }

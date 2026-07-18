@@ -54,7 +54,8 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, String> {
             """, nativeQuery = true)
     List<String> idsFinalizadasAntesDe(@Param("corte") Instant corte);
 
-    @Modifying
+    // clearAutomatically: ver el mismo comentario en ProcesoJpaRepository.borrarPorIds.
+    @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM orden WHERE orden_id IN :ids", nativeQuery = true)
     void borrarPorIds(@Param("ids") List<String> ids);
 

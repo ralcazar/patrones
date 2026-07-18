@@ -138,4 +138,22 @@ class ServicioSagaSecundaria2Test {
         assertThat(senal).isInstanceOf(SenalPaso.Finalizada.class);
         assertThat(repo.estadoActual(id).estaViva()).isFalse();
     }
+
+    @Test
+    void tipo_devuelveElTipoDeLaSagaSecundaria2() {
+        assertThat(servicioSaga.tipo()).isEqualTo(SagaSecundaria2.TIPO);
+    }
+
+    @Test
+    void establecerSelf_sustituyeElProxyUsadoParaLaAutoInvocacionTransaccional() {
+        var proxy = mock(ServicioSagaSecundaria2.class);
+        var id = crearOrdenSecundaria2();
+        when(proxy.aplicarSolicitud(any(), any())).thenReturn(new SenalPaso.Aparcar(Duration.ofHours(3)));
+
+        servicioSaga.establecerSelf(proxy);
+        var senal = servicioSaga.ejecutarPaso(repo.cargar(id));
+
+        assertThat(senal).isInstanceOf(SenalPaso.Aparcar.class);
+        verify(proxy).aplicarSolicitud(any(), any());
+    }
 }

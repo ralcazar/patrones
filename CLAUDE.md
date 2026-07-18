@@ -97,3 +97,43 @@ Guía para trabajar en este repositorio.
 - La regla la verifica el test de ArchUnit `ReglasArquitecturaTest`
   (`order-manager/src/test/java/...`): si un cambio lo rompe, el cambio está
   mal ubicado, no el test.
+
+## Cobertura de tests: 100% + separación unit/integración
+
+- **100% de instrucción y rama**, verificado por
+  `jacocoTestCoverageVerification` con `minimum = 1.0` en `INSTRUCTION` y
+  `BRANCH` (agregando `test` + `integrationTest`), enganchado a `check`. Todo
+  cambio de código entra con sus tests en el mismo commit y mantiene el 100%;
+  nunca se baja el umbral para "aprobar" un commit.
+- **Exclusiones**: solo `OrderManagerApplication` (clase de arranque de
+  Spring Boot, sin lógica propia) + los miembros generados que JaCoCo filtra
+  por defecto. Cualquier exclusión nueva exige una línea de justificación
+  aquí y en `build.gradle` (el conjunto `jacocoExclusions`); nunca se baja el
+  umbral para evitar cubrir un hueco real.
+- **Dos source sets**: `src/test` = tests **unitarios** (Java puro + dobles
+  en memoria, SIN Spring, task `test`); `src/integrationTest` = tests de
+  **integración** (`@SpringBootTest` / H2, task `integrationTest`, extiende
+  las dependencias de `test` vía `integrationTestImplementation.extendsFrom
+  testImplementation` y reutiliza `sourceSets.main.output` +
+  `sourceSets.test.output` para los dobles de `testsoporte/`). Dentro de cada
+  uno, la misma estructura que producción: por contexto
+  (`ordermanager`/`sagas`) y por capa (`business`/`infraestructure`).
+- **Infra en los tests**: prohibido Docker, Testcontainers, `@EmbeddedKafka`
+  o cualquier broker/servicio externo. La ÚNICA infra que se levanta es
+  **H2 en memoria, modo Oracle** (`jdbc:h2:mem:...;MODE=Oracle`), y solo en
+  `src/integrationTest` para probar los adaptadores JPA. Kafka se prueba sin
+  broker: el consumer (`ConsumidorRespuestaSecundaria2`) es un test unitario
+  que invoca `onRespuesta(...)` directamente. Los puertos de salida aún sin
+  implementación se sustituyen por dobles en el contexto Spring de test.
+- **Concurrencia**: la concurrencia optimista se prueba de forma
+  determinista (repos-decoradores que fuerzan el conflicto) en los tests
+  unitarios, más un test de integración con hilos reales (`ExecutorService`
+  + `CountDownLatch`) sobre H2 para la carrera de verdad.
+- **Tasks**: `./gradlew test` (unitarios), `./gradlew integrationTest`
+  (integración), `./gradlew jacocoTestReport` (informe agregando ambos
+  source sets), `./gradlew check` (test + integrationTest +
+  jacocoTestCoverageVerification + ArchUnit).
+- **Endurecimiento**: `ReglasArquitecturaTest.srcTestNoDependeDeSpring`
+  verifica (por la ruta real del `.class` compilado, no por convención de
+  nombre) que ningún test de `src/test` dependa de `org.springframework..`;
+  si alguno lo necesita de verdad, va a `src/integrationTest`.

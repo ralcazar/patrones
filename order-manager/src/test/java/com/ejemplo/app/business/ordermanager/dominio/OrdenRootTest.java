@@ -171,6 +171,14 @@ class OrdenRootTest {
     }
 
     @Test
+    void tieneTokenVigente_esFalsoSiHayTokenTrabajadorPeroSinFechaDeExpiracion() {
+        // Combinación solo alcanzable vía rehidratar (asignarToken siempre fija ambos a la vez).
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, UUID.randomUUID(), null, null, null, 0L);
+
+        assertThat(orden.tieneTokenVigente(T0)).isFalse();
+    }
+
+    @Test
     void rehidratar_reconstruyeElAgregadoTalCualConSuVersion() {
         var proceso = procesoCualquiera();
         var token = UUID.randomUUID();

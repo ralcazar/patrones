@@ -1,6 +1,7 @@
 package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -95,8 +96,13 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
 
     private static OrdenResumen resumenDe(OrdenResumenFila f) {
         return new OrdenResumen(OrdenId.de(f.getOrdenId()), new TipoOrden(f.getTipo()),
-                ExternalId.de(f.getExternalId()), f.getEstado(), f.getIntentos(), f.getTicketAbiertoEn(),
-                f.getProximoReintentoEn(), f.getIniciadaEn(), f.getActualizadaEn());
+                ExternalId.de(f.getExternalId()), f.getEstado(), f.getIntentos(), instanteONull(f.getTicketAbiertoEn()),
+                instanteONull(f.getProximoReintentoEn()), instanteONull(f.getIniciadaEn()),
+                instanteONull(f.getActualizadaEn()));
+    }
+
+    private static Instant instanteONull(OffsetDateTime valor) {
+        return valor == null ? null : valor.toInstant();
     }
 
     private static List<AuditoriaIntervencion> auditoriaDe(ProcesoEntity entity) {

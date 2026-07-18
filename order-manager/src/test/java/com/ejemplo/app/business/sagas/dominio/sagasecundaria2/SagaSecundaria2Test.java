@@ -11,6 +11,8 @@ import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.PasoNoIntervenibleException;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefInicio;
+import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
 import com.ejemplo.app.business.ordermanager.dominio.ResultadoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
@@ -34,6 +36,7 @@ class SagaSecundaria2Test {
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
         assertThat(saga.comandoActual()).isInstanceOf(ComandoPasoSecundaria2.Solicitar.class);
+        assertThat(saga.terminada()).isFalse();
     }
 
     @Test
@@ -78,5 +81,50 @@ class SagaSecundaria2Test {
 
         assertThatThrownBy(() -> saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null))
                 .isInstanceOf(PasoNoIntervenibleException.class);
+    }
+
+    @Test
+    void marcarPasoActualOkManual_enInicialTerminaLaSagaManualmente() {
+        var saga = nueva();
+
+        saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null);
+
+        assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+    }
+
+    @Test
+    void marcarPasoActualOkManual_enEsperandoRespuestaTerminaLaSagaManualmente() {
+        var saga = nueva();
+        saga.solicitudEnviada();
+
+        saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null);
+
+        assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+    }
+
+    @Test
+    void solicitudEnviada_fueraDeInicial_lanzaIllegalStateException() {
+        var saga = nueva();
+        saga.solicitudEnviada();
+
+        assertThatThrownBy(saga::solicitudEnviada).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aplicarYAvanzar_conRespuesta_terminaLaSagaConLaRef() {
+        var saga = nueva();
+
+        saga.aplicarYAvanzar(new ResultadoPasoSecundaria2.Respuesta(new RefRespuesta("resp-2")));
+
+        assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.TERMINADA);
+        assertThat(saga.refRespuesta().valor()).isEqualTo("resp-2");
+    }
+
+    @Test
+    void aplicarYAvanzar_conResultadoDeOtraSaga_lanzaIllegalArgumentException() {
+        var saga = nueva();
+
+        assertThatThrownBy(() -> saga.aplicarYAvanzar(new ResultadoPasoSecundaria1.Iniciada(new RefInicio("x"))))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

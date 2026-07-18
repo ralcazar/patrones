@@ -4,7 +4,7 @@
 # esquema manual (ver order-manager/db/); esto no la afecta.
 spring:
   datasource:
-    url: jdbc:h2:mem:ordermanager-test;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:ordermanager-test;MODE=Oracle;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
     password:

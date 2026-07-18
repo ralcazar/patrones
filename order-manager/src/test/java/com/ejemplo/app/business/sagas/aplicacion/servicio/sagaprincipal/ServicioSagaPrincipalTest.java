@@ -182,4 +182,42 @@ class ServicioSagaPrincipalTest {
         servicioSaga.ejecutarPaso(repo.cargar(id));
         assertThat(repo.estadoActual(id).version()).isGreaterThan(antes);
     }
+
+    @Test
+    void tipo_devuelveElTipoDeLaSagaPrincipal() {
+        assertThat(servicioSaga.tipo()).isEqualTo(SagaPrincipal.TIPO);
+    }
+
+    @Test
+    void establecerSelf_sustituyeElProxyUsadoParaLaAutoInvocacionTransaccional() {
+        var proxy = mock(ServicioSagaPrincipal.class);
+        var id = crearOrdenPrincipal();
+        when(proxy.aplicarPasoNormal(any(), any(), any())).thenReturn(new com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso.HayMasTrabajo());
+
+        servicioSaga.establecerSelf(proxy);
+        var senal = servicioSaga.ejecutarPaso(repo.cargar(id));
+
+        assertThat(senal).isInstanceOf(com.ejemplo.app.business.ordermanager.aplicacion.servicio.SenalPaso.HayMasTrabajo.class);
+        verify(proxy).aplicarPasoNormal(any(), any(), any());
+    }
+
+    @Test
+    void ejecutarComando_conCompensarPaso1_lanzaIllegalStateExceptionPorSerUnaViaNoSoportada() {
+        var ctx = new RefPaso1("ref1");
+
+        org.assertj.core.api.Assertions
+                .assertThatThrownBy(() -> servicioSaga.ejecutarComando(
+                        new com.ejemplo.app.business.sagas.dominio.sagaprincipal.ComandoPasoPrincipal.CompensarPaso1(ctx)))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void ejecutarComando_conCompensarPaso2_lanzaIllegalStateExceptionPorSerUnaViaNoSoportada() {
+        var ctx = new RefPaso2("ref2");
+
+        org.assertj.core.api.Assertions
+                .assertThatThrownBy(() -> servicioSaga.ejecutarComando(
+                        new com.ejemplo.app.business.sagas.dominio.sagaprincipal.ComandoPasoPrincipal.CompensarPaso2(ctx)))
+                .isInstanceOf(IllegalStateException.class);
+    }
 }

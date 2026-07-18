@@ -1,8 +1,11 @@
 package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -16,7 +19,9 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente.OrdenTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
+import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
@@ -113,5 +118,79 @@ class ServicioTicketsSoporteTest {
         assertThat(cantidad).isEqualTo(1);
         verify(tickets, times(2)).abrir(any()); // segundo ticket, independiente del primero
         assertThat(repo.estadoActual(id).ticketAbiertoEn()).isNotNull();
+    }
+
+    @Test
+    void aplicarMarcarAbierto_conConflictoTransitorio_reintentaYAcabaMarcandoLaOrden() {
+        var id = crearOrdenAtascada(8);
+        var repoConFallo = new RepositorioConFalloDeGuardado(repo, id, 2); // falla 2 veces, gana al 3er intento
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repoConFallo);
+
+        var cantidad = servicio.abrirTicketsPendientes();
+
+        assertThat(cantidad).isEqualTo(1);
+        assertThat(repo.estadoActual(id).ticketAbiertoEn()).isNotNull();
+    }
+
+    @Test
+    void aplicarMarcarAbierto_conConflictoPersistente_propagaTrasAgotarLosCincoReintentos() {
+        var id = crearOrdenAtascada(8);
+        var repoConFallo = new RepositorioConFalloDeGuardado(repo, id, Integer.MAX_VALUE); // nunca se resuelve
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repoConFallo);
+
+        assertThatThrownBy(servicio::abrirTicketsPendientes).isInstanceOf(ConcurrenciaOptimistaException.class);
+    }
+
+    @Test
+    void establecerSelf_sustituyeElProxyUsadoParaAplicarMarcarAbierto() {
+        var id = crearOrdenAtascada(8);
+        var servicio = new ServicioTicketsSoporte(pendientesSobreElRepo(), tickets, repo);
+        var proxy = spy(servicio);
+        servicio.establecerSelf(proxy);
+
+        var cantidad = servicio.abrirTicketsPendientes();
+
+        assertThat(cantidad).isEqualTo(1);
+        verify(proxy).aplicarMarcarAbierto(eq(id), any());
+    }
+
+    /** Decorador que falla el {@code guardar} de UNA orden concreta las primeras N veces (simula conflicto optimista). */
+    private static final class RepositorioConFalloDeGuardado implements RepositorioOrden {
+
+        private final RepositorioOrdenEnMemoria delegado;
+        private final OrdenId objetivo;
+        private int fallosRestantes;
+
+        RepositorioConFalloDeGuardado(RepositorioOrdenEnMemoria delegado, OrdenId objetivo, int fallos) {
+            this.delegado = delegado;
+            this.objetivo = objetivo;
+            this.fallosRestantes = fallos;
+        }
+
+        @Override
+        public void crear(OrdenRoot orden) { delegado.crear(orden); }
+
+        @Override
+        public OrdenRoot cargar(OrdenId id) { return delegado.cargar(id); }
+
+        @Override
+        public void guardar(OrdenRoot orden) {
+            if (orden.id().equals(objetivo) && fallosRestantes > 0) {
+                fallosRestantes--;
+                throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
+            }
+            delegado.guardar(orden);
+        }
+
+        @Override
+        public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+            return delegado.buscarEjecutables(ahora, limite);
+        }
+
+        @Override
+        public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
+
+        @Override
+        public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
     }
 }

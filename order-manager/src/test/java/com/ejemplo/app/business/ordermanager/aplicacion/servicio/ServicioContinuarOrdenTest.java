@@ -2,6 +2,9 @@ package com.ejemplo.app.business.ordermanager.aplicacion.servicio;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -218,6 +221,199 @@ class ServicioContinuarOrdenTest {
         assertThat(servicio.hayTrabajoPendiente()).isFalse();
         crearOrdenFalsa();
         assertThat(servicio.hayTrabajoPendiente()).isTrue();
+    }
+
+    @Test
+    void reclamarToken_devuelveFalseSiLaOrdenYaEstaFinalizada_ramaDeEstadoNoDeExcepcion() {
+        var id = crearOrdenFalsa();
+        var orden = repo.cargar(id);
+        orden.finalizar(ResultadoOrden.FINALIZADA_OK);
+        repo.guardar(orden);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                o -> { throw new IllegalStateException("no debería ejecutarse: la orden ya está finalizada"); });
+
+        assertThat(servicio(procesador).reclamarToken(id)).isFalse();
+
+        assertThat(repo.estadoActual(id).tokenTrabajador()).isNull();
+    }
+
+    @Test
+    void reclamarToken_devuelveFalseSiYaTieneTokenVigente_ramaDeEstadoNoDeExcepcion() {
+        var id = crearOrdenFalsa();
+        var orden = repo.cargar(id);
+        orden.asignarToken(UUID.randomUUID(), LEASE, Instant.now());
+        repo.guardar(orden);
+        var tokenPrevio = repo.estadoActual(id).tokenTrabajador();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                o -> { throw new IllegalStateException("no debería ejecutarse: el token sigue vigente"); });
+
+        assertThat(servicio(procesador).reclamarToken(id)).isFalse();
+
+        assertThat(repo.estadoActual(id).tokenTrabajador()).isEqualTo(tokenPrevio);
+    }
+
+    @Test
+    void continuarSiguiente_primeraCandidataYaTieneTokenVigenteAlReclamar_saltaALaSegundaSinExcepcion() {
+        var idYaTomada = crearOrdenFalsa();
+        var idLibre = crearOrdenFalsa();
+        var repoConCarrera = new RepositorioConTokenYaAsignadoAlReclamar(repo, idYaTomada, LEASE);
+        var procesadas = new ArrayList<OrdenId>();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
+            procesadas.add(orden.id());
+            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+        });
+
+        assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isTrue();
+
+        assertThat(procesadas).containsExactly(idLibre);
+    }
+
+    @Test
+    void reclamarYEjecutar_sinProcesadorRegistradoParaElTipo_lanzaIllegalStateException() {
+        crearOrdenFalsa();
+        var servicioSinProcesadores = new ServicioContinuarOrden(Map.of(), repo, POLITICA, LEASE, LOTE);
+
+        assertThatThrownBy(servicioSinProcesadores::continuarSiguiente)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(ProcesoFalso.TIPO.valor());
+    }
+
+    @Test
+    void ejecutarPasoFallaYProgramarReintentoPierdeLaVersion_laExcepcionSePropaga() {
+        // Fija el comportamiento ACTUAL: a diferencia del reclamo (que se traga el
+        // conflicto), un conflicto en programarReintento SÍ se propaga sin capturar.
+        var id = crearOrdenFalsa();
+        var repoConCarrera = new RepositorioConCarreraTrasElReclamo(repo, id);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                orden -> { throw new ExcepcionServicioExterno(MotivoFallo.timeout(), null); });
+
+        assertThatThrownBy(() -> servicio(procesador, repoConCarrera).continuarSiguiente())
+                .isInstanceOf(ConcurrenciaOptimistaException.class);
+    }
+
+    @Test
+    void continuarSiguiente_conHayMasTrabajoSeguidoDeFinalizada_iteraDosVecesRecargandoElAgregado() {
+        var id = crearOrdenFalsa();
+        var invocaciones = new AtomicInteger();
+        var idsVistos = new ArrayList<OrdenId>();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
+            idsVistos.add(orden.id());
+            if (invocaciones.incrementAndGet() == 1) {
+                return new SenalPaso.HayMasTrabajo();
+            }
+            return new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK);
+        });
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(invocaciones.get()).isEqualTo(2);
+        assertThat(idsVistos).containsExactly(id, id); // recarga el agregado en cada iteración del while(true)
+    }
+
+    @Test
+    void establecerSelf_sustituyeElProxyUsadoParaReclamarTokenYProgramarReintento() {
+        var id = crearOrdenFalsa();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                orden -> new SenalPaso.Finalizada(ResultadoOrden.FINALIZADA_OK));
+        var servicio = servicio(procesador);
+        var proxy = spy(servicio);
+        servicio.establecerSelf(proxy);
+
+        assertThat(servicio.continuarSiguiente()).isTrue();
+
+        verify(proxy).reclamarToken(id);
+    }
+
+    /**
+     * Decorador que, en el {@code cargar} usado por el reclamo (self.reclamarToken),
+     * devuelve una copia con un token ya vigente: simula que otro actor la reclamó
+     * justo antes de que este pod la intentara, sin que buscarEjecutables lo reflejara todavía.
+     */
+    private static final class RepositorioConTokenYaAsignadoAlReclamar implements RepositorioOrden {
+
+        private final RepositorioOrdenEnMemoria delegado;
+        private final OrdenId objetivo;
+        private final Duration lease;
+
+        RepositorioConTokenYaAsignadoAlReclamar(RepositorioOrdenEnMemoria delegado, OrdenId objetivo, Duration lease) {
+            this.delegado = delegado;
+            this.objetivo = objetivo;
+            this.lease = lease;
+        }
+
+        @Override
+        public OrdenRoot cargar(OrdenId id) {
+            var orden = delegado.cargar(id);
+            if (id.equals(objetivo)) {
+                orden.asignarToken(UUID.randomUUID(), lease, Instant.now());
+            }
+            return orden;
+        }
+
+        @Override
+        public void crear(OrdenRoot orden) { delegado.crear(orden); }
+
+        @Override
+        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+
+        @Override
+        public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+            return delegado.buscarEjecutables(ahora, limite);
+        }
+
+        @Override
+        public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
+
+        @Override
+        public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+    }
+
+    /**
+     * Decorador que, tras el reclamo (2ª llamada a {@code cargar} para el
+     * objetivo, ya dentro del bucle de ejecución), simula que otro actor
+     * escribió entre medias: la instancia que ejecutará el paso queda con la
+     * versión desactualizada, de forma que el guardado del reintento posterior
+     * falla por optimistic lock.
+     */
+    private static final class RepositorioConCarreraTrasElReclamo implements RepositorioOrden {
+
+        private final RepositorioOrdenEnMemoria delegado;
+        private final OrdenId objetivo;
+        private int llamadasCargar = 0;
+
+        RepositorioConCarreraTrasElReclamo(RepositorioOrdenEnMemoria delegado, OrdenId objetivo) {
+            this.delegado = delegado;
+            this.objetivo = objetivo;
+        }
+
+        @Override
+        public OrdenRoot cargar(OrdenId id) {
+            var orden = delegado.cargar(id);
+            if (id.equals(objetivo)) {
+                llamadasCargar++;
+                if (llamadasCargar == 2) {
+                    delegado.guardar(delegado.cargar(id)); // otro actor escribe entre medias: sube la versión
+                }
+            }
+            return orden;
+        }
+
+        @Override
+        public void crear(OrdenRoot orden) { delegado.crear(orden); }
+
+        @Override
+        public void guardar(OrdenRoot orden) { delegado.guardar(orden); }
+
+        @Override
+        public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+            return delegado.buscarEjecutables(ahora, limite);
+        }
+
+        @Override
+        public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
+
+        @Override
+        public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
     }
 
     /**

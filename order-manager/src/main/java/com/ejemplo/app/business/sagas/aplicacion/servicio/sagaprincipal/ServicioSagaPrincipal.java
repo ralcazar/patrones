@@ -168,7 +168,10 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
         }
     }
 
-    private ResultadoPasoPrincipal ejecutarComando(ComandoPaso cmd) {
+    // Visibilidad de paquete (no private): permite testear directamente las
+    // ramas defensivas CompensarPaso1/2, inalcanzables por la API pública
+    // porque comandoActual() nunca las produce en estado no-COMPENSAR.
+    ResultadoPasoPrincipal ejecutarComando(ComandoPaso cmd) {
         return switch ((ComandoPasoPrincipal) cmd) {
             case ComandoPasoPrincipal.EjecutarPaso1 c -> puertoPaso1.ejecutar(c);
             case ComandoPasoPrincipal.EjecutarPaso2 c -> puertoPaso2.ejecutar(c);
