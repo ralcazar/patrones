@@ -46,7 +46,25 @@ motor:                   # se aplica como propiedades a CADA pod; lo que no
     trabajadores: 2
     lote: 16
   lease: PT10M
+  cron:                  # opcional (fase 2): acelera los cron de producción,
+                         # que si no una ejecución corta nunca los dispara
+                         # (por defecto cada 3h/cada noche, ver application.yml).
+                         # Los tres campos son opcionales; el que no se indique
+                         # deja el valor por defecto de application.yml.
+    tickets: "0 * * * * *"    # -> ordermanager.tickets.cron
+    limpieza: "0 0 * * * *"   # -> ordermanager.limpieza.cron
+    purga: "0 30 * * * *"     # -> sagas.purga-datos-negocio.cron
 ```
+
+## Nota sobre `pods.log` y el timestamp
+
+Cada línea de `pods.log` lleva un timestamp ISO-8601 delante del texto ya
+estructurado (`2026-01-01T10:00:00.000+01:00 evento=... pod=...`), añadido
+por `ConfiguradorLogging` (fase 2, `com.ejemplo.app.carga.logging`) como
+prefijo de línea de Logback: NO es una clave `clave=valor` más (los puntos de
+log de producción no lo llevan en el propio mensaje), es lo que el
+analizador de la fase 3 necesita para calcular throughput por minuto y
+similares sin que production tenga que anotar cada evento con su hora.
 
 ## Salidas de una ejecución
 

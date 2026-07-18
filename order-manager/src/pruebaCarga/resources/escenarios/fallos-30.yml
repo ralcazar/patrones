@@ -28,3 +28,9 @@ motor:
     trabajadores: 2
     lote: 16
   lease: PT10M
+  cron:
+    # La duración corta (1h + 15min de drenaje) nunca dispararía el cron real
+    # de tickets (cada 3h): aquí SÍ importa que se abran los tickets de las
+    # órdenes que agotan reintentos (pregunta central del escenario), así que
+    # se acelera a ~cada minuto.
+    tickets: "0 * * * * *"

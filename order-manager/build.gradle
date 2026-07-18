@@ -105,6 +105,11 @@ tasks.register('pruebaCarga', JavaExec) {
 	group = 'pruebaCarga'
 	classpath = sourceSets.pruebaCarga.runtimeClasspath
 	mainClass = 'com.ejemplo.app.carga.LanzadorPruebaCarga'
+	// Ruta absoluta del proyecto: el lanzador la necesita para localizar
+	// order-manager/db/*.sql y para escribir build/pruebaCarga/... de forma
+	// robusta, sin depender de que el working directory del JavaExec sea
+	// justo el directorio del proyecto (aunque hoy lo sea por defecto).
+	systemProperty 'pruebaCarga.directorioProyecto', layout.projectDirectory.asFile.absolutePath
 
 	// Capturados en tiempo de configuración (Provider/Directory, no `project`
 	// vivo) para no depender de la API de proyecto en tiempo de ejecución,

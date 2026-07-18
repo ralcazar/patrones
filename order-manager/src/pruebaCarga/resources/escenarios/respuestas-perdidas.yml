@@ -29,3 +29,9 @@ motor:
     trabajadores: 2
     lote: 16
   lease: PT10M
+  cron:
+    # 30 min + 15 de drenaje no dispara el cron real de tickets (cada 3h), y
+    # este escenario existe justo para comprobar que las respuestas perdidas
+    # que la conciliación no rescata acaban con ticket abierto: se acelera a
+    # ~cada minuto.
+    tickets: "0 * * * * *"
