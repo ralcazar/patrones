@@ -91,13 +91,13 @@ activación.
 |---|---|
 | [01-arranque-saga-nueva](01-arranque-saga-nueva.png) | `POST /tramitaciones` (`ControladorTramitaciones`): idempotente vía `PuertoBusquedaTramitacion`; si no existe, `PuertoDatosNegocio.obtener` fuera de tx y `ServicioIniciarTramitacion.crearAgregados` (`@Transactional`) crea `DatosNegocio` + `SagaPrincipal` + `OrdenRoot` (con el camino 502 si el servicio externo falla y el de carrera si el índice único de `datos_negocio.external_id` lo rechaza); `PlanificadorContinuacion` descubre el trabajo (`hayTrabajoPendiente`) y despierta a los workers pull, que la reclaman con `continuarSiguiente` |
 | [02-pasos-saga-principal](02-pasos-saga-principal.png) | Bucle de `ServicioContinuarOrden` + `ServicioSagaPrincipal.ejecutarPaso` (`ProcesadorOrden`): reclamo de token, REST fuera de tx y checkpoint transaccional (`resetearIntentos`+`renovarLease`) por cada uno de PASO1..PASO8 |
-| [03-finalizacion-saga-principal](03-finalizacion-saga-principal.png) | Al completar PASO8: `FINALIZADA_OK` + creación de las 3 sagas hijas (`RepositorioOrden.crear` ×3) en la misma tx (sin eventos) |
+| [03-finalizacion-saga-principal](03-finalizacion-saga-principal.png) | Al completar PASO8: `orden.finalizar(ahora)` (`completadaEn`) + creación de las 3 sagas hijas (`RepositorioOrden.crear` ×3) en la misma tx (sin eventos) |
 | [04-saga-secundaria1](04-saga-secundaria1.png) | Saga secundaria 1: INICIO → CONFIRMACION, dos llamadas REST a métodos distintos del mismo servicio |
 | [05-saga-secundaria2](05-saga-secundaria2.png) | Saga secundaria 2: solicitud REST, respuesta diferida por evento Kafka (puede tardar), aparcado de 3 h y conciliación REST si vence (nueva ventana de 3 h) |
-| [06-saga-secundaria3](06-saga-secundaria3.png) | Saga secundaria 3: una única llamada REST y `FINALIZADA_OK` directo |
+| [06-saga-secundaria3](06-saga-secundaria3.png) | Saga secundaria 3: una única llamada REST y `orden.finalizar(ahora)` directo |
 | [07-error-ticket-soporte](07-error-ticket-soporte.png) | Fallo de un paso: `programarReintento` con backoff 1..180 min indefinido, y el barrido `@Scheduled` que abre UN ticket cuando `intentos>=8 AND ticketAbiertoEn IS NULL` |
 | [08-operaciones-soporte](08-operaciones-soporte.png) | `ServicioSoporteOrdenes` (motor): consultas (CQRS), reintentar/marcarPasoOk; `ServicioCancelarTramitacion` (sagas): cancelar con compensación asíncrona (la ejecuta el mismo bucle de continuación, no el request de cancelación) |
-| [09-limpieza-datos](09-limpieza-datos.png) | Purga periódica de órdenes finalizadas-bien y antiguas (`RepositorioOrden.purgarFinalizadasAntesDe`) + dedup de mensajes caducado |
+| [09-limpieza-datos](09-limpieza-datos.png) | Purga periódica de órdenes finalizadas (`completadaEn` no nula) y antiguas (`RepositorioOrden.purgarFinalizadasAntesDe`, sin `ON DELETE CASCADE`: borrado explícito hijas→padre) + dedup de mensajes caducado |
 
 ## Diagramas de estado y de clases
 
@@ -108,7 +108,7 @@ infraestructura.
 
 | Diagrama | Qué muestra |
 |---|---|
-| [13-maquinas-de-estado](13-maquinas-de-estado.png) | Las 4 FSM de negocio `EstadoSagaPrincipal`/`Secundaria1`/`Secundaria2`/`Secundaria3` + `ResultadoOrden`; nota de que intentos/lease/ticket son atributos operativos de `OrdenRoot`, no una FSM (ya no hay `EstadoTicket` ni `EstadoPaso`) |
+| [13-maquinas-de-estado](13-maquinas-de-estado.png) | Las 4 FSM de negocio `EstadoSagaPrincipal`/`Secundaria1`/`Secundaria2`/`Secundaria3` + el estado operativo de finalización `completadaEn`; nota de que intentos/lease/ticket son atributos operativos de `OrdenRoot`, no una FSM (ya no hay `EstadoTicket` ni `EstadoPaso`) |
 | [14-clases-dominio-ordermanager](14-clases-dominio-ordermanager.png) | Dominio del motor genérico (`business.ordermanager.dominio`): el agregado único `OrdenRoot` ⊃ `Proceso<E>` (entidad interna, una sola `version` la controla el agregado), `TipoOrden` (VO abierto), `PoliticaReintentos`, excepciones y VOs del motor — sin ninguna clase de sagas |
 | [15-clases-dominio-saga-principal](15-clases-dominio-saga-principal.png) | Dominio de la saga principal (`business.sagas.dominio.sagaprincipal`): `SagaPrincipal` (entidad, extiende `Proceso<EstadoSagaPrincipal>`), su constante `TIPO`, comandos/resultados por paso, `ContextoTramitacion` (referencia `DatosNegocioId` — ver 26 — en vez de contener datos de negocio), `PuntoNoRetornoSuperadoException` |
 | [16-clases-dominio-sagas-secundarias](16-clases-dominio-sagas-secundarias.png) | Dominio de las 3 sagas secundarias (`business.sagas.dominio.sagasecundariaN`): entidades (extienden `Proceso<E>`), su constante `TIPO`, comandos/resultados, sin `version` propia |

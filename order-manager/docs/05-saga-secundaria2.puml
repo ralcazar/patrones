@@ -120,15 +120,13 @@ ORQ -> SAGA ++ : saga.estado()
 return TERMINADA
 ORQ -> ORQ ++ : self.aplicarFinalizacionYaResuelta(orden, saga)  -- vía proxy (@Transactional;\nsin REST, pero igualmente vía self: la llama\nejecutarPaso, un método no transaccional)
 group Transacción única
-  ORQ -> SAGA ++ : saga.resultadoFinal()
-  return FINALIZADA_OK
-  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  ORQ -> ORDEN ++ : finalizar(Instant.now())
   return
   ORQ -> REPO ++ : guardar(orden)
   return
 end
-return Finalizada(FINALIZADA_OK)
-return Finalizada(FINALIZADA_OK)
+return Finalizada()
+return Finalizada()
 CONT -> CONT : switch(señal): Finalizada -> return
 return true
 deactivate TRAB
@@ -153,15 +151,13 @@ alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   group Transacción
     ORQ -> SAGA ++ : saga.respuestaRecibida(ref)
     return estado = TERMINADA
-    ORQ -> SAGA ++ : saga.resultadoFinal()
-    return FINALIZADA_OK
-    ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+    ORQ -> ORDEN ++ : finalizar(Instant.now())
     return
     ORQ -> REPO ++ : guardar(orden)
     return
   end
-  return Finalizada(FINALIZADA_OK)
-  return Finalizada(FINALIZADA_OK)
+  return Finalizada()
+  return Finalizada()
 else SinResultado(): sigue sin respuesta
   ORQ -> ORQ ++ : self.aplicarConciliacionSinResultado(orden, saga)  -- vía proxy (@Transactional)
   group Transacción

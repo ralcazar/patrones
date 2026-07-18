@@ -1,5 +1,5 @@
 @startuml 13-maquinas-de-estado
-title Máquinas de estado de NEGOCIO (EstadoSaga* + ResultadoOrden) y el modelo OPERATIVO (atributos, no FSM)
+title Máquinas de estado de NEGOCIO (EstadoSaga*) y el modelo OPERATIVO de finalización (completadaEn) + atributos (no FSM)
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
@@ -26,7 +26,7 @@ state "EstadoSagaPrincipal (SagaPrincipal)" as MPrincipal {
   PASO5_HECHO --> PASO6_HECHO : aplicarYAvanzar(ResultadoPaso6)
   PASO6_HECHO --> PASO7_HECHO : aplicarYAvanzar(ResultadoPaso7)
   PASO7_HECHO --> TERMINADA : aplicarYAvanzar(ResultadoPaso8)\n(punto de no retorno ya superado)
-  TERMINADA --> [*] : resultadoFinal() = FINALIZADA_OK
+  TERMINADA --> [*] : saga.terminada() = true\n(orden.finalizar(ahora) en la misma tx, ver 03)
 
   INICIAL --> CANCELADA : cancelar(quien, motivo)
   PASO1_HECHO --> COMPENSAR_PASO1 : cancelar(quien, motivo)
@@ -37,7 +37,7 @@ state "EstadoSagaPrincipal (SagaPrincipal)" as MPrincipal {
   PASO6_HECHO --> COMPENSAR_PASO2 : cancelar(quien, motivo)
   COMPENSAR_PASO2 --> COMPENSAR_PASO1 : compensacionCompletada()\n(el servicio de la saga ya ejecutó\npuertoPaso2.compensar)
   COMPENSAR_PASO1 --> CANCELADA : compensacionCompletada()\n(el servicio de la saga ya ejecutó\npuertoPaso1.compensar)
-  CANCELADA --> [*] : resultadoFinal() = FINALIZADA_COMPENSADA
+  CANCELADA --> [*] : orden.finalizar(ahora)\n(ServicioSagaPrincipal.aplicarCancelacion)
   PASO7_HECHO --> PASO7_HECHO : cancelar() lanza\nPuntoNoRetornoSuperadoException
   COMPENSAR_PASO2 --> COMPENSAR_PASO2 : cancelar() no-op idempotente
   COMPENSAR_PASO1 --> COMPENSAR_PASO1 : cancelar() no-op idempotente
@@ -53,7 +53,7 @@ state "EstadoSagaSecundaria1 (SagaSecundaria1)" as MSec1 {
   [*] --> INICIAL2 : crear(id, ArranqueSecundaria1)
   INICIAL2 --> INICIO_HECHO : aplicarYAvanzar(Iniciada(refInicio))
   INICIO_HECHO --> TERMINADA2 : aplicarYAvanzar(Confirmada(refConfirmacion))
-  TERMINADA2 --> [*] : resultadoFinal() = FINALIZADA_OK
+  TERMINADA2 --> [*] : saga.terminada() = true
 }
 
 state "EstadoSagaSecundaria2 (SagaSecundaria2)" as MSec2 {
@@ -65,7 +65,7 @@ state "EstadoSagaSecundaria2 (SagaSecundaria2)" as MSec2 {
   INICIAL3 --> ESPERANDO_RESPUESTA : solicitudEnviada()\n(tras puerto.solicitar REST)
   ESPERANDO_RESPUESTA --> TERMINADA3 : respuestaRecibida(ref)\n(evento Kafka o conciliación\nDisponible(ref))
   ESPERANDO_RESPUESTA --> INICIAL3 : volverASolicitar()\n(evento Kafka de error o\nconciliación FalloRegistrado)
-  TERMINADA3 --> [*] : resultadoFinal() = FINALIZADA_OK
+  TERMINADA3 --> [*] : saga.terminada() = true
 }
 
 state "EstadoSagaSecundaria3 (SagaSecundaria3)" as MSec3 {
@@ -74,19 +74,16 @@ state "EstadoSagaSecundaria3 (SagaSecundaria3)" as MSec3 {
 
   [*] --> INICIAL4 : crear(id, ArranqueSecundaria3)
   INICIAL4 --> TERMINADA4 : aplicarYAvanzar(Ejecutada(refEjecucion))
-  TERMINADA4 --> [*] : resultadoFinal() = FINALIZADA_OK
+  TERMINADA4 --> [*] : saga.terminada() = true
 }
 
-state "ResultadoOrden (OrdenRoot.resultado) — estado OPERATIVO final, no de negocio" as MResultado {
+state "completadaEn (OrdenRoot) — estado OPERATIVO final, no de negocio" as MResultado {
   state VIVA as "null (viva)"
-  state FINALIZADA_OK
-  state FINALIZADA_COMPENSADA
+  state COMPLETADA as "Instant (completada)"
 
   [*] --> VIVA : OrdenRoot.nueva(saga, ahora)
-  VIVA --> FINALIZADA_OK : finalizar(saga.resultadoFinal())\n[saga.terminada() con FSM normal]
-  VIVA --> FINALIZADA_COMPENSADA : finalizar(saga.resultadoFinal())\n[SagaPrincipal en CANCELADA]
-  FINALIZADA_OK --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
-  FINALIZADA_COMPENSADA --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
+  VIVA --> COMPLETADA : finalizar(ahora)\n[saga.terminada() con FSM normal,\no SagaPrincipal en CANCELADA]
+  COMPLETADA --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
 }
 
 note bottom of MResultado

@@ -158,8 +158,8 @@ note over ORQ, SAGA
   Última vuelta: ejecutarPaso despacha por estado con un switch;
   estado == CANCELADA va directo a self.aplicarCancelacion(orden,
   saga) vía proxy (@Transactional, sin REST, sin pasar por
-  ejecutarCompensacion): solo orden.finalizar(saga.resultadoFinal())
-  (FINALIZADA_COMPENSADA) y guarda. Si un puerto de compensación
+  ejecutarCompensacion): solo orden.finalizar(Instant.now()) y
+  guarda. Si un puerto de compensación
   lanza ExcepcionServicioExterno, se propaga igual que un paso
   normal: ServicioContinuarOrden programa reintento (ver 07); ya
   no existe el estado BLOQUEADO_SOPORTE de la versión anterior.

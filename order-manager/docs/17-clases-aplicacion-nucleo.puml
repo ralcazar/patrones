@@ -80,7 +80,7 @@ package "servicio" {
   class "SenalPaso" as SenalPaso <<sealed>> {
     HayMasTrabajo()
     Aparcar(ventana : Duration)
-    Finalizada(resultado : ResultadoOrden)
+    Finalizada()
   }
 }
 

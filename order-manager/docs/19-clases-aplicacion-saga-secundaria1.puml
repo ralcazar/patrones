@@ -22,7 +22,7 @@ note right of ServicioSagaSecundaria1
   SagaSecundaria1, comandoActual() + REST fuera de tx, luego
   self.aplicar(...) -- vía proxy, para que @Transactional no se
   ignore por auto-invocación -- guarda esa misma instancia sin
-  recargar (aplicarYAvanzar; si terminada() -> finalizar(FINALIZADA_OK),
+  recargar (aplicarYAvanzar; si terminada() -> finalizar(Instant.now()),
   si no -> resetearIntentos()+renovarLease()); si otro actor escribió
   entre medias, guardar falla por version. Sin comprobación de
   estado de compensación (a diferencia de la principal): nunca se

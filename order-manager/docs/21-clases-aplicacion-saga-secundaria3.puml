@@ -21,7 +21,7 @@ note right of ServicioSagaSecundaria3
   tx), luego self.aplicar(...) -- vía proxy, para que
   @Transactional no se ignore por auto-invocación -- guarda esa
   misma instancia sin recargar: aplicarYAvanzar +
-  orden.finalizar(FINALIZADA_OK) directo, sin comprobar terminada()
+  orden.finalizar(Instant.now()) directo, sin comprobar terminada()
   (el único paso siempre termina la saga); si otro actor escribió
   entre medias, guardar falla por version. Siempre devuelve
   Finalizada: nunca HayMasTrabajo ni Aparcar. Sin lease propio: a

@@ -6,7 +6,7 @@ skinparam classAttributeIconSize 0
 
 abstract class "Proceso<E>\n(business.ordermanager.dominio — ver 14)" as Proceso {
   ciclo de vida común: comandoActual / aplicarYAvanzar /
-  terminada / resultadoFinal / marcarPasoActualOkManual
+  terminada / marcarPasoActualOkManual
   Sin version propia: la controla OrdenRoot (ver 14).
 }
 
@@ -22,7 +22,6 @@ package "dominio.sagasecundaria1" {
     +comandoActual() : ComandoPasoSecundaria1
     +aplicarYAvanzar(ResultadoPasoSecundaria1)
     +terminada() : boolean  «estado == TERMINADA»
-    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
   }
   enum EstadoSagaSecundaria1 {
     INICIAL
@@ -56,7 +55,6 @@ package "dominio.sagasecundaria2" {
     +comandoActual() : ComandoPasoSecundaria2  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria2.Respuesta)  «delega en respuestaRecibida()»
     +terminada() : boolean  «estado == TERMINADA»
-    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
     +solicitudEnviada()  «INICIAL -> ESPERANDO_RESPUESTA»
     +respuestaRecibida(RefRespuesta)  «-> TERMINADA»
     +volverASolicitar()  «-> INICIAL»
@@ -91,7 +89,6 @@ package "dominio.sagasecundaria3" {
     +comandoActual() : ComandoPasoSecundaria3  «solo si INICIAL»
     +aplicarYAvanzar(ResultadoPasoSecundaria3.Ejecutada)  «-> TERMINADA directo»
     +terminada() : boolean  «estado == TERMINADA»
-    +resultadoFinal() : ResultadoOrden  «siempre FINALIZADA_OK»
   }
   enum EstadoSagaSecundaria3 {
     INICIAL

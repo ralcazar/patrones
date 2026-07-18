@@ -98,9 +98,7 @@ group Transacción única: checkpoint del paso
   return
   ORQ -> SAGA ++ : saga.terminada()
   return true
-  ORQ -> SAGA ++ : saga.resultadoFinal()
-  return FINALIZADA_OK
-  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
+  ORQ -> ORDEN ++ : finalizar(Instant.now())
   return
   ORQ -> REPO ++ : guardar(orden)
   return
@@ -111,8 +109,8 @@ group Transacción única: checkpoint del paso
     retira.
   end note
 end
-return Finalizada(FINALIZADA_OK)
-return Finalizada(FINALIZADA_OK)
+return Finalizada()
+return Finalizada()
 CONT -> CONT : switch(señal): Finalizada -> return (fin del bucle)
 return true (una procesada; el worker vuelve a llamar a\ncontinuarSiguiente() hasta que devuelva false)
 deactivate TRAB

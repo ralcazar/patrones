@@ -12,10 +12,10 @@ class OrdenRoot <<@AggregateRoot>> {
   -tokenTrabajador : UUID
   -tokenExpiraEn : Instant
   -ticketAbiertoEn : Instant
-  -resultado : ResultadoOrden
+  -completadaEn : Instant
   -version : long  «ÚNICA del agregado»
   +{static} nueva(proceso, ahora) : OrdenRoot
-  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, resultado, version)
+  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn, version)
   +asignarToken(token, lease, ahora)
   +renovarLease(lease, ahora)
   +tieneTokenVigente(ahora) : boolean
@@ -25,8 +25,8 @@ class OrdenRoot <<@AggregateRoot>> {
   +despertar(ahora)  «proximoReintentoEn=ahora, libera token»
   +aparcar(ventana, ahora)  «proximoReintentoEn=ahora+ventana»
   +programarReintento(PoliticaReintentos, ahora)  «intentos++»
-  +finalizar(ResultadoOrden)
-  +estaViva() : boolean  «resultado == null»
+  +finalizar(ahora)
+  +estaViva() : boolean  «completadaEn == null»
   +proceso() : Proceso<?>
   +id() : OrdenId
   +tipo() : TipoOrden  «delega en proceso.tipo()»
@@ -35,7 +35,7 @@ note right of OrdenRoot
   Reloj determinista: nunca Instant.now(); todo método que
   depende del tiempo recibe Instant ahora como parámetro,
   aportado por la capa de aplicación. Una sola version protege
-  ejecución (intentos/lease/ticket/resultado) + negocio (proceso):
+  ejecución (intentos/lease/ticket/completadaEn) + negocio (proceso):
   varios flujos mutan ambos en la misma tx (consumer Kafka,
   soporte, arranque de secundarias), así que separarlos en dos
   agregados violaría "un agregado por transacción".
@@ -50,7 +50,6 @@ abstract class "Proceso<E extends Enum<E>>" as Proceso <<@Entity>> {
   {abstract} +comandoActual() : ComandoPaso
   {abstract} +aplicarYAvanzar(ResultadoPaso)
   {abstract} +terminada() : boolean
-  {abstract} +resultadoFinal() : ResultadoOrden
   {abstract} +marcarPasoActualOkManual(quien, justificacion, datos)
   #auditar(quien, accion, detalle)
   +id() / +externalId() / +estado() / +auditoria()
@@ -86,11 +85,6 @@ note bottom of TipoOrden
   paquete. Antes era el enum cerrado TipoSaga.
 end note
 
-enum ResultadoOrden {
-  FINALIZADA_OK
-  FINALIZADA_COMPENSADA
-}
-
 interface ComandoPaso <<marcadora>>
 interface ResultadoPaso <<marcadora>>
 
@@ -120,18 +114,15 @@ class "OrdenId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion" a
 
 OrdenRoot "1" *-- "1" Proceso : proceso
 OrdenRoot ..> PoliticaReintentos : programarReintento(politica, ahora)
-OrdenRoot ..> ResultadoOrden : resultado
 OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide
 Proceso ..> TipoOrden : tipo()
 Proceso ..> ComandoPaso : comandoActual()
 Proceso ..> ResultadoPaso : aplicarYAvanzar()
-Proceso ..> ResultadoOrden : resultadoFinal()
 Proceso ..> PasoNoIntervenibleException
 Proceso ..> DatosManualesRequeridosException
 ExcepcionServicioExterno ..> MotivoFallo
 
 ' Layout: columnas sin cruces
-TipoOrden -[hidden]down- ResultadoOrden
 ComandoPaso -[hidden]down- ResultadoPaso
 MotivoFallo -[hidden]down- VOs
 

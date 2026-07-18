@@ -1,5 +1,5 @@
 @startuml 09-limpieza-datos
-title Limpieza periódica: purgar órdenes finalizadas-bien y antiguas + registros de deduplicación
+title Limpieza periódica: purgar órdenes finalizadas y antiguas + registros de deduplicación
 
 box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorLimpieza\n(@Scheduled cron 0 0 3 * * *)" as PLAN
@@ -13,8 +13,8 @@ box "Adaptadores de salida" #F3EFFB
 end box
 
 note over PLAN, LIMP
-  Solo borra órdenes finalizadas (resultado no nulo) y ya viejas:
-  cualquier orden viva (resultado == null), sea cual sea su
+  Solo borra órdenes finalizadas (completadaEn no nula) y ya viejas:
+  cualquier orden viva (completadaEn == null), sea cual sea su
   estado o sus intentos, sobrevive siempre a la limpieza.
 end note
 
@@ -25,11 +25,15 @@ PLAN -> LIMP ++ : purgarAnterioresA(corte)
 
 group Transacción única (@Transactional)
   LIMP -> REPO ++ : purgarFinalizadasAntesDe(corte)
-  REPO -> REPO : ids = idsFinalizadasAntesDe(corte)\n(SELECT orden_id WHERE resultado IS NOT NULL\nAND actualizada_en < corte)
+  REPO -> REPO : ids = ordenes.idsFinalizadasAntesDe(corte)\n(SELECT orden_id FROM orden WHERE completada_en\nIS NOT NULL AND actualizada_en < :corte)
   alt ids.isEmpty()
     REPO -> REPO : return 0
   else hay ids
     REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE orden_id IN ids)
+    REPO -> REPO : procesos.borrarAuditoriaPorIds(ids)\n(DELETE FROM proceso_auditoria WHERE orden_id IN ids)
+    loop por cada MapeadorProceso registrado (uno por tipo)
+      REPO -> REPO : mapeador.borrarContexto(ids)\n-- borra SOLO su propia satélite (proceso_saga_principal\n/ _secundaria1 / _secundaria2 / _secundaria3, ver 23);\nlas filas de otros tipos no matchean
+    end
     REPO -> REPO : procesos.borrarPorIds(ids)\n(DELETE FROM proceso WHERE orden_id IN ids)
     REPO -> REPO : return ids.size()
   end
@@ -43,10 +47,13 @@ PLAN -> PLAN : log.info("Limpieza de datos (corte {}):\n{} órdenes y {} registr
 deactivate PLAN
 
 note over REPO
-  orden se borra ANTES que proceso (orden.orden_id es FK a
-  proceso.orden_id); al borrar la fila de proceso se borra también
-  (ON DELETE CASCADE desde orden_id) la tabla hija
-  proceso_auditoria. Todo o nada: un solo commit para órdenes +
-  proceso + dedup.
+  Sin ON DELETE CASCADE en NINGUNA tabla (prohibido, ver CLAUDE.md):
+  cada borrado es explícito, en la misma transacción y en orden
+  hijas -> padre. orden y proceso_auditoria son hijas de proceso por
+  FK y se borran antes; cada satélite de MapeadorProceso también es
+  hija de proceso por FK (una tabla por tipo de orden) y se borra
+  antes; proceso (el padre) se borra el último, ya libre de FKs de
+  sus hijas. Todo o nada: un solo commit para órdenes + satélites +
+  dedup.
 end note
 @enduml

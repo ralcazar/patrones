@@ -46,20 +46,18 @@ group Transacción: checkpoint del paso (crea agregados hijos + finaliza el prop
     return
   end
 
-  ORQ -> SAGA ++ : saga.resultadoFinal()
-  return FINALIZADA_OK
-  ORQ -> ORDEN ++ : finalizar(FINALIZADA_OK)
-  ORDEN -> ORDEN : resultado = FINALIZADA_OK; liberarToken()
+  ORQ -> ORDEN ++ : finalizar(ahora)
+  ORDEN -> ORDEN : completadaEn = ahora; liberarToken()
   return
   ORQ -> REPO ++ : guardar(orden)
   return
 end
-return Finalizada(FINALIZADA_OK)
+return Finalizada()
 [<- ORQ
 deactivate ORQ
 
 note over ORQ, REPO
-  Un único commit: la principal queda FINALIZADA_OK y las 3 hijas
+  Un único commit: la principal queda completada (completadaEn = ahora) y las 3 hijas
   quedan creadas con proximoReintentoEn = ahora (candidatas
   inmediatas). Es la excepción aceptada a "un agregado por
   transacción": aquí se MODIFICA la principal y se CREAN las 3
