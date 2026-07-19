@@ -36,6 +36,8 @@ group Transacción (ConcurrenciaOptimistaException -> Optional.empty(), otro pod
   return orden
   CONT -> ORDEN ++ : estaViva()
   return true
+  CONT -> ORDEN ++ : turnoVencido(ahora)  [re-check: nadie la aparcó\nentre el barrido y este reclamo]
+  return true
   CONT -> ORDEN ++ : tieneTokenVigente(ahora)
   return false
   CONT -> ORDEN ++ : asignarToken(UUID.randomUUID(), lease, ahora)

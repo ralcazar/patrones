@@ -119,6 +119,21 @@ public final class OrdenRoot {
         return completadaEn == null;
     }
 
+    /**
+     * ¿Ya llegó el turno de ejecución de esta orden? Espejo EXACTO del
+     * predicado {@code o.proximo_reintento_en <= :ahora} de la query
+     * {@code buscarCandidatas} en {@code OrdenJpaRepository}
+     * (infraestructure.ordermanager.persistencia) -- y de su copia en
+     * {@code RepositorioOrdenEnMemoria.buscarEjecutables} para los tests.
+     * Los tres deben mantenerse alineados: si cambia uno, cambian los otros.
+     * Lo usa {@code ServicioContinuarOrden.reclamarToken} para re-comprobar,
+     * sobre la fila recién cargada, que la orden sigue en turno (otro actor
+     * pudo haberla aparcado entre el barrido de candidatas y el reclamo).
+     */
+    public boolean turnoVencido(Instant ahora) {
+        return !proximoReintentoEn.isAfter(ahora);
+    }
+
     public Proceso<?> proceso() { return proceso; }
     public TipoOrden tipo() { return proceso.tipo(); }
 

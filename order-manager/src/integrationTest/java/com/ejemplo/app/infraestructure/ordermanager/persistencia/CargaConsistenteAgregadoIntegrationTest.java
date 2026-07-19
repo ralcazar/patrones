@@ -199,16 +199,18 @@ class CargaConsistenteAgregadoIntegrationTest {
             // retirase. No es así: tras la fusión, el SELECT de B (reanudado después del
             // commit de A) lee una foto fresca y consistente, con la version ya al día,
             // así que su propio guardado NO colisiona (no hay torn read: Defecto A ya
-            // arreglado, ver verify(times(1)) arriba). Pero reclamarToken todavía no
-            // re-comprueba si la orden está en turno de ejecución (proximoReintentoEn
-            // <= ahora) sobre esa foto fresca — es exactamente el Defecto B, que el plan
-            // dice explícitamente que "ocurre incluso con lectura consistente" y que NO
-            // arregla la fusión, sino el re-check de la fase 3. Por eso HOY el hilo B
-            // reclama de nuevo y re-aparca (sin volver a invocar solicitar). La fase 3
-            // REFORZARÁ esta aserción a isEmpty() cuando cierre ese hueco.
+            // arreglado, ver verify(times(1)) arriba). Pero eso solo cierra la lectura
+            // mixta: reclamarToken todavía necesitaba re-comprobar si la orden sigue en
+            // turno de ejecución (OrdenRoot.turnoVencido, espejo de proximoReintentoEn
+            // <= ahora) sobre esa foto fresca — el Defecto B, que "ocurre incluso con
+            // lectura consistente". Fase 3 (este cambio): reclamarToken hace ese
+            // re-check justo después de estaViva() y antes de tieneTokenVigente(); como
+            // el hilo A ya aparcó la orden (proximoReintentoEn en el futuro) antes de que
+            // el hilo B reanude su SELECT, el hilo B ahora pierde el reclamo con
+            // MotivoReclamoPerdido.NO_EJECUTABLE y se retira sin re-aparcar ni re-solicitar.
             assertThat(senalB)
-                    .as("hoy (antes de la fase 3) el hilo B reclama y re-aparca, pero nunca re-solicita")
-                    .isNotEmpty();
+                    .as("con el re-check de turno (fase 3), el hilo B pierde el reclamo y se retira sin re-aparcar")
+                    .isEmpty();
 
             var ordenFinal = repo.cargar(id);
             assertThat(ordenFinal.estaViva()).as("la orden queda aparcada, no en un estado inconsistente").isTrue();

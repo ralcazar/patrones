@@ -143,6 +143,15 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
             observador.reclamoPerdido(id, orden.tipo(), MotivoReclamoPerdido.NO_VIVA);
             return Optional.empty();
         }
+        if (!orden.turnoVencido(ahora)) {
+            // Re-check sobre la fila recién cargada: otro pod aparcó (o
+            // reprogramó) la orden entre el barrido de buscarEjecutables y
+            // este reclamo. Sin este check reclamaríamos y ejecutaríamos un
+            // paso antes de su ventana (p. ej. una conciliación disparada
+            // horas antes de tiempo), incluso con lectura consistente.
+            observador.reclamoPerdido(id, orden.tipo(), MotivoReclamoPerdido.NO_EJECUTABLE);
+            return Optional.empty();
+        }
         if (orden.tieneTokenVigente(ahora)) {
             observador.reclamoPerdido(id, orden.tipo(), MotivoReclamoPerdido.TOKEN_VIGENTE);
             return Optional.empty();

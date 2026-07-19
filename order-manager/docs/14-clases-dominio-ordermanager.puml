@@ -28,6 +28,7 @@ class OrdenRoot <<@AggregateRoot>> {
   +programarReintento(PoliticaReintentos, DetalleError, ahora)  «intentos++; ultimoError=error»
   +finalizar(ahora)
   +estaViva() : boolean  «completadaEn == null»
+  +turnoVencido(ahora) : boolean  «!proximoReintentoEn.isAfter(ahora),\nespejo de buscarCandidatas, ver 17»
   +proceso() : Proceso<?>
   +id() : OrdenId
   +tipo() : TipoOrden  «delega en proceso.tipo()»

@@ -60,6 +60,13 @@ public interface PuertoObservadorEjecucion {
     enum MotivoReclamoPerdido {
         TOKEN_VIGENTE,
         NO_VIVA,
+        /**
+         * La orden no está en turno de ejecución ({@code OrdenRoot.turnoVencido}
+         * es falso) sobre la fila recién cargada: otro actor la aparcó (o
+         * programó un reintento futuro) entre el barrido de candidatas y este
+         * reclamo. Ocurre incluso con lectura consistente del agregado.
+         */
+        NO_EJECUTABLE,
         COLISION_OPTIMISTA
     }
 }

@@ -367,6 +367,26 @@ class ServicioContinuarOrdenTest {
     }
 
     @Test
+    void reclamarToken_conProximoReintentoEnFuturo_emiteReclamoPerdidoNoEjecutableYNoEjecutaNingunPaso() {
+        // Otro actor (p. ej. otro pod) aparcó la orden entre el barrido de
+        // buscarEjecutables y este reclamo: la fila recién cargada ya no está
+        // en turno (Defecto B, ver plan de refactor fase 3), aunque siga viva
+        // y sin token vigente.
+        var id = crearOrdenFalsa();
+        var orden = repo.cargar(id);
+        orden.aparcar(Duration.ofHours(3), Instant.now());
+        repo.guardar(orden);
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO,
+                o -> { throw new IllegalStateException("no debería ejecutarse: la orden no está en turno"); });
+
+        assertThat(servicio(procesador).reclamarToken(id)).isEmpty();
+
+        assertThat(repo.estadoActual(id).tokenTrabajador()).isNull();
+        assertThat(observador.eventos())
+                .containsExactly(new Evento.ReclamoPerdido(id, ProcesoFalso.TIPO, MotivoReclamoPerdido.NO_EJECUTABLE));
+    }
+
+    @Test
     void reclamarToken_conTokenVigente_emiteReclamoPerdidoTokenVigente() {
         var id = crearOrdenFalsa();
         var orden = repo.cargar(id);

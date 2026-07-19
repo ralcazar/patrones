@@ -30,8 +30,12 @@ package "servicio" {
     reclamarYEjecutar() llama a self.reclamarToken(id) -- vía el
     proxy, para que @Transactional no se ignore por auto-invocación
     --: carga la orden, estaViva() (si no ->
-    observador.reclamoPerdido(NO_VIVA)) + tieneTokenVigente() (si sí
-    -> observador.reclamoPerdido(TOKEN_VIGENTE)) + asignarToken()
+    observador.reclamoPerdido(NO_VIVA)) + turnoVencido(ahora) (si no
+    -> observador.reclamoPerdido(NO_EJECUTABLE) -- re-check de
+    OrdenRoot, espejo de buscarCandidatas, contra la fila recién
+    cargada: otro actor pudo aparcarla entre el barrido y este
+    reclamo) + tieneTokenVigente() (si sí ->
+    observador.reclamoPerdido(TOKEN_VIGENTE)) + asignarToken()
     +guardar(orden) -> observador.reclamoGanado(); catch
     ConcurrenciaOptimistaException en reclamarYEjecutar ->
     observador.reclamoPerdido(COLISION_OPTIMISTA) +
@@ -132,6 +136,7 @@ package "puerto.salida (transversales)" {
   enum MotivoReclamoPerdido {
     TOKEN_VIGENTE
     NO_VIVA
+    NO_EJECUTABLE
     COLISION_OPTIMISTA
   }
   PuertoObservadorEjecucion ..> MotivoReclamoPerdido

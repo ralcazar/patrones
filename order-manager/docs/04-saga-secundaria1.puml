@@ -41,8 +41,8 @@ CONT -> CONT : reclamarYEjecutar(ordenId, tipo)
 group Transacción: reclamarToken
   CONT -> REPO ++ : cargar(ordenId)
   return orden
-  CONT -> ORDEN ++ : estaViva() / tieneTokenVigente(ahora)
-  return true / false
+  CONT -> ORDEN ++ : estaViva() / turnoVencido(ahora) / tieneTokenVigente(ahora)
+  return true / true / false
   CONT -> ORDEN ++ : asignarToken(UUID.randomUUID(), lease, ahora)
   return
   CONT -> REPO ++ : guardar(orden)

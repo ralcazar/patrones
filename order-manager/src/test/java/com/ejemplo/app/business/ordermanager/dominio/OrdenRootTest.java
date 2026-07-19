@@ -177,6 +177,22 @@ class OrdenRootTest {
     }
 
     @Test
+    void turnoVencido_esFalsoSiProximoReintentoEnQuedaEnElFuturo() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+        orden.aparcar(Duration.ofHours(3), T0); // proximoReintentoEn = T0 + 3h
+
+        assertThat(orden.turnoVencido(T0)).isFalse();
+    }
+
+    @Test
+    void turnoVencido_esVerdaderoSiProximoReintentoEnQuedaEnElPasadoOEsIgualAAhora() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0); // proximoReintentoEn = T0
+
+        assertThat(orden.turnoVencido(T0)).isTrue(); // igual a ahora: ya en turno
+        assertThat(orden.turnoVencido(T0.plusSeconds(1))).isTrue(); // en el pasado respecto a ahora
+    }
+
+    @Test
     void tieneTokenVigente_esFalsoSiHayTokenTrabajadorPeroSinFechaDeExpiracion() {
         // Combinación solo alcanzable vía rehidratar (asignarToken siempre fija ambos a la vez).
         var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, UUID.randomUUID(), null, null, null, null, 0L);
