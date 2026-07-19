@@ -59,6 +59,17 @@ dependencies {
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'com.tngtech.archunit:archunit-junit5:' + archunitVersion
+	// Reglas DDD prefabricadas de jMolecules-ArchUnit (JMoleculesDddRules) que
+	// verifican que el código respeta las anotaciones @AggregateRoot/@Entity/
+	// @ValueObject/@Repository/@Service/@Factory ya presentes en business/**.
+	// El BOM jmolecules-bom:2023.1.7 (línea ~80) gestiona esta dependencia a
+	// la 0.23.0, pero ese jar tiene un bug de empaquetado real (el shading de
+	// Spring-core que trae dentro omite org.jmolecules.spring.core.NativeDetector,
+	// necesario en tiempo de ejecución por JMoleculesDddRules) que provoca
+	// NoClassDefFoundError al evaluar cualquier regla. Se fija aquí la 0.24.1
+	// (primera versión donde el fix está presente) SOLO para este artefacto,
+	// sin tocar el BOM (que se queda en 2023.1.7, fuera de alcance de esta fase).
+	testImplementation 'org.jmolecules.integrations:jmolecules-archunit:0.24.1'
 	testImplementation 'org.assertj:assertj-core'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 

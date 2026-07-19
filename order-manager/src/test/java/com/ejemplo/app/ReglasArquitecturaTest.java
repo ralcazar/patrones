@@ -5,6 +5,7 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
+import org.jmolecules.archunit.JMoleculesDddRules;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -127,4 +128,24 @@ class ReglasArquitecturaTest {
             .that().resideOutsideOfPackage("..carga..")
             .should().dependOnClassesThat().resideInAPackage("com.ejemplo.app.carga..")
             .because("carga (src/pruebaCarga) es un harness que consume producción, nunca al revés");
+
+    /**
+     * Reglas DDD prefabricadas de jMolecules-ArchUnit: comprueban que el
+     * código respeta de verdad las anotaciones jMolecules que ya lleva
+     * ({@code @AggregateRoot}, {@code @Entity}, {@code @ValueObject}, etc.),
+     * no solo que estén puestas. Incluye, entre otras: que toda clase
+     * anotada {@code @AggregateRoot}/{@code @Entity} declare un miembro
+     * {@code @Identity}; que un Value Object no referencie directamente un
+     * identificable (debe ser por id, no por la instancia completa); que las
+     * entidades internas de un agregado se declaren para el mismo agregado
+     * en el que se usan; y que las referencias entre agregados vayan por id
+     * o {@code Association}, nunca por referencia directa a otro
+     * {@code @AggregateRoot}. Se ejecuta sobre las mismas clases que el
+     * resto de reglas de este fichero (ver {@code @AnalyzeClasses} de la
+     * clase): ninguna clase de test lleva anotaciones jMolecules, así que no
+     * hace falta acotar el análisis a producción como en
+     * {@link #srcTestNoDependeDeSpring}.
+     */
+    @ArchTest
+    static final ArchRule reglasDddDeJMolecules = JMoleculesDddRules.all();
 }
