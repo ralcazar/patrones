@@ -85,7 +85,7 @@ package "business.sagas.aplicacion.puerto.salida" {
     +cargar(DatosNegocioId) : DatosNegocio  «SOLO escalares,\nJAMÁS carga los blobs»
     +documentosDe(DatosNegocioId) : List<DocumentoNegocio>  «ÚNICA\nquery que toca el BLOB»
     +buscarPorExternalId(ExternalId) : Optional<DatosNegocio>
-    +idsHuerfanos() : List<DatosNegocioId>  «sin ningún proceso que\ncomparta ya su externalId»
+    +idsHuerfanos() : List<DatosNegocioId>  «sin ninguna orden que\ncomparta ya su externalId»
     +borrar(DatosNegocioId)  «documentos primero (sin cascade),\nluego el registro»
   }
   note bottom of RepositorioDatosNegocio
@@ -116,7 +116,7 @@ package "infraestructure.sagas.persistencia" {
 
   interface DatosNegocioJpaRepository <<JpaRepository>> {
     +findByExternalId(externalId) : Optional<DatosNegocioEntity>
-    +idsHuerfanos() : List<String>  «nativeQuery: NOT EXISTS\n(SELECT 1 FROM proceso p WHERE\np.external_id = d.external_id)»
+    +idsHuerfanos() : List<String>  «nativeQuery: NOT EXISTS\n(SELECT 1 FROM orden o WHERE\no.external_id = d.external_id)»
   }
   interface DocumentoNegocioJpaRepository <<JpaRepository>> {
     +findByDatosnegocioIdOrderBySecuenciaAsc(id) : List<DocumentoNegocioEntity>

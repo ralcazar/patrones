@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,8 +15,8 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoEntity;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoJpaRepository;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenEntity;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenJpaRepository;
 
 /**
  * {@link AdaptadorBusquedaTramitacion}: el repo JPA (Spring Data) del motor
@@ -24,15 +25,16 @@ import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoJpaRepos
  */
 class AdaptadorBusquedaTramitacionTest {
 
-    private final ProcesoJpaRepository repo = mock(ProcesoJpaRepository.class);
+    private final OrdenJpaRepository repo = mock(OrdenJpaRepository.class);
     private final AdaptadorBusquedaTramitacion adaptador = new AdaptadorBusquedaTramitacion(repo);
 
     @Test
     void ordenPrincipalDe_existente_devuelveElOrdenIdMapeadoYConsultaPorElTipoPrincipal() {
         var externalId = ExternalId.de(UUID.randomUUID().toString());
         var ordenId = OrdenId.nuevo();
-        var entity = new ProcesoEntity(ordenId.valor(), "PRINCIPAL", externalId.valor().toString(), "INICIAL",
-                List.of());
+        var ahora = Instant.now();
+        var entity = new OrdenEntity(ordenId.valor(), "PRINCIPAL", externalId.valor().toString(), "INICIAL",
+                List.of(), 0, ahora, null, null, null, null, null, null, 0L);
         when(repo.findByExternalIdAndTipo(externalId.valor().toString(), SagaPrincipal.TIPO.valor()))
                 .thenReturn(Optional.of(entity));
 

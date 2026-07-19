@@ -64,9 +64,8 @@ else no existe todavía
       INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
       return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, completadaEn=null, version=0)
       INICIAR -> REPO ++ : crear(orden)
-      REPO -> REPO : procesos.save(entidadProcesoDe(saga))
+      REPO -> REPO : ordenes.save(entidadOrdenDe(orden))\n-- orden (negocio+ejecución fusionados, fase 2) ya\nexiste antes de insertar la satélite (FK)
       REPO -> REPO : mapeadorDe(PRINCIPAL).guardarContexto(saga)\n-- upsert en proceso_saga_principal, ver 23
-      REPO -> REPO : ordenes.save(entidadOrdenDe(orden))
       return
     end
     INICIAR --> INICIAR : sagaId (o lanza ExternalIdDuplicadoException\nsi el flush de ADATOS.crear() la lanzó dentro de la tx)

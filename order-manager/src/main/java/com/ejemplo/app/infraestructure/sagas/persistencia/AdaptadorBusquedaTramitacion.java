@@ -8,15 +8,15 @@ import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.SagaPrincipal;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoJpaRepository;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenJpaRepository;
 
-/** Busca directamente sobre {@code proceso} (tabla común de la FSM), sin cargar el agregado completo. */
+/** Busca directamente sobre {@code orden} (tabla común de la FSM, fusionada con la ejecución), sin cargar el agregado completo. */
 @Component
 public class AdaptadorBusquedaTramitacion implements PuertoBusquedaTramitacion {
 
-    private final ProcesoJpaRepository repo;
+    private final OrdenJpaRepository repo;
 
-    public AdaptadorBusquedaTramitacion(ProcesoJpaRepository repo) {
+    public AdaptadorBusquedaTramitacion(OrdenJpaRepository repo) {
         this.repo = repo;
     }
 

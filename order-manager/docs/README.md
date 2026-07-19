@@ -118,14 +118,15 @@ infraestructura.
 | [20-clases-aplicacion-saga-secundaria2](20-clases-aplicacion-saga-secundaria2.png) | Aplicación de la saga secundaria 2: aparcado de 3 h, `PuertoConciliacionSecundaria2` y `ServicioRegistrarRespuestaSecundaria2` (entrada del consumer Kafka) |
 | [21-clases-aplicacion-saga-secundaria3](21-clases-aplicacion-saga-secundaria3.png) | Aplicación de la saga secundaria 3: `ServicioSagaSecundaria3` y el puerto REST |
 | [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteOrdenes`/`ServicioTicketsSoporte`/`ServicioLimpiezaDatos` (motor, sin cancelación; `ServicioLimpiezaDatos` emite `datosAntiguosPurgados` por `PuertoObservadorEjecucion`, ver 17) + `ServicioCancelarTramitacion`/`ServicioVistaTramitacion`/`ServicioIniciarTramitacion`/`ServicioPurgarDatosNegocioHuerfanos` (sagas, `business.sagas.aplicacion.servicio.comun`) |
-| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`ProcesoEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, tablas Oracle `orden`/`proceso`, sin CLOB de contexto) y sus 2 SPI (`MapeadorProceso` — 4 métodos: `tipo`/`estado`/`guardarContexto`/`rearmar`/`borrarContexto`, una tabla satélite por tipo —, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
+| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, UNA sola tabla Oracle `orden` — negocio + ejecución fusionados desde la fase 2, sin CLOB de contexto) y sus 2 SPI (`MapeadorProceso` — 4 métodos: `tipo`/`estado`/`guardarContexto`/`rearmar`/`borrarContexto`, una tabla satélite por tipo —, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
 | [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura, el resto: `infraestructure.ordermanager` (`eventos` — `AdaptadorTicketsLog` y `AdaptadorObservadorLog` (implementa `PuertoObservadorEjecucion`, ver 17; log estructurado, catálogo en `src/pruebaCarga/resources/escenarios/README.md`) —, `programados`/`persistencia`/`ConfiguracionOrderManager`) + `infraestructure.sagas` (`ConsumidorRespuestaSecundaria2`, `ControladorTramitaciones` (REST `POST /tramitaciones`; ambos loguean su propio evento en infraestructura, sin pasar por el puerto), `SoporteSagaPrincipal`/`Secundaria1/2/3` implementando las 2 SPI de 23 con su propio repo JPA satélite, `AdaptadorBusquedaTramitacion`, `PlanificadorPurgaDatosNegocio`, `ConfiguracionSagas`) |
 | [25-clases-dominio-comun-sagas](25-clases-dominio-comun-sagas.png) | Shared kernel de las sagas (`business.sagas.dominio.comun`): `ContextoArranque` y `RefPaso1`/`RefPaso5`/`RefPaso7` — los produce la principal y los consumen las secundarias; no puede depender de él ninguna clase de `ordermanager` |
 | [26-clases-datos-negocio](26-clases-datos-negocio.png) | El agregado `DatosNegocio` (`business.sagas.dominio.datosnegocio`), autocontenido: dominio (`DatosNegocio`, `DatoNegocio1/2/3`, `DocumentoNegocio`, `ExternalIdDuplicadoException`), puertos (`PuertoDatosNegocio` — REST externo, sin adaptador real — y `RepositorioDatosNegocio`), adaptador (`AdaptadorDatosNegocio`, `DatosNegocioEntity`/`DocumentoNegocioEntity`, tablas `datos_negocio`/`datos_negocio_documento`) |
 
 ## Esquema de base de datos
 
-El esquema, 9 tablas, se aplica manualmente desde `order-manager/db/` (un
+El esquema, 8 tablas (9 antes de la fusión de `orden`+`proceso` en la fase 2
+del refactor), se aplica manualmente desde `order-manager/db/` (un
 `.sql` por objeto; orden de aplicación por FKs en su `README.md`). Ni JPA
 (`ddl-auto: none`) ni ninguna herramienta de migración crean nada
 automáticamente al arrancar la app. Ninguna tabla usa `ON DELETE CASCADE`
@@ -135,24 +136,32 @@ hijas antes que padre, en la misma transacción, el adaptador de persistencia.
 Tablas genéricas del motor (`business.ordermanager`, sin conocer ningún
 tipo de orden concreto):
 
-- `proceso` — FSM común a todos los tipos (`orden_id` PK, `tipo`,
-  `external_id`, `estado`); ya NO tiene un CLOB `contexto`: el contexto
-  propio de cada tipo vive en su tabla satélite (ver abajo).
-- `proceso_auditoria` — intervenciones de soporte, hija de `proceso`.
-- `orden` — estado de ejecución (intentos, lease del token, ticket,
-  `completada_en`, `version`), hija/FK 1:1 de `proceso`.
+- `orden` — raíz del agregado, FUSIÓN (fase 2 del refactor) de lo que antes
+  eran 2 tablas (`orden` + `proceso`) con una FK entre ellas: negocio
+  (`tipo`, `external_id`, `estado` de la FSM) + ejecución (intentos, lease
+  del token, ticket, `completada_en`, `version`) en UNA ÚNICA fila. Antes de
+  la fusión, el agregado se leía en 2 SELECT separados con la `version`
+  solo en uno, lo que bajo READ_COMMITTED podía producir una lectura mixta
+  (FSM vieja + ejecución fresca) y repetir un paso ya hecho; con una foto
+  atómica (`findById`) eso deja de ser posible. Ya NO tiene un CLOB
+  `contexto`: el contexto propio de cada tipo vive en su tabla satélite (ver
+  abajo).
+- `proceso_auditoria` — intervenciones de soporte, hija de `orden` (nombre
+  histórico: cuando existía la tabla `proceso` colgaba de ella; no se
+  renombra para minimizar la onda expansiva del cambio).
 
 Tablas del agregado `DatosNegocio` (`business.sagas`, ver 26), autocontenido
-y sin relación de FK con `proceso`, correlacionado solo por `external_id`:
+y sin relación de FK con `orden`, correlacionado solo por `external_id`:
 
 - `datos_negocio` — escalares (`external_id` con índice único, para la
   idempotencia de `POST /tramitaciones`).
 - `datos_negocio_documento` — documentos (BLOB), hija de `datos_negocio`.
 
-Tablas satélite por tipo de orden (una por saga, 1:1 con `proceso` por
+Tablas satélite por tipo de orden (una por saga, 1:1 con `orden` por
 `orden_id`, el contexto propio que antes vivía en el CLOB — ver
-`MapeadorProceso` en 23): `proceso_saga_principal` (además FK a
-`datos_negocio` por `datosnegocio_id`), `proceso_saga_secundaria1`,
+`MapeadorProceso` en 23; nombres históricos `proceso_saga_*`, no se
+renombran por el mismo motivo que `proceso_auditoria`): `proceso_saga_principal`
+(además FK a `datos_negocio` por `datosnegocio_id`), `proceso_saga_secundaria1`,
 `proceso_saga_secundaria2`, `proceso_saga_secundaria3`.
 
 ## Pruebas de carga

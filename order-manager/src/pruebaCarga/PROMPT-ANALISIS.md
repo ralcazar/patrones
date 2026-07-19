@@ -27,10 +27,10 @@ ficheros:
   "Catálogo de eventos del log".
 - **`bbdd.mv.db`** (+ `.trace.db` si existe) — la H2 en fichero de la
   ejecución, con el esquema real de producción (`order-manager/db/*.sql`).
-  Tablas principales: `orden` (estado de ejecución: intentos, lease,
-  ticket, `completada_en`) y `proceso` (estado de negocio: `tipo`, `estado`,
-  `external_id`); las tablas satélite `proceso_saga_*` tienen el contexto
-  propio de cada saga si necesitas más detalle de negocio.
+  Tabla principal: `orden` (negocio + ejecución fusionados en una sola fila:
+  `tipo`, `estado`, `external_id` de negocio junto con intentos, lease,
+  ticket, `completada_en` de ejecución); las tablas satélite `proceso_saga_*`
+  tienen el contexto propio de cada saga si necesitas más detalle de negocio.
 - **`pods-compacto.log`** + **`leyenda-compacto.md`** — transformación 1:1
   de `pods.log` (fase 5, `CompactadorLogLlm`), pensada para caber en tu
   contexto: mismas líneas de evento, mismo orden (el entrelazado real se
@@ -84,8 +84,7 @@ compactado resuelve.
      Ejemplos de consulta útiles:
      ```sql
      SELECT * FROM orden WHERE orden_id = '<uuid>';
-     SELECT * FROM proceso WHERE orden_id = '<uuid>';
-     SELECT tipo, estado, COUNT(*) FROM proceso GROUP BY tipo, estado;
+     SELECT tipo, estado, COUNT(*) FROM orden GROUP BY tipo, estado;
      ```
    - NO abras la BBDD mientras una ejecución esté en marcha (el fichero
      `.mv.db` puede estar bloqueado por los pods); solo sobre carpetas de

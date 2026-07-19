@@ -81,9 +81,6 @@ class PersistenciaOrdenIntegrationTest {
     private OrdenJpaRepository ordenJpaRepository;
 
     @Autowired
-    private ProcesoJpaRepository procesoJpaRepository;
-
-    @Autowired
     private ProcesoSagaPrincipalJpaRepository procesoSagaPrincipalJpaRepository;
 
     @Autowired
@@ -94,9 +91,10 @@ class PersistenciaOrdenIntegrationTest {
 
     @AfterEach
     void limpiarBaseDeDatos() {
-        ordenJpaRepository.deleteAll();
+        // Tras la fusión de orden+proceso (fase 2): la satélite (hija, FK a orden) se
+        // borra ANTES que orden (ahora el padre).
         procesoSagaPrincipalJpaRepository.deleteAll();
-        procesoJpaRepository.deleteAll();
+        ordenJpaRepository.deleteAll();
     }
 
     private static SagaPrincipal nuevaSagaPrincipal(OrdenId id) {
@@ -147,17 +145,6 @@ class PersistenciaOrdenIntegrationTest {
     @Test
     void cargar_procesoInexistente_lanzaIllegalArgumentException() {
         assertThatThrownBy(() -> repo.cargar(OrdenId.nuevo())).isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void cargar_conProcesoPeroSinFilaDeOrden_lanzaIllegalArgumentException() {
-        var id = OrdenId.nuevo();
-        // Fila de proceso sin su correspondiente fila de orden (inconsistencia entre las dos
-        // tablas del agregado): ejercita el segundo orElseThrow de cargar(), distinto del primero.
-        procesoJpaRepository.save(new ProcesoEntity(id.valor(), SagaPrincipal.TIPO.valor(),
-                UUID.randomUUID().toString(), "INICIAL", List.of()));
-
-        assertThatThrownBy(() -> repo.cargar(id)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -294,7 +281,7 @@ class PersistenciaOrdenIntegrationTest {
 
     @Test
     void mapeadorDe_tipoNoRegistrado_lanzaIllegalStateException() {
-        var repoIncompleto = new AdaptadorRepositorioOrden(ordenJpaRepository, procesoJpaRepository,
+        var repoIncompleto = new AdaptadorRepositorioOrden(ordenJpaRepository,
                 List.of(new SoporteSagaPrincipal(procesoSagaPrincipalJpaRepository))); // sin el mapeador de SECUNDARIA1
         var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria1(
@@ -356,7 +343,6 @@ class PersistenciaOrdenIntegrationTest {
         // Las candidatas de la query nativa de purga solo ven filas YA en BD: forzamos el
         // flush porque crear() (a diferencia de guardar()) no lo hace.
         ordenJpaRepository.flush();
-        procesoJpaRepository.flush();
         // actualizada_en se fija en el @PrePersist al momento de crear la fila; un corte
         // muy futuro la incluye sin depender de forzar la marca de tiempo desde fuera.
         var corteFuturo = Instant.now().plusSeconds(3600);
@@ -373,16 +359,15 @@ class PersistenciaOrdenIntegrationTest {
     void purgarFinalizadasAntesDe_borraExplicitamenteLaAuditoriaYLaSateliteDeSuTipo() {
         // Ya no hay ON DELETE CASCADE (prohibido, ver CLAUDE.md): si el borrado explícito de
         // las hijas (proceso_auditoria y la satélite) no ocurriera ANTES que el del padre
-        // (proceso), el DELETE nativo de proceso violaría la FK real que genera Hibernate
-        // para proceso_auditoria (@ElementCollection) y este test fallaría con una excepción
-        // en vez de completar.
+        // (orden, desde la fusión de la fase 2), el DELETE nativo de orden violaría la FK
+        // real que genera Hibernate para proceso_auditoria (@ElementCollection) y este test
+        // fallaría con una excepción en vez de completar.
         var ahora = Instant.now();
         var id = OrdenId.nuevo();
         var saga = nuevaSagaPrincipal(id);
         saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
         repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, null, 0L));
         ordenJpaRepository.flush();
-        procesoJpaRepository.flush();
         assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor())).as("la satélite existe antes de purgar").isPresent();
         var corteFuturo = Instant.now().plusSeconds(3600);
 
@@ -519,7 +504,7 @@ class PersistenciaOrdenIntegrationTest {
 
     @Test
     void descriptorDe_tipoNoRegistrado_lanzaIllegalStateException() {
-        var consultasIncompletas = new AdaptadorConsultaOrdenesSoporte(ordenJpaRepository, procesoJpaRepository,
+        var consultasIncompletas = new AdaptadorConsultaOrdenesSoporte(ordenJpaRepository,
                 List.of(new SoporteSagaPrincipal(procesoSagaPrincipalJpaRepository))); // sin el descriptor de SECUNDARIA1
         var id = OrdenId.nuevo();
         var ctx = new ContextoArranque.ArranqueSecundaria1(
@@ -588,19 +573,19 @@ class PersistenciaOrdenIntegrationTest {
     static class ContextoTest {
 
         @Bean
-        AdaptadorRepositorioOrden adaptadorRepositorioOrden(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
+        AdaptadorRepositorioOrden adaptadorRepositorioOrden(OrdenJpaRepository ordenes,
                 ProcesoSagaPrincipalJpaRepository repoPrincipal, ProcesoSagaSecundaria1JpaRepository repoSecundaria1,
                 ProcesoSagaSecundaria2JpaRepository repoSecundaria2, ProcesoSagaSecundaria3JpaRepository repoSecundaria3) {
-            return new AdaptadorRepositorioOrden(ordenes, procesos, List.of(
+            return new AdaptadorRepositorioOrden(ordenes, List.of(
                     new SoporteSagaPrincipal(repoPrincipal), new SoporteSagaSecundaria1(repoSecundaria1),
                     new SoporteSagaSecundaria2(repoSecundaria2), new SoporteSagaSecundaria3(repoSecundaria3)));
         }
 
         @Bean
-        AdaptadorConsultaOrdenesSoporte adaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
+        AdaptadorConsultaOrdenesSoporte adaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes,
                 ProcesoSagaPrincipalJpaRepository repoPrincipal, ProcesoSagaSecundaria1JpaRepository repoSecundaria1,
                 ProcesoSagaSecundaria2JpaRepository repoSecundaria2, ProcesoSagaSecundaria3JpaRepository repoSecundaria3) {
-            return new AdaptadorConsultaOrdenesSoporte(ordenes, procesos, List.of(
+            return new AdaptadorConsultaOrdenesSoporte(ordenes, List.of(
                     new SoporteSagaPrincipal(repoPrincipal), new SoporteSagaSecundaria1(repoSecundaria1),
                     new SoporteSagaSecundaria2(repoSecundaria2), new SoporteSagaSecundaria3(repoSecundaria3)));
         }

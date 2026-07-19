@@ -93,7 +93,7 @@ final class InformeMarkdown {
         }
         md.append("\n");
 
-        md.append("### Distribución final de estados (SQL: `proceso` + `orden`)\n\n");
+        md.append("### Distribución final de estados (SQL: `orden`)\n\n");
         md.append("| Tipo | Estado | Total | Completadas |\n|---|---|---|---|\n");
         for (var fila : distribucion) {
             md.append("| ").append(fila.tipo()).append(" | ").append(fila.estado()).append(" | ")

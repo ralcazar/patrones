@@ -22,22 +22,20 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
  * Modelo de lectura de la pantalla de soporte: queries SQL directas sobre
- * {@code orden}/{@code proceso} (CQRS ligero), sin cargar agregados. El paso
- * pendiente, si requiere datos manuales y si es cancelable se derivan de
- * (tipo, estado) a través de la SPI {@link DescriptorSoporteOrden} (una
- * implementación por tipo, indexadas por {@link DescriptorSoporteOrden#tipo()}).
+ * {@code orden} (negocio + ejecución fusionados en una sola tabla, CQRS
+ * ligero), sin cargar agregados. El paso pendiente, si requiere datos
+ * manuales y si es cancelable se derivan de (tipo, estado) a través de la SPI
+ * {@link DescriptorSoporteOrden} (una implementación por tipo, indexadas por
+ * {@link DescriptorSoporteOrden#tipo()}).
  */
 @Component
 public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSoporte {
 
     private final OrdenJpaRepository ordenes;
-    private final ProcesoJpaRepository procesos;
     private final Map<TipoOrden, DescriptorSoporteOrden> descriptores;
 
-    public AdaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes, ProcesoJpaRepository procesos,
-            List<DescriptorSoporteOrden> descriptores) {
+    public AdaptadorConsultaOrdenesSoporte(OrdenJpaRepository ordenes, List<DescriptorSoporteOrden> descriptores) {
         this.ordenes = ordenes;
-        this.procesos = procesos;
         this.descriptores = descriptores.stream()
                 .collect(Collectors.toUnmodifiableMap(DescriptorSoporteOrden::tipo, d -> d));
     }
@@ -83,7 +81,7 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
         var pendiente = descriptor.pasoPendiente(fila.getEstado());
         var pasos = pendiente == null ? List.<PasoDetalle>of()
                 : List.of(new PasoDetalle(pendiente, descriptor.datosManualesObligatorios(fila.getEstado())));
-        var auditoria = procesos.findById(ordenId).map(AdaptadorConsultaOrdenesSoporte::auditoriaDe).orElse(List.of());
+        var auditoria = ordenes.findById(ordenId).map(AdaptadorConsultaOrdenesSoporte::auditoriaDe).orElse(List.of());
         return new OrdenDetalle(resumen, descriptor.cancelable(fila.getEstado()), pasos, auditoria);
     }
 
@@ -110,7 +108,7 @@ public class AdaptadorConsultaOrdenesSoporte implements PuertoConsultaOrdenesSop
         return valor == null ? null : valor.toInstant();
     }
 
-    private static List<AuditoriaIntervencion> auditoriaDe(ProcesoEntity entity) {
+    private static List<AuditoriaIntervencion> auditoriaDe(OrdenEntity entity) {
         return entity.getAuditoria().stream()
                 .map(a -> new AuditoriaIntervencion(a.getCuando(), new UsuarioSoporte(a.getQuien()),
                         a.getAccion(), a.getDetalle()))

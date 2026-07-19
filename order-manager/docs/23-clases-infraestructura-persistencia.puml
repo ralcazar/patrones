@@ -27,11 +27,10 @@ class "TrabajadorContinuacion\n(ver 24)" as TrabajadorContinuacion
 package "persistencia" {
   class AdaptadorRepositorioOrden <<@Component>> {
     -ordenes : OrdenJpaRepository
-    -procesos : ProcesoJpaRepository
     -mapeadores : Map<TipoOrden, MapeadorProceso>  «indexado por MapeadorProceso::tipo\nal construir el bean (List<MapeadorProceso> inyectado)»
-    +crear(OrdenRoot)  «procesos.save(padre); mapeadorDe(tipo).guardarContexto(proceso)\n(satélite, hija por FK); ordenes.save(...)»
-    +cargar(OrdenId) : OrdenRoot  «rehidrata despachando por ProcesoEntity.tipo\nvía mapeadorDe(tipo).rearmar(id, externalId, estado, auditoria)\n(el contexto lo lee CADA mapeador de SU satélite)»
-    +guardar(OrdenRoot)  «procesos.save + mapeadorDe(tipo).guardarContexto(proceso)\n(upsert satélite) + ordenes.save + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
+    +crear(OrdenRoot)  «ordenes.save(padre); mapeadorDe(tipo).guardarContexto(proceso)\n(satélite, hija por FK a orden)»
+    +cargar(OrdenId) : OrdenRoot  «UN ÚNICO ordenes.findById (foto atómica\nnegocio+ejecución) + mapeadorDe(tipo).rearmar(id, externalId,\nestado, auditoria) — el contexto lo lee CADA mapeador de SU satélite,\nDESPUÉS de la foto: un commit ajeno entre medias ya bumpeó la version\nde la fila leída, y guardar() lo detecta vía candado optimista»
+    +guardar(OrdenRoot)  «ordenes.save + mapeadorDe(tipo).guardarContexto(proceso)\n(upsert satélite) + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
     +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
     +purgarFinalizadasAntesDe(corte) : long  «sin ON DELETE CASCADE: borrado\nexplícito hijas->padre, ver nota abajo»
@@ -41,25 +40,29 @@ package "persistencia" {
     ÚNICO adaptador de escritura del agregado, 100% genérico en el
     tipo de orden: ya no importa ninguna saga concreta. Despacha por
     TipoOrden a través de la SPI MapeadorProceso en vez de los
-    switches entidadSagaDe()/sagaDesde() de antes. crear/guardar
-    escriben SIEMPRE proceso (padre) antes que la satélite propia del
-    tipo (hija, FK a proceso) — guardarContexto(proceso) hace el
-    upsert en ELLA, ya no hay un CLOB contexto común ni ContextoCodec
-    (cada tipo tiene su tabla, ver 24 y 26). ordenes.flush() fuerza
-    el chequeo de version aquí, no en el commit de fuera.
+    switches entidadSagaDe()/sagaDesde() de antes. Desde la fase 2 del
+    refactor, orden y proceso son la MISMA fila (fusión: ya no hay 2
+    SELECT separados con la version solo en uno, que bajo READ_COMMITTED
+    podían producir una lectura mixta — FSM vieja + ejecución fresca —
+    y repetir un paso ya hecho). crear/guardar escriben SIEMPRE orden
+    (ahora el padre) antes que la satélite propia del tipo (hija, FK a
+    orden) — guardarContexto(proceso) hace el upsert en ELLA, ya no hay
+    un CLOB contexto común ni ContextoCodec (cada tipo tiene su tabla,
+    ver 24 y 26). ordenes.flush() fuerza el chequeo de version aquí, no
+    en el commit de fuera.
     purgarFinalizadasAntesDe: sin ON DELETE CASCADE en NINGUNA tabla
     (prohibido, ver CLAUDE.md): ids = ordenes.idsFinalizadasAntesDe(corte);
-    ordenes.borrarPorIds(ids); procesos.borrarAuditoriaPorIds(ids);
-    CADA mapeador.borrarContexto(ids) (todas las satélites, las de
-    otros tipos simplemente no matchean); procesos.borrarPorIds(ids)
-    al final, el padre ya libre de FKs de sus hijas.
+    ordenes.borrarAuditoriaPorIds(ids); CADA mapeador.borrarContexto(ids)
+    (todas las satélites, las de otros tipos simplemente no matchean);
+    ordenes.borrarPorIds(ids) al final, el padre ya libre de FKs de sus
+    hijas (auditoría y satélites, FK orden_id -> orden).
   end note
 
   interface MapeadorProceso <<SPI>> {
     +tipo() : TipoOrden
-    +estado(Proceso<?>) : String  «columna proceso.estado»
+    +estado(Proceso<?>) : String  «columna orden.estado»
     +guardarContexto(Proceso<?>)  «upsert en SU tabla satélite, misma tx»
-    +rearmar(id, externalId, estado, auditoria) : Proceso<?>  «lee SU\nsatélite por id (el PK de proceso)»
+    +rearmar(id, externalId, estado, auditoria) : Proceso<?>  «lee SU\nsatélite por id (el PK de orden)»
     +borrarContexto(List<UUID> ordenIds)  «DELETE en SU satélite (purga)»
   }
   note right of MapeadorProceso
@@ -68,7 +71,7 @@ package "persistencia" {
     implementaciones concretas (SoporteSagaPrincipal/Secundaria1/2/3)
     viven en infraestructure.sagas.persistencia — ver 24 — cada una
     con su propio JpaRepository sobre su tabla satélite (p. ej.
-    proceso_saga_principal, FK a proceso Y a datos_negocio — ver 26).
+    proceso_saga_principal, FK a orden Y a datos_negocio — ver 26).
     Ya no hay ProcesoPersistible/desarmar ni un contexto común
     serializado: el contexto de cada tipo es SU tabla relacional, no
     un contrato de persistencia genérico. Por eso esta SPI vive en
@@ -92,34 +95,35 @@ package "persistencia" {
     SPI) — ver 24.
   end note
 
-  interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository, package-private>> {
+  interface "OrdenJpaRepository" as OrdenJpa <<JpaRepository>> {
+    +findByExternalIdAndTipo(externalId, tipo) : Optional<OrdenEntity>\n«idempotencia de POST /tramitaciones, ver 01»
     +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
     +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
     +idsFinalizadasAntesDe(corte) : List<UUID>
     +borrarPorIds(ids)
+    +borrarAuditoriaPorIds(ids)  «hija proceso_auditoria, antes que\nel padre en purgarFinalizadasAntesDe»
     +buscarTicketsPendientes() : List<TicketPendienteFila>
     +ordenesBloqueadas() / ordenesEnEjecucion(ahora)
     +ordenesConTicketPendiente() / buscar(...) / porExternalId(...)
     +resumenDe(tipo, ordenId) : Optional<OrdenResumenFila>
   }
-  interface "ProcesoJpaRepository" as ProcesoJpa <<JpaRepository>> {
-    +findByExternalIdAndTipo(externalId, tipo) : Optional<ProcesoEntity>\n«idempotencia de POST /tramitaciones, ver 01»
-    +borrarPorIds(ids)
-    +borrarAuditoriaPorIds(ids)  «hija proceso_auditoria, antes que\nel padre en purgarFinalizadasAntesDe»
-  }
-  note right of ProcesoJpa
-    A diferencia de OrdenJpaRepository, es PUBLIC (no package-private):
-    AdaptadorBusquedaTramitacion (infraestructure.sagas.persistencia,
-    ver 24) lo usa directamente para findByExternalIdAndTipo, sin
-    pasar por AdaptadorRepositorioOrden — no carga el agregado
-    completo para una simple comprobación de existencia.
+  note right of OrdenJpa
+    Es PUBLIC (no package-private): AdaptadorBusquedaTramitacion
+    (infraestructure.sagas.persistencia, ver 24) lo usa directamente
+    para findByExternalIdAndTipo, sin pasar por
+    AdaptadorRepositorioOrden — no carga el agregado completo para una
+    simple comprobación de existencia. Desde la fusión de la fase 2 ya
+    no existe un ProcesoJpaRepository separado: todas las columnas
+    (negocio + ejecución) salen de esta MISMA tabla/repo.
   end note
   interface CandidataFila <<projection, package-private>> {
     getOrdenId() / getTipo()
   }
 
   class OrdenEntity <<@Entity orden>> {
-    @Id ordenId : UUID  «FK a proceso; @JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
+    @Id ordenId : UUID  «@JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
+    tipo / externalId / estado : String  «negocio (FSM), fusionado\ndesde proceso en la fase 2»
+    auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»
     intentos : int
     proximoReintentoEn : Instant
     tokenTrabajador : String
@@ -127,31 +131,31 @@ package "persistencia" {
     ticketAbiertoEn : Instant
     completadaEn : Instant  «null = viva; no-null = finalizada (ok o cancelada)»
     ultimoErrorTipo / ultimoErrorMensaje : String  «clase+mensaje del\núltimo fallo de paso, sin stacktrace»
-    @Version version : long  «ÚNICA del agregado»
+    @Version version : long  «ÚNICA del agregado, ahora protege\nTAMBIÉN el negocio en la misma fila»
     creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
-  }
-  class ProcesoEntity <<@Entity proceso>> {
-    @Id ordenId : UUID  «@JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
-    tipo / externalId / estado : String
-    auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»
   }
   class AuditoriaEntity <<@Embeddable>> {
     cuando / quien / accion / detalle
   }
 
   note bottom of OrdenEntity
-    Tablas Oracle: DDL manual en order-manager/db/ (proceso.sql,
-    proceso_auditoria.sql, orden.sql — un DBA lo aplica a mano, sin
-    Flyway ni ddl-auto: none). proceso (orden_id PK, tipo,
-    external_id, estado — SIN contexto: el de cada tipo vive en su
-    tabla satélite, p. ej. proceso_saga_principal, ver 24 y 26) +
-    orden (orden_id PK/FK a proceso, intentos, proximo_reintento_en,
+    Tablas Oracle: DDL manual en order-manager/db/ (orden.sql,
+    proceso_auditoria.sql — un DBA lo aplica a mano, sin Flyway ni
+    ddl-auto: none). orden (orden_id PK; negocio: tipo, external_id,
+    estado; ejecución: intentos, proximo_reintento_en,
     token_trabajador, token_expira_en, ticket_abierto_en,
     completada_en, ultimo_error_tipo, ultimo_error_mensaje, version,
-    creada_en, actualizada_en). Sin índices
-    parciales en Oracle: idx_orden_candidatas es funcional sobre CASE
-    WHEN completada_en IS NULL THEN proximo_reintento_en END;
-    idx_orden_intentos indexa la bandeja de trabajo/tickets.
+    creada_en, actualizada_en) — FUSIÓN de fase 2 de lo que antes eran
+    2 tablas (orden + proceso) con FK entre ellas: eliminaba la
+    lectura mixta (torn read) de 2 SELECT separados con la version
+    solo en uno bajo READ_COMMITTED. El contexto propio de cada tipo
+    sigue en su tabla satélite, p. ej. proceso_saga_principal (ver 24
+    y 26), ahora FK a orden. Sin índices parciales en Oracle:
+    idx_orden_candidatas es funcional sobre CASE WHEN completada_en
+    IS NULL THEN proximo_reintento_en END; idx_orden_intentos indexa
+    la bandeja de trabajo/tickets; idx_orden_external_id (antes
+    idx_proceso_external_id) sirve la idempotencia de
+    POST /tramitaciones.
   end note
 
   note right of OrdenJpa
@@ -170,11 +174,9 @@ package "persistencia" {
 PlanificadorContinuacion --> CasoUsoContinuarOrden : hayTrabajoPendiente()
 PlanificadorContinuacion --> TrabajadorContinuacion : trabajar() ×N
 AdaptadorRepositorioOrden --> OrdenJpa
-AdaptadorRepositorioOrden --> ProcesoJpa
 AdaptadorRepositorioOrden --> MapeadorProceso : despacha por tipo
 OrdenJpa ..> CandidataFila
-OrdenEntity "1" -- "1" ProcesoEntity : orden_id (FK)
-ProcesoEntity "1" *-- "n" AuditoriaEntity
+OrdenEntity "1" *-- "n" AuditoriaEntity
 
 PlanificadorContinuacion -[hidden]down- CasoUsoContinuarOrden
 CasoUsoContinuarOrden -[hidden]down- AdaptadorRepositorioOrden

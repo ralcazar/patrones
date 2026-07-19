@@ -29,12 +29,11 @@ group Transacción única (@Transactional)
   alt ids.isEmpty()
     REPO -> REPO : return 0
   else hay ids
-    REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE orden_id IN ids)
-    REPO -> REPO : procesos.borrarAuditoriaPorIds(ids)\n(DELETE FROM proceso_auditoria WHERE orden_id IN ids)
+    REPO -> REPO : ordenes.borrarAuditoriaPorIds(ids)\n(DELETE FROM proceso_auditoria WHERE orden_id IN ids)
     loop por cada MapeadorProceso registrado (uno por tipo)
       REPO -> REPO : mapeador.borrarContexto(ids)\n-- borra SOLO su propia satélite (proceso_saga_principal\n/ _secundaria1 / _secundaria2 / _secundaria3, ver 23);\nlas filas de otros tipos no matchean
     end
-    REPO -> REPO : procesos.borrarPorIds(ids)\n(DELETE FROM proceso WHERE orden_id IN ids)
+    REPO -> REPO : ordenes.borrarPorIds(ids)\n(DELETE FROM orden WHERE orden_id IN ids)
     REPO -> REPO : return ids.size()
   end
   return nº órdenes borradas
@@ -49,11 +48,11 @@ deactivate PLAN
 note over REPO
   Sin ON DELETE CASCADE en NINGUNA tabla (prohibido, ver CLAUDE.md):
   cada borrado es explícito, en la misma transacción y en orden
-  hijas -> padre. orden y proceso_auditoria son hijas de proceso por
-  FK y se borran antes; cada satélite de MapeadorProceso también es
-  hija de proceso por FK (una tabla por tipo de orden) y se borra
-  antes; proceso (el padre) se borra el último, ya libre de FKs de
-  sus hijas. Todo o nada: un solo commit para órdenes + satélites +
+  hijas -> padre. Desde la fusión de la fase 2, orden es el padre
+  (antes lo era proceso): proceso_auditoria y cada satélite de
+  MapeadorProceso son hijas de orden por FK (una tabla por tipo de
+  orden) y se borran antes; orden se borra el último, ya libre de FKs
+  de sus hijas. Todo o nada: un solo commit para órdenes + satélites +
   dedup.
 end note
 @enduml

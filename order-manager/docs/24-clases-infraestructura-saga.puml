@@ -159,7 +159,6 @@ package "infraestructure.ordermanager.persistencia" {
   ' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
   class AdaptadorConsultaOrdenesSoporte <<@Component>> {
     -ordenes : OrdenJpaRepository
-    -procesos : ProcesoJpaRepository
     -descriptores : Map<TipoOrden, DescriptorSoporteOrden>
     +ordenesBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\nporExternalId/detalle
     -descriptorDe(tipo) : DescriptorSoporteOrden  «IllegalStateException si no\nhay ninguno registrado»
@@ -170,20 +169,22 @@ package "infraestructure.ordermanager.persistencia" {
     tipo (ver 23). porExternalId(...) es genérico (solo agrupa por
     externalId, sin componer ninguna vista); quien la usa para
     construir VistaTramitacion particionando por SagaPrincipal.TIPO
-    es ServicioVistaTramitacion, en business.sagas (ver 22).
+    es ServicioVistaTramitacion, en business.sagas (ver 22). detalle(...)
+    lee la auditoría con ordenes.findById(...) (ver 23): desde la
+    fusión de la fase 2 ya no hay un repo de proceso separado.
   end note
   class AdaptadorOrdenesTicketPendiente <<@Component>> {
     -ordenes : OrdenJpaRepository
     +buscar() : List<OrdenTicketPendiente>  «delega en\nordenes.buscarTicketsPendientes()»
   }
   note bottom of AdaptadorOrdenesTicketPendiente
-    OrdenJpaRepository (ver 23) es package-private: vive allí, en
-    persistencia, junto con quien lo usa (todos en este mismo
-    paquete). ProcesoJpaRepository, en cambio, es PUBLIC: lo usa
-    también AdaptadorBusquedaTramitacion, en
-    infraestructure.sagas.persistencia (ver más abajo) — ya no hay
-    ContextoCodec: el contexto de cada tipo es su tabla satélite
-    relacional (ver 23 y 26), no un mapa JSON que serializar.
+    OrdenJpaRepository (ver 23) es PUBLIC: lo usa también
+    AdaptadorBusquedaTramitacion, en infraestructure.sagas.persistencia
+    (ver más abajo). Desde la fusión de la fase 2 ya no hay un
+    ProcesoJpaRepository separado: negocio + ejecución viven en la
+    MISMA tabla/repo. Tampoco hay ContextoCodec: el contexto de cada
+    tipo es su tabla satélite relacional (ver 23 y 26), no un mapa
+    JSON que serializar.
   end note
 }
 
@@ -230,13 +231,14 @@ package "infraestructure.sagas.persistencia" {
   end note
 
   class AdaptadorBusquedaTramitacion <<@Component>> {
-    -repo : "ProcesoJpaRepository\n(ver 23)"
+    -repo : "OrdenJpaRepository\n(ver 23)"
     +ordenPrincipalDe(externalId) : Optional<OrdenId>\n«findByExternalIdAndTipo(externalId, "PRINCIPAL")»
   }
   note right of AdaptadorBusquedaTramitacion
-    Busca directamente sobre proceso (la tabla común de la FSM,
-    ProcesoJpaRepository — ver 23), sin cargar el agregado completo:
-    idempotencia de POST /tramitaciones (ver 01 y 22).
+    Busca directamente sobre orden (la tabla común de la FSM, fusionada
+    con la ejecución desde la fase 2; OrdenJpaRepository — ver 23), sin
+    cargar el agregado completo: idempotencia de POST /tramitaciones
+    (ver 01 y 22).
   end note
 }
 

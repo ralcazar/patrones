@@ -45,9 +45,8 @@ public final class InicializadorEsquemaH2 {
 
     // Orden de aplicación exigido por las FKs, ver order-manager/db/README.md.
     private static final List<String> FICHEROS = List.of(
-            "proceso.sql",
-            "proceso_auditoria.sql",
             "orden.sql",
+            "proceso_auditoria.sql",
             "datos_negocio.sql",
             "datos_negocio_documento.sql",
             "proceso_saga_principal.sql",

@@ -27,7 +27,7 @@ end box
 OP -> REST ++ : ver órdenes bloqueadas / en ejecución / con ticket
 REST -> SOP ++ : ordenesBloqueadas() / ordenesEnEjecucion() /\nordenesConTicketPendiente() / buscar(FiltroOrdenes)
 SOP -> LECT ++ : (delega tal cual en PuertoConsultaOrdenesSoporte)
-LECT -> LECT : SELECT sobre orden JOIN proceso\n(intentos>=8 / token vigente / ticket pendiente / filtro dinámico)
+LECT -> LECT : SELECT sobre orden\n(intentos>=8 / token vigente / ticket pendiente / filtro dinámico)
 return [OrdenResumen(id, tipo, externalId, estado,\nintentos, ticketAbiertoEn, proximoReintentoEn, ...)]
 return
 return listado

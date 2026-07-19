@@ -13,13 +13,16 @@ import org.springframework.data.repository.query.Param;
 public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
 
     String RESUMEN_SELECT = """
-            SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, p.estado AS estado,
+            SELECT o.orden_id AS ordenId, o.tipo AS tipo, o.external_id AS externalId, o.estado AS estado,
                    o.intentos AS intentos, o.ticket_abierto_en AS ticketAbiertoEn,
                    o.proximo_reintento_en AS proximoReintentoEn, o.creada_en AS iniciadaEn,
                    o.actualizada_en AS actualizadaEn,
                    o.ultimo_error_tipo AS ultimoErrorTipo, o.ultimo_error_mensaje AS ultimoErrorMensaje
-            FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+            FROM orden o
             """;
+
+    /** Idempotencia de POST /tramitaciones: localizar la orden principal ya creada para un externalId. */
+    Optional<OrdenEntity> findByExternalIdAndTipo(String externalId, String tipo);
 
     /**
      * Candidatas del planificador: vencido el reintento, viva, y sin token
@@ -27,8 +30,8 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
      * parciales, de ahí el índice funcional sobre esta misma expresión.
      */
     @Query(value = """
-            SELECT o.orden_id AS ordenId, p.tipo AS tipo
-            FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+            SELECT o.orden_id AS ordenId, o.tipo AS tipo
+            FROM orden o
             WHERE o.proximo_reintento_en <= :ahora
               AND o.completada_en IS NULL
               AND (o.token_trabajador IS NULL OR o.token_expira_en <= :ahora)
@@ -56,16 +59,26 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             """, nativeQuery = true)
     List<UUID> idsFinalizadasAntesDe(@Param("corte") Instant corte);
 
-    // clearAutomatically: ver el mismo comentario en ProcesoJpaRepository.borrarPorIds.
+    // clearAutomatically: sin esto, una entidad ya cargada en el contexto de persistencia
+    // (p. ej. por un merge/save previo en la misma transacción) seguiría "viva" en el
+    // cache de 1er nivel tras el DELETE nativo, y un find() posterior la devolvería
+    // fantasma en vez de reflejar el borrado real en BD.
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM orden WHERE orden_id IN :ids", nativeQuery = true)
     void borrarPorIds(@Param("ids") List<UUID> ids);
 
+    // clearAutomatically: ver el mismo comentario en borrarPorIds. Sin ON DELETE CASCADE
+    // (prohibido, ver CLAUDE.md) el borrado de la hija proceso_auditoria es explícito, y
+    // tiene que ocurrir ANTES del borrado del padre (orden) en purgarFinalizadasAntesDe.
+    @Modifying(clearAutomatically = true)
+    @Query(value = "DELETE FROM proceso_auditoria WHERE orden_id IN :ids", nativeQuery = true)
+    void borrarAuditoriaPorIds(@Param("ids") List<UUID> ids);
+
     /** Escalera de reintentos consumida: candidata a bandeja de trabajo y a ticket. */
     @Query(value = """
-            SELECT o.orden_id AS ordenId, p.tipo AS tipo, p.external_id AS externalId, o.intentos AS intentos,
+            SELECT o.orden_id AS ordenId, o.tipo AS tipo, o.external_id AS externalId, o.intentos AS intentos,
                    o.ultimo_error_tipo AS ultimoErrorTipo, o.ultimo_error_mensaje AS ultimoErrorMensaje
-            FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+            FROM orden o
             WHERE o.intentos >= 8 AND o.ticket_abierto_en IS NULL AND o.completada_en IS NULL
             """, nativeQuery = true)
     List<TicketPendienteFila> buscarTicketsPendientes();
@@ -84,7 +97,7 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
     List<OrdenResumenFila> ordenesConTicketPendiente();
 
     @Query(value = RESUMEN_SELECT + """
-            WHERE (:estado IS NULL OR p.estado = :estado)
+            WHERE (:estado IS NULL OR o.estado = :estado)
               AND (:iniciadaDesde IS NULL OR o.creada_en >= :iniciadaDesde)
               AND (:iniciadaHasta IS NULL OR o.creada_en <= :iniciadaHasta)
               AND (:actualizadaDesde IS NULL OR o.actualizada_en >= :actualizadaDesde)
@@ -94,9 +107,9 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             @Param("iniciadaDesde") Instant iniciadaDesde, @Param("iniciadaHasta") Instant iniciadaHasta,
             @Param("actualizadaDesde") Instant actualizadaDesde, @Param("actualizadaHasta") Instant actualizadaHasta);
 
-    @Query(value = RESUMEN_SELECT + "WHERE p.external_id = :externalId", nativeQuery = true)
+    @Query(value = RESUMEN_SELECT + "WHERE o.external_id = :externalId", nativeQuery = true)
     List<OrdenResumenFila> porExternalId(@Param("externalId") String externalId);
 
-    @Query(value = RESUMEN_SELECT + "WHERE p.tipo = :tipo AND o.orden_id = :ordenId", nativeQuery = true)
+    @Query(value = RESUMEN_SELECT + "WHERE o.tipo = :tipo AND o.orden_id = :ordenId", nativeQuery = true)
     Optional<OrdenResumenFila> resumenDe(@Param("tipo") String tipo, @Param("ordenId") UUID ordenId);
 }

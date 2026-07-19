@@ -12,7 +12,8 @@ import java.util.List;
  * Consultas JDBC directas (sin JPA: el analizador es harness, no producción)
  * sobre la H2 en fichero de una ejecución (misma URL que usa
  * {@code LanzadorPruebaCarga.contarOrdenesVivas}). Esquema real en
- * {@code order-manager/db/orden.sql} / {@code proceso.sql}.
+ * {@code order-manager/db/orden.sql} (negocio + ejecución fusionados en una
+ * sola tabla desde la fase 2 del refactor).
  */
 final class RepositorioAnalisisBbdd implements AutoCloseable {
 
@@ -33,8 +34,8 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
     /** Candidatas a "estancada": viva, sin ticket, con turno ya vencido (invariante 1). */
     List<FilaOrdenViva> ordenesEstancadas() {
         return consultarOrdenesVivas("""
-                SELECT o.orden_id, p.tipo, o.intentos, o.proximo_reintento_en
-                FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+                SELECT o.orden_id, o.tipo, o.intentos, o.proximo_reintento_en
+                FROM orden o
                 WHERE o.completada_en IS NULL
                   AND o.ticket_abierto_en IS NULL
                   AND o.proximo_reintento_en <= CURRENT_TIMESTAMP
@@ -45,8 +46,8 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
     /** Ticket abierto sin haber agotado la escalera de reintentos (invariante 4, dirección "de más"). */
     List<FilaOrdenViva> ordenesTicketSinMotivo() {
         return consultarOrdenesVivas("""
-                SELECT o.orden_id, p.tipo, o.intentos, o.proximo_reintento_en
-                FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+                SELECT o.orden_id, o.tipo, o.intentos, o.proximo_reintento_en
+                FROM orden o
                 WHERE o.completada_en IS NULL
                   AND o.ticket_abierto_en IS NOT NULL
                   AND o.intentos < 8
@@ -56,8 +57,8 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
     /** Escalera agotada (intentos >= 8) sin ticket abierto (invariante 4, dirección "de menos"). */
     List<FilaOrdenViva> ordenesReintentosAgotadosSinTicket() {
         return consultarOrdenesVivas("""
-                SELECT o.orden_id, p.tipo, o.intentos, o.proximo_reintento_en
-                FROM orden o JOIN proceso p ON p.orden_id = o.orden_id
+                SELECT o.orden_id, o.tipo, o.intentos, o.proximo_reintento_en
+                FROM orden o
                 WHERE o.completada_en IS NULL
                   AND o.ticket_abierto_en IS NULL
                   AND o.intentos >= 8
@@ -104,15 +105,15 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
         }
     }
 
-    /** Distribución final de estados: por tipo de orden + estado de negocio del proceso. */
+    /** Distribución final de estados: por tipo de orden + estado de negocio (ambos en la misma tabla orden). */
     List<FilaDistribucionEstado> distribucionEstados() {
         List<FilaDistribucionEstado> filas = new ArrayList<>();
         String sql = """
-                SELECT p.tipo, p.estado, COUNT(*) AS total,
+                SELECT o.tipo, o.estado, COUNT(*) AS total,
                        SUM(CASE WHEN o.completada_en IS NOT NULL THEN 1 ELSE 0 END) AS completadas
-                FROM proceso p JOIN orden o ON o.orden_id = p.orden_id
-                GROUP BY p.tipo, p.estado
-                ORDER BY p.tipo, p.estado
+                FROM orden o
+                GROUP BY o.tipo, o.estado
+                ORDER BY o.tipo, o.estado
                 """;
         try (Statement sentencia = conexion.createStatement();
                 ResultSet rs = sentencia.executeQuery(sql)) {

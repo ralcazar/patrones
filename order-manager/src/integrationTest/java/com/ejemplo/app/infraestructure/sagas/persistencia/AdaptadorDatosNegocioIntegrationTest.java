@@ -3,6 +3,7 @@ package com.ejemplo.app.infraestructure.sagas.persistencia;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -27,8 +28,8 @@ import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.ExternalIdDuplicadoException;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoEntity;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.ProcesoJpaRepository;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenEntity;
+import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenJpaRepository;
 
 /**
  * Adaptador JPA real sobre H2 en memoria (modo Oracle, ver
@@ -51,7 +52,7 @@ class AdaptadorDatosNegocioIntegrationTest {
     private DocumentoNegocioJpaRepository documentoNegocioJpaRepository;
 
     @Autowired
-    private ProcesoJpaRepository procesoJpaRepository;
+    private OrdenJpaRepository ordenJpaRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -159,10 +160,12 @@ class AdaptadorDatosNegocioIntegrationTest {
         assertThat(encontrado).isEmpty();
     }
 
-    /** Inserta una fila mínima en proceso (sin pasar por el agregado OrdenRoot completo, ver CLAUDE.md tarea). */
+    /** Inserta una fila mínima en orden (sin pasar por el agregado OrdenRoot completo, ver CLAUDE.md tarea). */
     private void insertarProcesoCon(ExternalId externalId) {
-        procesoJpaRepository.save(new ProcesoEntity(UUID.randomUUID(), "PRINCIPAL",
-                externalId.valor().toString(), "INICIAL", List.of()));
+        var ahora = Instant.now();
+        ordenJpaRepository.save(new OrdenEntity(UUID.randomUUID(), "PRINCIPAL",
+                externalId.valor().toString(), "INICIAL", List.of(),
+                0, ahora, null, null, null, null, null, null, 0L));
     }
 
     @Test
@@ -199,13 +202,14 @@ class AdaptadorDatosNegocioIntegrationTest {
 
     /**
      * Contexto Spring de test: escanea DatosNegocioEntity (este agregado) Y
-     * ProcesoEntity (motor de órdenes), porque idsHuerfanos() hace un
-     * anti-join nativo contra la tabla proceso (ver DatosNegocioJpaRepository).
+     * OrdenEntity (motor de órdenes), porque idsHuerfanos() hace un
+     * anti-join nativo contra la tabla orden (ver DatosNegocioJpaRepository;
+     * external_id vivía en proceso, fusionada en orden desde la fase 2).
      */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = {DatosNegocioEntity.class, ProcesoEntity.class})
-    @EnableJpaRepositories(basePackageClasses = {DatosNegocioEntity.class, ProcesoEntity.class})
+    @EntityScan(basePackageClasses = {DatosNegocioEntity.class, OrdenEntity.class})
+    @EnableJpaRepositories(basePackageClasses = {DatosNegocioEntity.class, OrdenEntity.class})
     static class ContextoTest {
 
         @Bean
