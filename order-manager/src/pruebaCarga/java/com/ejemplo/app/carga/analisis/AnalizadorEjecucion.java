@@ -9,9 +9,10 @@ import java.util.List;
 
 /**
  * Analizador determinista de una ejecución del harness de pruebas de carga
- * (fase 3 de {@code plan-pruebas-carga.md}): lee {@code pods.log} y consulta
- * la H2 de la carpeta de salida por JDBC, evalúa los 4 invariantes y calcula
- * las métricas/anomalías, y escribe {@code informe.md} en esa misma carpeta.
+ * (fase 3 de {@code plan-pruebas-carga.md}, ampliado en la fase 6): lee
+ * {@code pods.log} y consulta la H2 de la carpeta de salida por JDBC, evalúa
+ * los 5 invariantes y calcula las métricas/anomalías, y escribe
+ * {@code informe.md} en esa misma carpeta.
  *
  * <p>Se invoca de dos formas:
  * <ul>
@@ -76,7 +77,8 @@ public final class AnalizadorEjecucion {
                     Invariantes.ningunaEstancadaSinDueno(db),
                     Invariantes.sinSolapesDeEjecucion(eventos, lease),
                     Invariantes.reintentosRespetanPolitica(eventos),
-                    Invariantes.ticketsCoherentesConReintentos(db));
+                    Invariantes.ticketsCoherentesConReintentos(db),
+                    Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos));
             boolean bueno = invariantes.stream().allMatch(ResultadoInvariante::pasa);
 
             var throughput = Metricas.throughputPorMinuto(eventos);

@@ -14,7 +14,7 @@ ficheros:
 
 - **`informe.md`** — el resumen agregado que ya generó el analizador
   determinista (`com.ejemplo.app.carga.analisis.AnalizadorEjecucion`):
-  veredicto (BUENO/MALO), los 4 invariantes con su resultado pasa/falla y
+  veredicto (BUENO/MALO), los 5 invariantes con su resultado pasa/falla y
   detalle de violaciones si las hay, métricas (throughput por minuto,
   duración de saga p50/p95/p99/máx, reclamos y % de colisión por pod,
   reintentos totales y por tipo, distribución final de estados, profundidad

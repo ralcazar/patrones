@@ -35,6 +35,11 @@ sourceSets {
 	// multi-pod (plan-pruebas-carga.md). NO es un test (no lo ejecutan
 	// `test` ni `integrationTest`, no computa cobertura); solo necesita
 	// reutilizar las clases de producción (adaptadores, casos de uso).
+	// Fase 6: el paquete `carga.analisis` (analizador determinista de
+	// invariantes) SÍ lleva ahora un test JUnit propio (misma carpeta,
+	// mismo paquete que la clase que prueba: no hay árbol `src/pruebaCargaTest`
+	// separado, ver tarea `pruebaCargaTest` más abajo), ejecutado a mano,
+	// SIN engancharse a `check` ni a jacoco (sigue sin computar cobertura).
 	pruebaCarga {
 		compileClasspath += sourceSets.main.output
 		runtimeClasspath += sourceSets.main.output
@@ -84,6 +89,17 @@ dependencies {
 	// ya llegan transitivamente desde 'implementation' vía
 	// pruebaCargaImplementation.extendsFrom implementation.
 	pruebaCargaImplementation 'com.h2database:h2'
+
+	// SOLO para el test JUnit del analizador determinista (fase 6,
+	// `carga.analisis.InvariantesTest`): no hay otro test en `src/pruebaCarga`
+	// (el resto del harness se valida de punta a punta, no con JUnit), pero
+	// el invariante de "sin solicitudes duplicadas en SECUNDARIA2" opera solo
+	// sobre `List<EventoLog>` en memoria (sin BBDD ni Spring), así que un
+	// test unitario puro es la forma natural de fijar su comportamiento.
+	// Versión gestionada por Spring Boot BOM (io.spring.dependency-management),
+	// igual que el resto de dependencias del proyecto sin versión explícita.
+	pruebaCargaImplementation 'org.junit.jupiter:junit-jupiter'
+	pruebaCargaRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 dependencyManagement {
@@ -103,6 +119,30 @@ tasks.register('integrationTest', Test) {
 	classpath = sourceSets.integrationTest.runtimeClasspath
 	useJUnitPlatform()
 	shouldRunAfter test
+}
+
+// Test JUnit del paquete carga.analisis (fase 6): NO forma parte de `check`
+// ni de jacoco (src/pruebaCarga sigue sin computar cobertura, ver el propio
+// source set más arriba); es una task de verificación aparte para el único
+// invariante que se presta a un test unitario en memoria.
+tasks.register('pruebaCargaTest', Test) {
+	description = 'Ejecuta los tests JUnit de src/pruebaCarga (paquete carga.analisis). No entra en check/jacoco.'
+	group = 'pruebaCarga'
+	testClassesDirs = sourceSets.pruebaCarga.output.classesDirs
+	classpath = sourceSets.pruebaCarga.runtimeClasspath
+	useJUnitPlatform()
+	// El plugin `jacoco` instrumenta por defecto CUALQUIER task de tipo Test
+	// (agente + fichero .exec en build/jacoco/<task>.exec). jacocoTestReport
+	// y jacocoTestCoverageVerification agregan TODOS los *.exec de esa
+	// carpeta (ver más abajo), así que sin este `enabled = false` esta task
+	// contaminaría la cobertura de PROD con datos de un source set que
+	// CLAUDE.md dice explícitamente que no computa cobertura (y además
+	// rompe la validación de tareas de Gradle: build/jacoco pasaría a ser
+	// salida de esta task sin una dependencia declarada hacia
+	// jacocoTestCoverageVerification, que lee de esa misma carpeta).
+	jacoco {
+		enabled = false
+	}
 }
 
 // Lanza el harness de pruebas de carga multi-pod (plan-pruebas-carga.md).

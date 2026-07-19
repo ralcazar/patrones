@@ -11,11 +11,11 @@ import java.util.Set;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 
 /**
- * Los 4 invariantes del plan de pruebas de carga (fase 3), evaluados a partir
- * de {@code pods.log} ya parseado + consultas a la H2 de la ejecución. Cada
- * método es independiente y deliberadamente explícito (nada de heurísticas
- * compartidas ocultas): son el contrato que verifica si la ejecución fue
- * BUENA o MALA.
+ * Los 5 invariantes del plan de pruebas de carga (fases 3 y 6), evaluados a
+ * partir de {@code pods.log} ya parseado + consultas a la H2 de la ejecución.
+ * Cada método es independiente y deliberadamente explícito (nada de
+ * heurísticas compartidas ocultas): son el contrato que verifica si la
+ * ejecución fue BUENA o MALA.
  */
 final class Invariantes {
 
@@ -229,5 +229,85 @@ final class Invariantes {
         }
         return ResultadoInvariante.fallo("Tickets abiertos ⇔ reintentos agotados",
                 sinMotivo.size() + " ticket(s) de más, " + sinTicket.size() + " ticket(s) de menos", detalles);
+    }
+
+    /**
+     * Invariante 5 (fase 6): red de regresión, a nivel de prueba de carga,
+     * del Defecto A (lectura mixta / torn read en el registro de la
+     * respuesta de la secundaria 2) que las fases 1-2 de este mismo plan ya
+     * corrigieron a nivel de código de producción y test de integración.
+     * Aquí se comprueba el MISMO invariante pero observado en el log de una
+     * ejecución real multi-pod: para cada orden SECUNDARIA2, el número de
+     * {@code respuesta_secundaria2_registrada} con {@code mensaje_id}
+     * DISTINTO no puede superar 1 + el número de esas respuestas con
+     * {@code exito=false}. Cada fallo habilita como mucho un reintento
+     * legítimo de solicitud (que a su vez puede generar una respuesta más);
+     * si el número de respuestas distintas excede lo que los fallos
+     * habilitan, alguna solicitud se ha duplicado (dos hilos leyeron el
+     * mismo estado "sin solicitud en curso" y ambos solicitaron).
+     *
+     * <p><b>Es una COTA SUPERIOR, no una detección exacta</b>: con
+     * {@code kafka.tasa-perdida > 0} (respuestas simuladas que nunca llegan,
+     * ver escenarios {@code respuestas-perdidas}/{@code rafaga-extrema} y el
+     * propio {@code SimuladorRespuestaSecundaria2}) una respuesta duplicada
+     * puede perderse sin llegar nunca a {@code pods.log}, y entonces este
+     * invariante NO la ve — pero NUNCA da un falso positivo: solo cuenta
+     * {@code mensaje_id} que sí aparecen en el log (cada uno es una
+     * respuesta real y registrada), y la cota "1 + fallos" es exactamente lo
+     * que permite la escalera de reintento real (una respuesta final más una
+     * respuesta más por cada fallo que reprograma la solicitud).
+     *
+     * <p>Si Kafka reentrega el mismo evento (ver
+     * {@code ConsumidorRespuestaSecundaria2}), la segunda entrega comparte
+     * {@code mensaje_id} con la primera: no cuenta como una respuesta más
+     * (se agrupa por {@code mensaje_id}, no por línea de log), así que una
+     * reentrega nunca dispara una violación por sí sola.
+     */
+    static ResultadoInvariante sinSolicitudesDuplicadasSecundaria2(List<EventoLog> eventos) {
+        Map<String, Map<String, Boolean>> respuestasPorOrden = new LinkedHashMap<>();
+        Map<String, Map<String, Instant>> instantePorMensaje = new LinkedHashMap<>();
+        for (var evento : eventos) {
+            if (!evento.evento().equals("respuesta_secundaria2_registrada")) {
+                continue;
+            }
+            String ordenId = evento.orden();
+            String mensajeId = evento.campo("mensaje_id");
+            boolean exito = Boolean.parseBoolean(evento.campo("exito"));
+            // putIfAbsent: una reentrega de Kafka comparte mensaje_id con la
+            // primera entrega y no debe contarse como una respuesta más.
+            respuestasPorOrden.computeIfAbsent(ordenId, k -> new LinkedHashMap<>()).putIfAbsent(mensajeId, exito);
+            instantePorMensaje.computeIfAbsent(ordenId, k -> new LinkedHashMap<>()).putIfAbsent(mensajeId,
+                    evento.timestamp());
+        }
+
+        List<String> violaciones = new ArrayList<>();
+        for (var entrada : respuestasPorOrden.entrySet()) {
+            String ordenId = entrada.getKey();
+            Map<String, Boolean> respuestas = entrada.getValue();
+            long distintas = respuestas.size();
+            long fallosPrevios = respuestas.values().stream().filter(exito -> !exito).count();
+            long maximoPermitido = 1 + fallosPrevios;
+            if (distintas > maximoPermitido) {
+                var instantes = instantePorMensaje.get(ordenId);
+                List<String> mensajes = new ArrayList<>();
+                for (var respuesta : respuestas.entrySet()) {
+                    mensajes.add("mensaje_id=%s exito=%s en %s"
+                            .formatted(respuesta.getKey(), respuesta.getValue(), instantes.get(respuesta.getKey())));
+                }
+                violaciones.add(("orden=%s: %d respuesta(s) con mensaje_id distinto pero solo %d fallo(s) previo(s) "
+                        + "(máximo permitido %d) — %s")
+                        .formatted(ordenId, distintas, fallosPrevios, maximoPermitido, String.join("; ", mensajes)));
+            }
+        }
+
+        if (violaciones.isEmpty()) {
+            return ResultadoInvariante.ok("Sin solicitudes duplicadas en SECUNDARIA2",
+                    respuestasPorOrden.size() + " orden(es) SECUNDARIA2 con respuesta registrada, ninguna con más "
+                            + "respuestas distintas de las que sus fallos previos habilitan");
+        }
+        return ResultadoInvariante.fallo("Sin solicitudes duplicadas en SECUNDARIA2",
+                violaciones.size() + " de " + respuestasPorOrden.size() + " orden(es) SECUNDARIA2 con más respuestas "
+                        + "distintas de las que sus fallos previos habilitan (posible solicitud duplicada)",
+                violaciones);
     }
 }
