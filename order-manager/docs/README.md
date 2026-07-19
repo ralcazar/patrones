@@ -155,6 +155,39 @@ Tablas satélite por tipo de orden (una por saga, 1:1 con `proceso` por
 `datos_negocio` por `datosnegocio_id`), `proceso_saga_secundaria1`,
 `proceso_saga_secundaria2`, `proceso_saga_secundaria3`.
 
+## Pruebas de carga
+
+Además de los diagramas, `order-manager` tiene un harness de pruebas de carga
+multi-pod (`order-manager/src/pruebaCarga/`, task `./gradlew pruebaCarga
+-Pescenario=<nombre>`) que simula N pods del motor de órdenes ejecutando en
+paralelo contra la misma base de datos, con mocks de las llamadas REST
+(latencia + tasa de fallo configurables) y un simulador de la respuesta
+Kafka de la saga secundaria 2. No es código de producción (no aparece en
+`business/**` ni `infraestructure/**` salvo el puerto de observabilidad de la
+fase 0, `PuertoObservadorEjecucion`/`AdaptadorObservadorLog`, ver 17 y 24) y
+no participa en `./gradlew check`; por eso sus diagramas de arquitectura no
+se documentan aquí, solo se enlaza cómo usarlo.
+
+- **Cómo lanzarlo**: `./gradlew pruebaCarga -Pescenario=<nombre>` (el nombre
+  debe coincidir con un fichero `.yml` de
+  `order-manager/src/pruebaCarga/resources/escenarios/`; sin `-Pescenario`
+  falla con un mensaje claro). Cada ejecución escribe en
+  `order-manager/build/pruebaCarga/<nombre>-<timestamp>/`: `pods.log` (log
+  estructurado `clave=valor`), la H2 en fichero (`bbdd.mv.db`, consultable
+  tras la prueba) e `informe.md` (veredicto BUENO/MALO, invariantes
+  pasa/falla y métricas). El exit code del task es el veredicto.
+- **Qué escenarios hay**: el esquema completo y la matriz de los 8
+  escenarios versionados (`humo`, `base-sin-fallos`, `fallos-01/10/30`,
+  `contencion-8-pods`, `humo-contencion`, `respuestas-perdidas`) están en
+  `order-manager/src/pruebaCarga/resources/escenarios/README.md`, junto con
+  el catálogo exacto de eventos del log (contrato que consume el
+  analizador).
+- **Qué mide y qué no**: detecta cuellos de botella *algorítmicos* (lote,
+  intervalo, workers, política de reintentos, contención optimista). NO da
+  cifras extrapolables a producción (H2 embebida no es Oracle, N pods
+  comparten una máquina). Las conclusiones válidas son relativas entre
+  escenarios.
+
 ## Regenerar los PNG
 
 ```bash

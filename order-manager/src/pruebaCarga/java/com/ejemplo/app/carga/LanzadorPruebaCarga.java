@@ -90,7 +90,14 @@ public final class LanzadorPruebaCarga {
         log.info("evento=prueba_carga_iniciada escenario={} pods={} carpeta={} pod=lanzador",
                 escenario.nombre(), escenario.pods(), carpetaSalida);
 
-        String urlJdbc = "jdbc:h2:file:" + carpetaSalida.resolve("bbdd") + ";MODE=Oracle";
+        // DB_CLOSE_DELAY=-1: sin esto, H2 en fichero cierra la BBDD entera en
+        // cuanto el recuento de conexiones abiertas de TODO el proceso cae a
+        // cero (no solo las de un pod), lo que con N pods x su propio pool
+        // Hikari puede pasar en cualquier instante bajo contención y tumbar a
+        // los demás pods a mitad de ejecución (visto en un run de
+        // humo-contencion: JDBCConnectionException en cascada en los 8 pods).
+        // Con -1 la BBDD sobrevive mientras quede al menos un pod vivo.
+        String urlJdbc = "jdbc:h2:file:" + carpetaSalida.resolve("bbdd") + ";MODE=Oracle;DB_CLOSE_DELAY=-1";
         InicializadorEsquemaH2.inicializar(urlJdbc, directorioProyecto.resolve("db"));
 
         var contextos = new ConfigurableApplicationContext[escenario.pods()];

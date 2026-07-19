@@ -73,11 +73,7 @@ final class Invariantes {
             if (evento.orden() == null) {
                 continue; // eventos agregados (purga_datos_antiguos) no aplican
             }
-            boolean esApertura = evento.evento().equals("reclamo_ganado");
-            boolean esCierre = EVENTOS_CIERRE_SESION.contains(evento.evento())
-                    || (evento.evento().equals("colision_optimista")
-                            && !"reclamarToken".equals(evento.campo("operacion")));
-            if (esApertura || esCierre) {
+            if (esApertura(evento) || esCierre(evento)) {
                 porOrden.computeIfAbsent(evento.orden(), k -> new ArrayList<>()).add(evento);
             }
         }
@@ -87,13 +83,47 @@ final class Invariantes {
         for (var entrada : porOrden.entrySet()) {
             String ordenId = entrada.getKey();
             var lista = entrada.getValue();
-            lista.sort((a, b) -> a.timestamp().compareTo(b.timestamp()));
+            // Desempate a igualdad de milisegundo (resolución del timestamp
+            // del log), SOLO entre eventos de PODS DISTINTOS: con 8 JVMs
+            // escribiendo al mismo fichero, dos líneas de pods distintos
+            // pueden compartir timestamp sin que el orden de escritura
+            // refleje el orden causal real. El optimistic lock de BBDD
+            // garantiza que un reclamo_ganado de OTRO pod solo puede
+            // producirse una vez que el cierre de la sesión anterior ya está
+            // comprometido, así que entre pods distintos un cierre se ordena
+            // SIEMPRE antes que una apertura a igual timestamp.
+            //
+            // OJO: esta regla NO puede aplicarse entre eventos del MISMO pod:
+            // la apertura (reclamo_ganado) y el cierre de su propia sesión
+            // (p.ej. orden_aparcada) los escribe el mismo hilo, en ese orden
+            // real, aunque compartan milisegundo — reordenarlos (como hacía
+            // la primera versión de este fix) separa una apertura de su
+            // propio cierre y la deja "abierta" hasta la siguiente apertura,
+            // fabricando un solape falso (bug encontrado con humo-contencion:
+            // orden 774d64ef, reclamo_ganado y orden_aparcada del mismo
+            // pod=2 al mismo milisegundo). Entre eventos del mismo pod se
+            // conserva el orden original de la lista (orden de escritura en
+            // el log), que para un único hilo secuencial sí es fiable.
+            lista.sort((a, b) -> {
+                int porTiempo = a.timestamp().compareTo(b.timestamp());
+                if (porTiempo != 0) {
+                    return porTiempo;
+                }
+                if (a.pod().equals(b.pod())) {
+                    return 0; // mismo pod: mismo hilo, se conserva el orden de escritura (sort estable)
+                }
+                boolean aEsCierre = esCierre(a);
+                boolean bEsCierre = esCierre(b);
+                if (aEsCierre != bEsCierre) {
+                    return aEsCierre ? -1 : 1;
+                }
+                return 0;
+            });
 
             String podAbierto = null;
             Instant tsAbierto = null;
             for (var evento : lista) {
-                boolean esApertura = evento.evento().equals("reclamo_ganado");
-                if (esApertura) {
+                if (esApertura(evento)) {
                     if (podAbierto != null) {
                         Duration transcurrido = Duration.between(tsAbierto, evento.timestamp());
                         if (transcurrido.compareTo(lease) >= 0) {
@@ -126,6 +156,15 @@ final class Invariantes {
         return ResultadoInvariante.fallo("Sin solapes de ejecución entre pods",
                 violaciones.size() + " solape(s) real(es) detectado(s) (dos pods con el token vigente a la vez)",
                 violaciones, notas);
+    }
+
+    private static boolean esApertura(EventoLog evento) {
+        return evento.evento().equals("reclamo_ganado");
+    }
+
+    private static boolean esCierre(EventoLog evento) {
+        return EVENTOS_CIERRE_SESION.contains(evento.evento())
+                || (evento.evento().equals("colision_optimista") && !"reclamarToken".equals(evento.campo("operacion")));
     }
 
     /**

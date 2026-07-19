@@ -1,0 +1,33 @@
+# Versión corta de contencion-8-pods: mismo espíritu (muchos pods, lote
+# pequeño e intervalo corto para forzar colisiones optimistas) pero con
+# menos tramitaciones para que el harness se valide bajo contención real en
+# un tiempo asumible (no busca medir throughput con rigor, solo comprobar
+# que aparecen colisiones y que el informe las cuenta sin violar invariantes).
+nombre: humo-contencion
+descripcion: Validación rápida del harness bajo contención real (8 pods, lote pequeño), sin fallos REST/Kafka.
+
+semilla: 42
+duracion: PT5M
+drenaje-maximo: PT2M
+
+pods: 8
+
+inyeccion:
+  tramitaciones: 400
+  ritmo-por-segundo: 4
+
+rest:
+  latencia-ms: { min: 100, max: 400 }
+  tasa-fallo: 0.0
+
+kafka:
+  retraso-ms: { min: 500, max: 3000 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 500
+    trabajadores: 4
+    lote: 8          # deliberadamente < trabajadores totales (8 pods x 4),
+                     # igual que contencion-8-pods: fuerza colisión optimista
+  lease: PT10M

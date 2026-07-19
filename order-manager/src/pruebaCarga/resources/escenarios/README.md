@@ -87,6 +87,7 @@ Cada ejecución escribe en `build/pruebaCarga/<nombre>-<timestamp>/`
 | `fallos-30` | Estrés: ¿la cola drena? ¿se abren los tickets que tocan? |
 | `contencion-8-pods` | ¿Cuánta colisión optimista hay con muchos pods y poco lote? |
 | `respuestas-perdidas` | ¿La conciliación de la secundaria 2 y los tickets reaccionan? |
+| `humo-contencion` | Versión corta de `contencion-8-pods` (~5 min): ¿el harness registra y cuenta colisiones optimistas reales en un tiempo asumible? |
 
 Los escenarios comparables entre sí (`base-sin-fallos`, `fallos-*`)
 mantienen idénticos todo lo demás (pods, carga, latencias, motor): solo
