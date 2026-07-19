@@ -60,7 +60,7 @@ public class ServicioSagaSecundaria3 implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicar(OrdenRoot orden, SagaSecundaria3 saga, ResultadoPasoSecundaria3 resultado) {
-        saga.aplicarYAvanzar(resultado);
+        orden.reemplazarProceso(saga.aplicarYAvanzar(resultado));
         orden.finalizar(Instant.now());
         repo.guardar(orden);
         return new SenalPaso.Finalizada();

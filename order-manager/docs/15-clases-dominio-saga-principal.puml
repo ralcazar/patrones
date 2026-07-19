@@ -10,20 +10,20 @@ abstract class "Proceso<EstadoSagaPrincipal>\n(business.ordermanager.dominio —
 }
 
 package "dominio.sagaprincipal" {
-  class SagaPrincipal <<@Entity>> {
+  class SagaPrincipal <<@ValueObject>> {
     +{static} TIPO : TipoOrden = new TipoOrden("PRINCIPAL")
     -ctx : ContextoTramitacion
     +{static} crear(id, externalId, datosNegocioId) : SagaPrincipal
     +{static} rehidratar(id, externalId, ctx, estado, auditoria)
     +tipo() : TipoOrden  «TIPO»
     +comandoActual() : ComandoPasoPrincipal  «switch(estado)»
-    +aplicarYAvanzar(ResultadoPasoPrincipal)  «ctx = ctx.aplicar(r); avanzar()»
+    +aplicarYAvanzar(ResultadoPasoPrincipal) : SagaPrincipal  «ctx' = ctx.aplicar(r);\ndevuelve instancia nueva avanzada»
     +terminada() : boolean  «TERMINADA || CANCELADA»
-    +marcarPasoActualOkManual(quien, justificacion, datos)
+    +marcarPasoActualOkManual(quien, justificacion, datos) : SagaPrincipal
     +contextosArranque() : List<ContextoArranque>  «al llegar a TERMINADA»
     +esCancelable() : boolean  «estado < PASO7_HECHO»
-    +cancelar(quien, motivo)
-    +compensacionCompletada()
+    +cancelar(quien, motivo) : SagaPrincipal
+    +compensacionCompletada() : SagaPrincipal
     +contexto() : ContextoTramitacion
   }
   note right of SagaPrincipal
@@ -33,11 +33,15 @@ package "dominio.sagaprincipal" {
     SoporteSagaPrincipal (ver 23). Punto de no retorno: PASO7_HECHO
     ya no es cancelable (PuntoNoRetornoSuperadoException, definida
     en este mismo paquete). cancelar(): TERMINADA->
-    OrdenYaCompletadaException; COMPENSAR_*/CANCELADA-> no-op; si
-    no, según el estado, COMPENSAR_PASO2/COMPENSAR_PASO1/CANCELADA.
+    OrdenYaCompletadaException; COMPENSAR_*/CANCELADA-> no-op
+    (devuelve this, misma instancia); si no, según el estado,
+    COMPENSAR_PASO2/COMPENSAR_PASO1/CANCELADA (instancia nueva).
     Al llegar a TERMINADA (tras PASO8), la capa de aplicación crea 3
     agregados hijos (ver 03) — contextosArranque() los recorta con
-    exactamente lo que cada secundaria necesita.
+    exactamente lo que cada secundaria necesita. VO inmutable (ver
+    14): cada transición devuelve una instancia nueva; el llamante
+    (ServicioSagaPrincipal/ServicioCancelarTramitacion, ver 18)
+    hace orden.reemplazarProceso(nuevaSaga) antes de guardar.
   end note
 
   enum EstadoSagaPrincipal {

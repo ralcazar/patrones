@@ -88,8 +88,12 @@ package "servicio" {
     de ServicioContinuarOrden), hace el REST del paso FUERA de tx
     (puede lanzar) y llama
     a self.aplicarX(...) -- vía su propio proxy auto-inyectado,
-    @Transactional -- que aplica el resultado a esa MISMA instancia
-    (sin recargar) y la parte operativa de la señal
+    @Transactional -- que aplica el resultado sobre esa MISMA
+    instancia de OrdenRoot (sin recargar): el Proceso que contiene es
+    un VO inmutable (ver 14), así que aplicarX captura la instancia
+    nueva que devuelve la transición (saga.aplicarYAvanzar(...) etc.)
+    y la fija con orden.reemplazarProceso(nuevaSaga) antes de la
+    parte operativa de la señal
     (resetearIntentos()+renovarLease() | aparcar() | finalizar()),
     y guarda una única vez: si otro actor escribió con el REST en
     vuelo, guardar falla por version (takeover seguro).

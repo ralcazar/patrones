@@ -3,6 +3,16 @@ title Máquinas de estado de NEGOCIO (EstadoSaga*) y el modelo OPERATIVO de fina
 ' Sin Graphviz instalado: usar el motor de layout embebido
 !pragma layout smetana
 
+note as NInmutabilidad
+  Proceso<E> y las 4 sagas son @ValueObject inmutables (ver 14-16, 25):
+  cada transición de las de abajo (aplicarYAvanzar, cancelar,
+  compensacionCompletada, solicitudEnviada, respuestaRecibida,
+  volverASolicitar) NO muta el objeto -- devuelve una instancia
+  NUEVA en el estado siguiente. OrdenRoot.reemplazarProceso(nueva)
+  es quien sustituye el valor en el agregado tras cada transición
+  (ver 02, 03, 04, 05, 06, 08).
+end note
+
 state "EstadoSagaPrincipal (SagaPrincipal)" as MPrincipal {
   state INICIAL
   state PASO1_HECHO

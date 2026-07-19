@@ -52,7 +52,7 @@ package "business.ordermanager.aplicacion.servicio" {
     -repo : RepositorioOrden
     -consultas : PuertoConsultaOrdenesSoporte
     +reintentarPaso(tipo, id, nombrePaso, quien)  «@Transactional: orden.resetearIntentos()+despertar()»
-    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «@Transactional: orden.proceso().marcarPasoActualOkManual()+orden.despertar()»
+    +marcarPasoOk(tipo, id, nombrePaso, quien, ...)  «@Transactional:\norden.reemplazarProceso(orden.proceso().marcarPasoActualOkManual(...))+orden.despertar()»
     +ordenesBloqueadas/EnEjecucion/ConTicketPendiente/buscar/\ndetalle  «delegan tal cual en consultas»
   }
   note bottom of ServicioSoporteOrdenes
@@ -159,7 +159,7 @@ package "business.sagas.aplicacion" {
   }
   class ServicioCancelarTramitacion <<@Service>> {
     -repo : RepositorioOrden
-    +cancelarPrincipal(id, quien, motivo)  «@Transactional: (SagaPrincipal) orden.proceso();\nsaga.cancelar(quien, motivo); orden.despertar(ahora)»
+    +cancelarPrincipal(id, quien, motivo)  «@Transactional: (SagaPrincipal) orden.proceso();\norden.reemplazarProceso(saga.cancelar(quien, motivo)); orden.despertar(ahora)»
   }
   class ServicioVistaTramitacion <<@Service>> {
     -consultas : PuertoConsultaOrdenesSoporte

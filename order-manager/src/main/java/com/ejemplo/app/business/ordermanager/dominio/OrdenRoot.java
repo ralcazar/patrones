@@ -24,7 +24,7 @@ public final class OrdenRoot {
 
     @Identity
     private final OrdenId id;
-    private final Proceso<?> proceso;
+    private Proceso<?> proceso;
     private int intentos;
     private Instant proximoReintentoEn;
     private UUID tokenTrabajador;
@@ -132,6 +132,18 @@ public final class OrdenRoot {
      */
     public boolean turnoVencido(Instant ahora) {
         return !proximoReintentoEn.isAfter(ahora);
+    }
+
+    /**
+     * Sustituye el valor del {@link Proceso} tras una transición de negocio.
+     * Al ser {@code Proceso} un value object inmutable (ver su javadoc), toda
+     * transición devuelve una instancia nueva en vez de mutar la existente;
+     * la raíz del agregado es la DUEÑA del valor y el ÚNICO punto donde se
+     * reasigna el campo — nadie más (aplicación, infraestructura) debe
+     * reemplazarlo por otra vía.
+     */
+    public void reemplazarProceso(Proceso<?> nuevo) {
+        this.proceso = nuevo;
     }
 
     public Proceso<?> proceso() { return proceso; }

@@ -49,7 +49,7 @@ public class ServicioSoporteOrdenes implements CasoUsoIntervenirOrden, CasoUsoCo
     public void marcarPasoOk(TipoOrden tipo, OrdenId id, UsuarioSoporte quien,
                              String justificacion, Map<String, String> datosManuales) {
         var orden = repo.cargar(id);
-        orden.proceso().marcarPasoActualOkManual(quien, justificacion, datosManuales);
+        orden.reemplazarProceso(orden.proceso().marcarPasoActualOkManual(quien, justificacion, datosManuales));
         orden.despertar(Instant.now());
         repo.guardar(orden);
     }

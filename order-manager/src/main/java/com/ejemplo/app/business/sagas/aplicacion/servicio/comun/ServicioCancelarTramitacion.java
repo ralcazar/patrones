@@ -33,7 +33,7 @@ public class ServicioCancelarTramitacion implements CasoUsoCancelarTramitacion {
         // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
         var orden = repo.cargar(id);
         var saga = (SagaPrincipal) orden.proceso();
-        saga.cancelar(quien, motivo);
+        orden.reemplazarProceso(saga.cancelar(quien, motivo));
         orden.despertar(Instant.now());
         repo.guardar(orden);
     }

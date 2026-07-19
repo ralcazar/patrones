@@ -60,6 +60,8 @@ group Transacción (@Transactional en el propio método, sin self)
   return proceso
   SOP -> ORDEN ++ : proceso.marcarPasoActualOkManual(\nquien, justificacion, datosManuales)
   ORDEN -> ORDEN : construye el ResultadoPaso a partir de datosManuales\n(lanza DatosManualesRequeridosException si faltan);\naplica y avanza(); auditar(MARCAR_OK_MANUAL)
+  return procesoNuevo (instancia nueva, VO inmutable: proceso no muta)
+  SOP -> ORDEN ++ : orden.reemplazarProceso(procesoNuevo)
   return
   SOP -> ORDEN ++ : despertar(Instant.now())
   return
@@ -84,11 +86,13 @@ group Transacción (@Transactional en el propio método, sin self)
     SAGA --> CANC : lanza PuntoNoRetornoSuperadoException
     note right of REST : el adaptador REST lo mapea a 409 Conflict
   else COMPENSAR_PASO2 / COMPENSAR_PASO1 / CANCELADA
-    SAGA -> SAGA : no-op idempotente
+    SAGA -> SAGA : no-op idempotente (return this, misma instancia)
   else cancelable (< PASO7_HECHO)
     SAGA -> SAGA : estado = COMPENSAR_PASO2 (si >= PASO2_HECHO),\nCOMPENSAR_PASO1 (si >= PASO1_HECHO) o CANCELADA;\nauditar(CANCELAR, motivo)
   end
-  deactivate SAGA
+  return nuevaSaga (instancia nueva salvo el no-op, VO inmutable: SAGA no muta)
+  CANC -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
+  return
   CANC -> ORDEN ++ : despertar(Instant.now())
   return
   CANC -> REPO ++ : guardar(orden)
@@ -133,6 +137,8 @@ ORQ -> ORQ ++ : self.aplicarCompensacion(orden, saga)  -- vía proxy (@Transacti
 group Transacción única
   ORQ -> SAGA ++ : saga.compensacionCompletada()
   SAGA -> SAGA : COMPENSAR_PASO2 -> COMPENSAR_PASO1
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
   ORQ -> ORDEN ++ : resetearIntentos()
   return

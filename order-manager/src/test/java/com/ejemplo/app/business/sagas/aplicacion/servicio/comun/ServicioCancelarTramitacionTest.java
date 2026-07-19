@@ -65,14 +65,15 @@ class ServicioCancelarTramitacionTest {
         var id = crearTramitacion();
         var orden = repo.cargar(id);
         var saga = (SagaPrincipal) orden.proceso();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
+        orden.reemplazarProceso(saga);
         repo.guardar(orden);
 
         assertThatThrownBy(() -> servicio.cancelarPrincipal(id, new UsuarioSoporte("ana"), "motivo"))

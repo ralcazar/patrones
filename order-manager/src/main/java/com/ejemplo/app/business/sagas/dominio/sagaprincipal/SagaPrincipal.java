@@ -2,8 +2,9 @@ package com.ejemplo.app.business.sagas.dominio.sagaprincipal;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-import org.jmolecules.ddd.annotation.Entity;
+import org.jmolecules.ddd.annotation.ValueObject;
 
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
@@ -36,18 +37,20 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
  * - Al alcanzar TERMINADA (tras PASO8): la saga decide arrancar las 3 sagas
  *   secundarias (SECUNDARIA1, SECUNDARIA2, SECUNDARIA3), independientes entre
  *   sí y sin join.
+ *
+ * Value object inmutable (ver {@link Proceso}): cada transición devuelve una
+ * instancia nueva de {@code SagaPrincipal}, dejando la original intacta.
  */
-@Entity
+@ValueObject
 public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
 
     public static final TipoOrden TIPO = new TipoOrden("PRINCIPAL");
 
-    private ContextoTramitacion ctx;
+    private final ContextoTramitacion ctx;
 
     private SagaPrincipal(OrdenId id, ExternalId externalId, ContextoTramitacion ctx,
                               EstadoSagaPrincipal estado) {
-        super(id, externalId, estado);
-        this.ctx = ctx;
+        this(id, externalId, ctx, estado, List.of());
     }
 
     private SagaPrincipal(OrdenId id, ExternalId externalId, ContextoTramitacion ctx,
@@ -90,12 +93,13 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
     }
 
     @Override
-    public void aplicarYAvanzar(ResultadoPaso resultado) {
+    public SagaPrincipal aplicarYAvanzar(ResultadoPaso resultado) {
         if (!(resultado instanceof ResultadoPasoPrincipal r)) {
             throw new IllegalArgumentException("Resultado ajeno a la saga principal: " + resultado);
         }
-        ctx = ctx.aplicar(r);
-        avanzar();
+        var nuevoCtx = ctx.aplicar(r);
+        var nuevoEstado = siguienteEstado();
+        return new SagaPrincipal(id, externalId, nuevoCtx, nuevoEstado, auditoria);
     }
 
     @Override
@@ -104,7 +108,8 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
     }
 
     @Override
-    public void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
+    public SagaPrincipal marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion,
+            Map<String, String> datos) {
         if (!tienePasoPendiente(estado)) {
             throw new PasoNoIntervenibleException(id, "no tiene paso pendiente en estado " + estado);
         }
@@ -112,12 +117,10 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
             throw new DatosManualesRequeridosException(id, estado.name());
         }
         var resultado = construirResultadoManual(estado, datos);
-        if (resultado != null) {
-            ctx = ctx.aplicar(resultado);
-        }
-        var estadoAnterior = estado;
-        avanzar();
-        auditar(quien, "MARCAR_OK_MANUAL", estadoAnterior + ": " + justificacion);
+        var nuevoCtx = resultado != null ? ctx.aplicar(resultado) : ctx;
+        var nuevaAuditoria = auditar(quien, "MARCAR_OK_MANUAL", estado + ": " + justificacion);
+        var nuevoEstado = siguienteEstado();
+        return new SagaPrincipal(id, externalId, nuevoCtx, nuevoEstado, nuevaAuditoria);
     }
 
     /** Al alcanzar TERMINADA (tras PASO8), la saga arranca las 3 secundarias con su contexto recortado. */
@@ -128,8 +131,8 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
                 new ContextoArranque.ArranqueSecundaria3(externalId, ctx.refPaso7()));
     }
 
-    private void avanzar() {
-        estado = switch (estado) {
+    private EstadoSagaPrincipal siguienteEstado() {
+        return switch (estado) {
             case INICIAL -> EstadoSagaPrincipal.PASO1_HECHO;
             case PASO1_HECHO -> EstadoSagaPrincipal.PASO2_HECHO;
             case PASO2_HECHO -> EstadoSagaPrincipal.PASO3_HECHO;
@@ -186,37 +189,52 @@ public final class SagaPrincipal extends Proceso<EstadoSagaPrincipal> {
         return estado.ordinal() < EstadoSagaPrincipal.PASO7_HECHO.ordinal();
     }
 
-    /** Cancela la saga. Solo posible ANTES de alcanzar PASO7_HECHO. Dispara la compensación de PASO2 y PASO1. */
-    public void cancelar(UsuarioSoporte quien, String motivo) {
+    /** Cancela la saga y devuelve la instancia siguiente. Solo posible ANTES de alcanzar PASO7_HECHO. Dispara la compensación de PASO2 y PASO1. */
+    public SagaPrincipal cancelar(UsuarioSoporte quien, String motivo) {
         if (estado == EstadoSagaPrincipal.TERMINADA) {
             throw new OrdenYaCompletadaException(id);
         }
         if (estado == EstadoSagaPrincipal.COMPENSAR_PASO2
                 || estado == EstadoSagaPrincipal.COMPENSAR_PASO1
                 || estado == EstadoSagaPrincipal.CANCELADA) {
-            return; // idempotente
+            return this; // idempotente
         }
         if (estado == EstadoSagaPrincipal.PASO7_HECHO) {
             throw new PuntoNoRetornoSuperadoException(id);
         }
 
-        estado = estado.ordinal() >= EstadoSagaPrincipal.PASO2_HECHO.ordinal()
+        var nuevoEstado = estado.ordinal() >= EstadoSagaPrincipal.PASO2_HECHO.ordinal()
                 ? EstadoSagaPrincipal.COMPENSAR_PASO2
                 : estado.ordinal() >= EstadoSagaPrincipal.PASO1_HECHO.ordinal()
                         ? EstadoSagaPrincipal.COMPENSAR_PASO1
                         : EstadoSagaPrincipal.CANCELADA;
-        auditar(quien, "CANCELAR", motivo);
+        var nuevaAuditoria = auditar(quien, "CANCELAR", motivo);
+        return new SagaPrincipal(id, externalId, ctx, nuevoEstado, nuevaAuditoria);
     }
 
     /** El servicio de la saga ya ejecutó la compensación del paso correspondiente al estado actual. */
-    public void compensacionCompletada() {
-        estado = switch (estado) {
+    public SagaPrincipal compensacionCompletada() {
+        var nuevoEstado = switch (estado) {
             case COMPENSAR_PASO2 -> EstadoSagaPrincipal.COMPENSAR_PASO1;
             case COMPENSAR_PASO1 -> EstadoSagaPrincipal.CANCELADA;
             default -> throw new IllegalStateException(
                     "compensacionCompletada() invocado en estado " + estado);
         };
+        return new SagaPrincipal(id, externalId, ctx, nuevoEstado, auditoria);
     }
 
     public ContextoTramitacion contexto() { return ctx; }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!super.equals(o)) return false;
+        SagaPrincipal that = (SagaPrincipal) o;
+        return Objects.equals(ctx, that.ctx);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), ctx);
+    }
 }

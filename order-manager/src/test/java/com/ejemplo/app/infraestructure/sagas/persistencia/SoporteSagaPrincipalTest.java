@@ -107,18 +107,18 @@ class SoporteSagaPrincipalTest {
     void guardarContexto_conTodasLasRefsRellenasGuardaLaEntidadCompleta() {
         var id = OrdenId.nuevo();
         var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()), DatosNegocioId.nuevo());
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso6("ref6")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(
                 new com.ejemplo.app.business.sagas.dominio.sagaprincipal.RefPaso8("ref8")));
         var captor = ArgumentCaptor.forClass(ProcesoSagaPrincipalEntity.class);
 

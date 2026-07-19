@@ -16,7 +16,13 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefInicio;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.ResultadoPasoSecundaria1;
 
-/** Saga secundaria 3: un único paso síncrono, INICIAL -&gt; TERMINADA. */
+/**
+ * Saga secundaria 3: un único paso síncrono, INICIAL -&gt; TERMINADA.
+ *
+ * {@code SagaSecundaria3} es un value object inmutable: cada transición
+ * devuelve una instancia nueva, así que los tests reasignan la variable
+ * local tras cada llamada en vez de mutar "in place".
+ */
 class SagaSecundaria3Test {
 
     private static SagaSecundaria3 nueva() {
@@ -38,7 +44,7 @@ class SagaSecundaria3Test {
     void aplicarYAvanzar_ejecutada_terminaLaSagaConLaRef() {
         var saga = nueva();
 
-        saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria3.TERMINADA);
         assertThat(saga.terminada()).isTrue();
@@ -48,7 +54,7 @@ class SagaSecundaria3Test {
     @Test
     void comandoActual_enTerminadaNoTienePasoPendiente() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
 
         assertThatThrownBy(saga::comandoActual).isInstanceOf(IllegalStateException.class);
     }
@@ -65,7 +71,7 @@ class SagaSecundaria3Test {
     void marcarPasoActualOkManual_enInicial_terminaLaSagaManualmente() {
         var saga = nueva();
 
-        saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null);
+        saga = saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null);
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria3.TERMINADA);
     }
@@ -73,9 +79,72 @@ class SagaSecundaria3Test {
     @Test
     void marcarPasoActualOkManual_enTerminada_lanzaPasoNoIntervenibleException() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoSecundaria3.Ejecutada(new RefEjecucion("ejec1")));
+        var terminada = saga;
 
-        assertThatThrownBy(() -> saga.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null))
+        assertThatThrownBy(() -> terminada.marcarPasoActualOkManual(new UsuarioSoporte("ana"), "motivo", null))
                 .isInstanceOf(PasoNoIntervenibleException.class);
+    }
+
+    // ------------------------------------------------------------------
+    // equals/hashCode: value object -- igualdad por (id, externalId, estado,
+    // auditoria) heredados de Proceso, más refPaso7/refEjecucion.
+    // ------------------------------------------------------------------
+
+    @Test
+    void equals_esReflexivo_mismaInstancia() {
+        var saga = nueva();
+
+        assertThat(saga.equals(saga)).isTrue();
+    }
+
+    @Test
+    void equals_conProcesoDeOtroTipo_esFalse() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var secundaria3 = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), null,
+                EstadoSagaSecundaria3.INICIAL, java.util.List.of());
+        var secundaria1 = com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1.rehidratar(
+                id, externalId, new com.ejemplo.app.business.sagas.dominio.comun.RefPaso1("ref1"), null, null,
+                com.ejemplo.app.business.sagas.dominio.sagasecundaria1.EstadoSagaSecundaria1.INICIAL, java.util.List.of());
+
+        assertThat(secundaria3.equals(secundaria1)).isFalse();
+    }
+
+    @Test
+    void equals_conRefPaso7Distinta_esFalse() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var uno = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), null,
+                EstadoSagaSecundaria3.INICIAL, java.util.List.of());
+        var otro = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("otro-ref7"), null,
+                EstadoSagaSecundaria3.INICIAL, java.util.List.of());
+
+        assertThat(uno.equals(otro)).isFalse();
+    }
+
+    @Test
+    void equals_conRefEjecucionDistinta_esFalse() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var uno = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), new RefEjecucion("ejec1"),
+                EstadoSagaSecundaria3.TERMINADA, java.util.List.of());
+        var otro = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), new RefEjecucion("ejec2"),
+                EstadoSagaSecundaria3.TERMINADA, java.util.List.of());
+
+        assertThat(uno.equals(otro)).isFalse();
+    }
+
+    @Test
+    void equals_conTodosLosCamposIguales_esTrue() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var uno = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), new RefEjecucion("ejec1"),
+                EstadoSagaSecundaria3.TERMINADA, java.util.List.of());
+        var otro = SagaSecundaria3.rehidratar(id, externalId, new RefPaso7("ref7"), new RefEjecucion("ejec1"),
+                EstadoSagaSecundaria3.TERMINADA, java.util.List.of());
+
+        assertThat(uno).isEqualTo(otro);
+        assertThat(uno.hashCode()).isEqualTo(otro.hashCode());
     }
 }

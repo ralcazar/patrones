@@ -146,7 +146,7 @@ class ServicioSagaPrincipalTest {
         // Soporte cancela: dispara la compensación PASO2 -> PASO1 -> CANCELADA.
         var ordenACancelar = repo.cargar(id);
         var sagaACancelar = (SagaPrincipal) ordenACancelar.proceso();
-        sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio");
+        ordenACancelar.reemplazarProceso(sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio"));
         ordenACancelar.despertar(Instant.now());
         repo.guardar(ordenACancelar);
 
@@ -172,8 +172,9 @@ class ServicioSagaPrincipalTest {
         // pod hace takeover y ejecuta PASO3 de verdad (escribe y sube la version).
         when(puertoPaso3.ejecutar(any())).thenAnswer(invocacion -> {
             var ordenOtroPod = repo.cargar(id);
-            ((SagaPrincipal) ordenOtroPod.proceso())
-                    .aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod")));
+            var sagaOtroPod = (SagaPrincipal) ordenOtroPod.proceso();
+            ordenOtroPod.reemplazarProceso(sagaOtroPod.aplicarYAvanzar(
+                    new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod"))));
             repo.guardar(ordenOtroPod);
             return new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-zombi"));
         });

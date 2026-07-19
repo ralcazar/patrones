@@ -43,9 +43,13 @@ package "business.sagas.aplicacion.servicio.sagasecundaria2" {
     ver 17); cada rama llama a su self.aplicarX(...) -- vía el
     proxy auto-inyectado, para que @Transactional no se ignore por
     auto-invocación, incluida aplicarFinalizacionYaResuelta que no
-    tiene REST previo -- y guarda esa misma instancia sin recargar:
-    si otro actor escribió entre medias (consumer de Kafka,
-    takeover), guardar falla por version.
+    tiene REST previo -- y guarda esa misma instancia de OrdenRoot
+    sin recargar: SagaSecundaria2 es un VO inmutable (ver 16), así
+    que aplicarSolicitud/aplicarConciliacionDisponible hacen
+    orden.reemplazarProceso(saga.solicitudEnviada() /
+    saga.respuestaRecibida(ref)) antes de aparcar/finalizar; si otro
+    actor escribió entre medias (consumer de Kafka, takeover),
+    guardar falla por version.
   end note
 }
 
@@ -54,8 +58,8 @@ package "business.sagas.aplicacion.servicio.comun" {
     -repo : RepositorioOrden
     -dedup : PuertoMensajesProcesados
     -politica : PoliticaReintentos
-    +respuestaOk(ordenId, ref, mensajeId)  «@Transactional: dedup +\nsaga.respuestaRecibida(ref) + orden.despertar(ahora)»
-    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\nsaga.volverASolicitar() + orden.programarReintento(politica, ahora)»
+    +respuestaOk(ordenId, ref, mensajeId)  «@Transactional: dedup +\norden.reemplazarProceso(saga.respuestaRecibida(ref)) + orden.despertar(ahora)»
+    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\norden.reemplazarProceso(saga.volverASolicitar()) + orden.programarReintento(politica, ahora)»
   }
   note bottom of ServicioRegistrarRespuestaSecundaria2
     @Transactional directamente en respuestaOk/respuestaError: se

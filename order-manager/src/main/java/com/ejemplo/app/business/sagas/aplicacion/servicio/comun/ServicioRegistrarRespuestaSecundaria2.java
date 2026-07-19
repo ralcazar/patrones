@@ -47,7 +47,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         dedup.registrar(msgId);
         var orden = repo.cargar(sagaId);
         var saga = (SagaSecundaria2) orden.proceso();
-        saga.respuestaRecibida(ref);
+        orden.reemplazarProceso(saga.respuestaRecibida(ref));
         orden.despertar(Instant.now());
         repo.guardar(orden);
     }
@@ -63,7 +63,7 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         dedup.registrar(msgId);
         var orden = repo.cargar(sagaId);
         var saga = (SagaSecundaria2) orden.proceso();
-        saga.volverASolicitar();
+        orden.reemplazarProceso(saga.volverASolicitar());
         orden.programarReintento(politica, new DetalleError(codigo, detalle), Instant.now());
         repo.guardar(orden);
     }

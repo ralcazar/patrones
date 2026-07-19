@@ -2,8 +2,9 @@ package com.ejemplo.app.business.sagas.dominio.sagasecundaria2;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-import org.jmolecules.ddd.annotation.Entity;
+import org.jmolecules.ddd.annotation.ValueObject;
 
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
@@ -27,19 +28,21 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
  *
  * Nace cuando la principal alcanza TERMINADA (después del punto de no
  * retorno): nunca se cancela ni compensa.
+ *
+ * Value object inmutable (ver {@link Proceso}): cada transición devuelve una
+ * instancia nueva de {@code SagaSecundaria2}, dejando la original intacta.
  */
-@Entity
+@ValueObject
 public final class SagaSecundaria2 extends Proceso<EstadoSagaSecundaria2> {
 
     public static final TipoOrden TIPO = new TipoOrden("SECUNDARIA2");
 
     private final RefPaso5 refPaso5;
-    private RefRespuesta refRespuesta;
+    private final RefRespuesta refRespuesta;
 
     private SagaSecundaria2(OrdenId id, ExternalId externalId, RefPaso5 refPaso5,
             EstadoSagaSecundaria2 estado) {
-        super(id, externalId, estado);
-        this.refPaso5 = refPaso5;
+        this(id, externalId, refPaso5, null, estado, List.of());
     }
 
     private SagaSecundaria2(OrdenId id, ExternalId externalId, RefPaso5 refPaso5,
@@ -71,11 +74,11 @@ public final class SagaSecundaria2 extends Proceso<EstadoSagaSecundaria2> {
     }
 
     @Override
-    public void aplicarYAvanzar(ResultadoPaso resultado) {
+    public SagaSecundaria2 aplicarYAvanzar(ResultadoPaso resultado) {
         if (!(resultado instanceof ResultadoPasoSecundaria2.Respuesta(var ref))) {
             throw new IllegalArgumentException("Resultado ajeno a la saga secundaria 2: " + resultado);
         }
-        respuestaRecibida(ref);
+        return respuestaRecibida(ref);
     }
 
     @Override
@@ -84,34 +87,50 @@ public final class SagaSecundaria2 extends Proceso<EstadoSagaSecundaria2> {
     }
 
     @Override
-    public void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
+    public SagaSecundaria2 marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion,
+            Map<String, String> datos) {
         if (estado == EstadoSagaSecundaria2.TERMINADA) {
             throw new PasoNoIntervenibleException(id, "no tiene paso pendiente en estado " + estado);
         }
-        estado = EstadoSagaSecundaria2.TERMINADA;
-        auditar(quien, "MARCAR_OK_MANUAL", "SOLICITUD: " + justificacion);
+        var nuevaAuditoria = auditar(quien, "MARCAR_OK_MANUAL", "SOLICITUD: " + justificacion);
+        return new SagaSecundaria2(id, externalId, refPaso5, refRespuesta, EstadoSagaSecundaria2.TERMINADA,
+                nuevaAuditoria);
     }
 
     /** La solicitud REST se envió: queda a la espera del evento Kafka de respuesta. */
-    public void solicitudEnviada() {
+    public SagaSecundaria2 solicitudEnviada() {
         if (estado != EstadoSagaSecundaria2.INICIAL) {
             throw new IllegalStateException(
                     "solicitudEnviada() invocado en estado " + estado);
         }
-        estado = EstadoSagaSecundaria2.ESPERANDO_RESPUESTA;
+        return new SagaSecundaria2(id, externalId, refPaso5, refRespuesta,
+                EstadoSagaSecundaria2.ESPERANDO_RESPUESTA, auditoria);
     }
 
     /** Llega el evento Kafka (o la conciliación) con la respuesta: la saga termina. */
-    public void respuestaRecibida(RefRespuesta ref) {
-        this.refRespuesta = ref;
-        estado = EstadoSagaSecundaria2.TERMINADA;
+    public SagaSecundaria2 respuestaRecibida(RefRespuesta ref) {
+        return new SagaSecundaria2(id, externalId, refPaso5, ref, EstadoSagaSecundaria2.TERMINADA, auditoria);
     }
 
     /** La conciliación detectó un fallo registrado en destino: hay que reintentar la solicitud. */
-    public void volverASolicitar() {
-        estado = EstadoSagaSecundaria2.INICIAL;
+    public SagaSecundaria2 volverASolicitar() {
+        return new SagaSecundaria2(id, externalId, refPaso5, refRespuesta, EstadoSagaSecundaria2.INICIAL, auditoria);
     }
 
     public RefPaso5 refPaso5() { return refPaso5; }
     public RefRespuesta refRespuesta() { return refRespuesta; }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!super.equals(o)) return false;
+        SagaSecundaria2 that = (SagaSecundaria2) o;
+        return Objects.equals(refPaso5, that.refPaso5)
+                && Objects.equals(refRespuesta, that.refRespuesta);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), refPaso5, refRespuesta);
+    }
 }

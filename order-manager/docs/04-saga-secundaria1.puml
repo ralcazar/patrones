@@ -67,8 +67,10 @@ ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactio
 group Transacción: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Iniciada(refInicio))
   SAGA -> SAGA : refInicio = ref; avanzar():\nINICIAL -> INICIO_HECHO
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
-  ORQ -> SAGA ++ : saga.terminada()
+  ORQ -> SAGA ++ : nuevaSaga.terminada()
   return false
   ORQ -> ORDEN ++ : resetearIntentos()
   return
@@ -95,8 +97,10 @@ ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactio
 group Transacción única: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Confirmada(ref))
   SAGA -> SAGA : refConfirmacion = ref; avanzar():\nINICIO_HECHO -> TERMINADA
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
-  ORQ -> SAGA ++ : saga.terminada()
+  ORQ -> SAGA ++ : nuevaSaga.terminada()
   return true
   ORQ -> ORDEN ++ : finalizar(Instant.now())
   return

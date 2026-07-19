@@ -84,7 +84,7 @@ class SoporteSagaSecundaria2Test {
         var id = OrdenId.nuevo();
         var saga = SagaSecundaria2.crear(id,
                 new ContextoArranque.ArranqueSecundaria2(ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5")));
-        saga.respuestaRecibida(new RefRespuesta("refRespuesta"));
+        saga = saga.respuestaRecibida(new RefRespuesta("refRespuesta"));
         var captor = ArgumentCaptor.forClass(ProcesoSagaSecundaria2Entity.class);
 
         soporte.guardarContexto(saga);

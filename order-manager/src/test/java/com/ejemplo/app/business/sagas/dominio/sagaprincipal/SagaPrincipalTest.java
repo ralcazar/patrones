@@ -27,6 +27,10 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 /**
  * Saga principal: PASO1..PASO8 síncronos, punto de no retorno en PASO7_HECHO
  * y compensación COMPENSAR_PASO2 -&gt; COMPENSAR_PASO1 -&gt; CANCELADA.
+ *
+ * {@code SagaPrincipal} es un value object inmutable: cada transición
+ * devuelve una instancia nueva, así que los tests reasignan la variable
+ * local tras cada llamada en vez de mutar "in place".
  */
 class SagaPrincipalTest {
 
@@ -36,15 +40,16 @@ class SagaPrincipalTest {
     }
 
     /** Ejecuta el flujo feliz completo, paso a paso, aplicando el resultado que produciría cada REST. */
-    private static void avanzarHastaTerminada(SagaPrincipal saga) {
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
+    private static SagaPrincipal avanzarHastaTerminada(SagaPrincipal saga) {
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
+        return saga;
     }
 
     @Test
@@ -52,7 +57,7 @@ class SagaPrincipalTest {
         var saga = nueva();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.INICIAL);
 
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.TERMINADA);
         assertThat(saga.terminada()).isTrue();
@@ -61,7 +66,7 @@ class SagaPrincipalTest {
     @Test
     void flujoFeliz_alTerminarProduceElContextoDeArranqueDeLasTresSecundarias() {
         var saga = nueva();
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
 
         var contextos = saga.contextosArranque();
 
@@ -83,7 +88,7 @@ class SagaPrincipalTest {
     @Test
     void comandoActual_enTerminadaNoTienePasoPendiente() {
         var saga = nueva();
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
 
         assertThatThrownBy(saga::comandoActual).isInstanceOf(IllegalStateException.class);
     }
@@ -101,7 +106,7 @@ class SagaPrincipalTest {
     @Test
     void comandoActual_enPaso1Hecho_esEjecutarPaso2ConElDatosNegocioIdYLaRefPaso1() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
 
         var comando = (ComandoPasoPrincipal.EjecutarPaso2) saga.comandoActual();
 
@@ -112,12 +117,12 @@ class SagaPrincipalTest {
     @Test
     void comandoActual_enPaso6Hecho_esEjecutarPaso7ConLaRefPaso5YElDatosNegocioId() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
 
         var comando = (ComandoPasoPrincipal.EjecutarPaso7) saga.comandoActual();
 
@@ -129,7 +134,7 @@ class SagaPrincipalTest {
     void cancelar_antesDePaso1Hecho_vaDirectaACancelada() {
         var saga = nueva();
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
+        saga = saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
     }
@@ -137,17 +142,17 @@ class SagaPrincipalTest {
     @Test
     void cancelar_conPaso1YPaso2HechosEncadenaCompensarPaso2LuegoPaso1LuegoCancelada() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
+        saga = saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO2);
 
-        saga.compensacionCompletada();
+        saga = saga.compensacionCompletada();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
 
-        saga.compensacionCompletada();
+        saga = saga.compensacionCompletada();
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
         assertThat(saga.terminada()).isTrue();
     }
@@ -155,9 +160,9 @@ class SagaPrincipalTest {
     @Test
     void cancelar_conSoloPaso1Hecho_vaDirectaACompensarPaso1() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
 
-        saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
+        saga = saga.cancelar(new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo");
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
     }
@@ -165,22 +170,24 @@ class SagaPrincipalTest {
     @Test
     void cancelar_esIdempotenteMientrasSeEstaCompensando() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
         var quien = new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana");
-        saga.cancelar(quien, "motivo");
+        saga = saga.cancelar(quien, "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
 
-        saga.cancelar(quien, "motivo otra vez");
+        var repetida = saga.cancelar(quien, "motivo otra vez");
 
-        assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
+        assertThat(repetida.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO1);
+        assertThat(repetida).isSameAs(saga);
     }
 
     @Test
     void cancelar_enTerminadaLanzaSagaYaCompletada() {
         var saga = nueva();
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
+        var terminada = saga;
 
-        assertThatThrownBy(() -> saga.cancelar(
+        assertThatThrownBy(() -> terminada.cancelar(
                 new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo"))
                 .isInstanceOf(OrdenYaCompletadaException.class);
     }
@@ -188,17 +195,18 @@ class SagaPrincipalTest {
     @Test
     void cancelar_enPaso7Hecho_puntoDeNoRetornoSuperado() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO7_HECHO);
         assertThat(saga.esCancelable()).isFalse();
+        var enPaso7Hecho = saga;
 
-        assertThatThrownBy(() -> saga.cancelar(
+        assertThatThrownBy(() -> enPaso7Hecho.cancelar(
                 new com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte("ana"), "motivo"))
                 .isInstanceOf(PuntoNoRetornoSuperadoException.class);
     }
@@ -214,9 +222,10 @@ class SagaPrincipalTest {
     @Test
     void aplicarYAvanzar_enEstadoTerminal_propagaIllegalStateExceptionDeAvanzar() {
         var saga = nueva();
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
+        var terminada = saga;
 
-        assertThatThrownBy(() -> saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1"))))
+        assertThatThrownBy(() -> terminada.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1"))))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -225,7 +234,7 @@ class SagaPrincipalTest {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso1", "ref1manual"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso1", "ref1manual"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO1_HECHO);
         assertThat(saga.contexto().refPaso1().valor()).isEqualTo("ref1manual");
@@ -235,9 +244,9 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enPaso1HechoConDatos_aplicaResultadoYAvanzaAPaso2() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso2", "ref2manual"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso2", "ref2manual"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
         assertThat(saga.contexto().refPaso2().valor()).isEqualTo("ref2manual");
@@ -247,11 +256,11 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enPaso3HechoConDatos_aplicaResultadoYAvanzaAPaso4() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso4", "ref4manual"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso4", "ref4manual"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO4_HECHO);
         assertThat(saga.contexto().refPaso4().valor()).isEqualTo("ref4manual");
@@ -261,12 +270,12 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enPaso4HechoConDatos_aplicaResultadoYAvanzaAPaso5() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso5", "ref5manual"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso5", "ref5manual"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO5_HECHO);
         assertThat(saga.contexto().refPaso5().valor()).isEqualTo("ref5manual");
@@ -276,14 +285,14 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enPaso6HechoConDatos_aplicaResultadoYAvanzaAPaso7() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso4(new RefPaso4("ref4")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso5(new RefPaso5("ref5")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso7", "ref7manual"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("refPaso7", "ref7manual"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO7_HECHO);
         assertThat(saga.contexto().refPaso7().valor()).isEqualTo("ref7manual");
@@ -311,11 +320,11 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enEstadoQueNoRequiereDatos_avanzaSinAplicarResultado() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", null);
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", null);
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
         assertThat(saga.contexto().refPaso3()).isNull();
@@ -325,11 +334,11 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_enEstadoQueNoRequiereDatos_conDatosIgnoradosAvanzaSinAplicarResultado() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("dato", "ignorado"));
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of("dato", "ignorado"));
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
         assertThat(saga.contexto().refPaso3()).isNull();
@@ -347,10 +356,11 @@ class SagaPrincipalTest {
     @Test
     void marcarPasoActualOkManual_enTerminada_lanzaPasoNoIntervenibleException() {
         var saga = nueva();
-        avanzarHastaTerminada(saga);
+        saga = avanzarHastaTerminada(saga);
+        var terminada = saga;
         var quien = new UsuarioSoporte("ana");
 
-        assertThatThrownBy(() -> saga.marcarPasoActualOkManual(quien, "justificacion", null))
+        assertThatThrownBy(() -> terminada.marcarPasoActualOkManual(quien, "justificacion", null))
                 .isInstanceOf(PasoNoIntervenibleException.class);
     }
 
@@ -365,11 +375,11 @@ class SagaPrincipalTest {
     void marcarPasoActualOkManual_conDatosVaciosEnEstadoQueNoLosRequiere_avanzaSinAplicarResultado() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO2_HECHO);
 
-        saga.marcarPasoActualOkManual(quien, "justificacion", Map.of());
+        saga = saga.marcarPasoActualOkManual(quien, "justificacion", Map.of());
 
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.PASO3_HECHO);
     }
@@ -393,26 +403,78 @@ class SagaPrincipalTest {
     @Test
     void cancelar_esIdempotenteEnCompensarPaso2() {
         var saga = nueva();
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso1(new RefPaso1("ref1")));
+        saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso2(new RefPaso2("ref2")));
         var quien = new UsuarioSoporte("ana");
-        saga.cancelar(quien, "motivo");
+        saga = saga.cancelar(quien, "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO2);
 
-        saga.cancelar(quien, "motivo otra vez");
+        var repetida = saga.cancelar(quien, "motivo otra vez");
 
-        assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO2);
+        assertThat(repetida.estado()).isEqualTo(EstadoSagaPrincipal.COMPENSAR_PASO2);
     }
 
     @Test
     void cancelar_esIdempotenteEnCancelada() {
         var saga = nueva();
         var quien = new UsuarioSoporte("ana");
-        saga.cancelar(quien, "motivo");
+        saga = saga.cancelar(quien, "motivo");
         assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
 
-        saga.cancelar(quien, "motivo otra vez");
+        var repetida = saga.cancelar(quien, "motivo otra vez");
 
-        assertThat(saga.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
+        assertThat(repetida.estado()).isEqualTo(EstadoSagaPrincipal.CANCELADA);
+    }
+
+    // ------------------------------------------------------------------
+    // equals/hashCode: value object -- igualdad por (id, externalId, estado,
+    // auditoria) heredados de Proceso, más ctx propio de SagaPrincipal.
+    // ------------------------------------------------------------------
+
+    @Test
+    void equals_esReflexivo_mismaInstancia() {
+        var saga = nueva();
+
+        assertThat(saga.equals(saga)).isTrue();
+    }
+
+    @Test
+    void equals_conProcesoDeOtroTipo_esFalse() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var principal = SagaPrincipal.rehidratar(id, externalId,
+                com.ejemplo.app.business.sagas.dominio.sagaprincipal.ContextoTramitacion.inicial(DatosNegocioId.nuevo()),
+                EstadoSagaPrincipal.INICIAL, java.util.List.of());
+        var secundaria3 = com.ejemplo.app.business.sagas.dominio.sagasecundaria3.SagaSecundaria3.rehidratar(
+                id, externalId, new RefPaso7("ref7"), null,
+                com.ejemplo.app.business.sagas.dominio.sagasecundaria3.EstadoSagaSecundaria3.INICIAL, java.util.List.of());
+
+        assertThat(principal.equals(secundaria3)).isFalse();
+    }
+
+    @Test
+    void equals_conCtxDistinto_esFalse() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var uno = SagaPrincipal.rehidratar(id, externalId,
+                ContextoTramitacion.inicial(DatosNegocioId.nuevo()), EstadoSagaPrincipal.INICIAL, java.util.List.of());
+        var otro = SagaPrincipal.rehidratar(id, externalId,
+                ContextoTramitacion.inicial(DatosNegocioId.nuevo()), EstadoSagaPrincipal.INICIAL, java.util.List.of());
+
+        assertThat(uno.equals(otro)).isFalse();
+    }
+
+    @Test
+    void equals_conTodosLosCamposIguales_esTrue() {
+        var id = OrdenId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var datosNegocioId = DatosNegocioId.nuevo();
+        var uno = SagaPrincipal.rehidratar(id, externalId,
+                ContextoTramitacion.inicial(datosNegocioId), EstadoSagaPrincipal.INICIAL, java.util.List.of());
+        var otro = SagaPrincipal.rehidratar(id, externalId,
+                ContextoTramitacion.inicial(datosNegocioId), EstadoSagaPrincipal.INICIAL, java.util.List.of());
+
+        assertThat(uno).isEqualTo(otro);
+        assertThat(uno.hashCode()).isEqualTo(otro.hashCode());
     }
 }

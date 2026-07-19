@@ -85,9 +85,9 @@ class SoporteSagaSecundaria1Test {
         var id = OrdenId.nuevo();
         var saga = SagaSecundaria1.crear(id,
                 new ContextoArranque.ArranqueSecundaria1(ExternalId.de(UUID.randomUUID().toString()), new RefPaso1("ref1")));
-        saga.aplicarYAvanzar(new ResultadoPasoSecundaria1.Iniciada(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoSecundaria1.Iniciada(
                 new com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefInicio("refInicio")));
-        saga.aplicarYAvanzar(new ResultadoPasoSecundaria1.Confirmada(
+        saga = saga.aplicarYAvanzar(new ResultadoPasoSecundaria1.Confirmada(
                 new com.ejemplo.app.business.sagas.dominio.sagasecundaria1.RefConfirmacion("refConfirmacion")));
         var captor = ArgumentCaptor.forClass(ProcesoSagaSecundaria1Entity.class);
 

@@ -109,7 +109,7 @@ class PersistenciaOrdenIntegrationTest {
     void crearYCargar_rehidrataElAgregadoCompletoConSuAuditoria() {
         var id = OrdenId.nuevo();
         var saga = nuevaSagaPrincipal(id);
-        saga.cancelar(new UsuarioSoporte("ana"), "motivo de negocio"); // deja una entrada de auditoría
+        saga = saga.cancelar(new UsuarioSoporte("ana"), "motivo de negocio"); // deja una entrada de auditoría
         var orden = OrdenRoot.nueva(saga, Instant.now());
         repo.crear(orden);
 
@@ -365,7 +365,7 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var id = OrdenId.nuevo();
         var saga = nuevaSagaPrincipal(id);
-        saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
+        saga = saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
         repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, null, 0L));
         ordenJpaRepository.flush();
         assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor())).as("la satélite existe antes de purgar").isPresent();
@@ -486,7 +486,7 @@ class PersistenciaOrdenIntegrationTest {
     void detalle_enEstadoTerminal_noTienePasoPendiente() {
         var id = OrdenId.nuevo();
         var saga = nuevaSagaPrincipal(id);
-        saga.cancelar(new UsuarioSoporte("ana"), "motivo");
+        saga = saga.cancelar(new UsuarioSoporte("ana"), "motivo");
         repo.crear(OrdenRoot.nueva(saga, Instant.now()));
 
         var detalle = consultas.detalle(SagaPrincipal.TIPO, id);

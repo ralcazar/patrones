@@ -49,7 +49,7 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         var ctx = new ContextoArranque.ArranqueSecundaria2(
                 ExternalId.de(UUID.randomUUID().toString()), new RefPaso5("ref5"));
         var saga = SagaSecundaria2.crear(id, ctx);
-        saga.solicitudEnviada();
+        saga = saga.solicitudEnviada();
         var orden = OrdenRoot.nueva(saga, Instant.now());
         orden.aparcar(Duration.ofHours(3), Instant.now());
         repo.crear(orden);

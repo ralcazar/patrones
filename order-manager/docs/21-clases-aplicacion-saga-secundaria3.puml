@@ -20,7 +20,9 @@ note right of ServicioSagaSecundaria3
   SagaSecundaria3, comandoActual() + puerto.ejecutar (REST fuera de
   tx), luego self.aplicar(...) -- vía proxy, para que
   @Transactional no se ignore por auto-invocación -- guarda esa
-  misma instancia sin recargar: aplicarYAvanzar +
+  misma instancia de OrdenRoot sin recargar: SagaSecundaria3 es un
+  VO inmutable (ver 16), así que aplicar hace
+  orden.reemplazarProceso(saga.aplicarYAvanzar(resultado)) +
   orden.finalizar(Instant.now()) directo, sin comprobar terminada()
   (el único paso siempre termina la saga); si otro actor escribió
   entre medias, guardar falla por version. Siempre devuelve

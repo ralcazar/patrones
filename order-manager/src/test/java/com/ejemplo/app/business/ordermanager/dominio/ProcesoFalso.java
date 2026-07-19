@@ -35,15 +35,15 @@ public final class ProcesoFalso extends Proceso<ProcesoFalso.Estado> {
     public ComandoPaso comandoActual() { return null; }
 
     @Override
-    public void aplicarYAvanzar(ResultadoPaso resultado) {
-        this.estado = Estado.TERMINADO;
+    public ProcesoFalso aplicarYAvanzar(ResultadoPaso resultado) {
+        return new ProcesoFalso(id, externalId, Estado.TERMINADO, auditoria);
     }
 
     @Override
     public boolean terminada() { return estado == Estado.TERMINADO; }
 
     @Override
-    public void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
-        this.estado = Estado.TERMINADO;
+    public ProcesoFalso marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
+        return new ProcesoFalso(id, externalId, Estado.TERMINADO, auditoria);
     }
 }

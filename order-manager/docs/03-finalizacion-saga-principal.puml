@@ -28,11 +28,13 @@ activate ORQ
 group Transacción: checkpoint del paso (crea agregados hijos + finaliza el propio)
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(ResultadoPaso8(ref))
   SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar():\nPASO7_HECHO -> TERMINADA
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
-  ORQ -> SAGA ++ : saga.terminada()
+  ORQ -> SAGA ++ : nuevaSaga.terminada()
   return true
 
-  ORQ -> SAGA ++ : saga.contextosArranque()
+  ORQ -> SAGA ++ : nuevaSaga.contextosArranque()
   return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
 
   loop por cada ContextoArranque (x3), en crearHijas(contextos, ahora)

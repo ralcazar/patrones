@@ -83,8 +83,10 @@ loop hasta Aparcar / Finalizada / excepción
     group Transacción: checkpoint del paso (negocio + ejecución, un solo guardar)
       ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
       SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
+      return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+      ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
       return
-      ORQ -> SAGA ++ : saga.terminada()
+      ORQ -> SAGA ++ : nuevaSaga.terminada()
       return false (PASO1_HECHO .. PASO7_HECHO)
       ORQ -> ORDEN ++ : resetearIntentos()
       return intentos=0, ticketAbiertoEn=null

@@ -52,6 +52,8 @@ ORQ -> ORQ ++ : self.aplicarSolicitud(orden, saga)  -- vía proxy (@Transactiona
 group Transacción única
   ORQ -> SAGA ++ : saga.solicitudEnviada()
   SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
   ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
   ORDEN -> ORDEN : proximoReintentoEn = ahora + 3h; liberarToken()
@@ -88,6 +90,8 @@ group Transacción (@Transactional en respuestaOk: método público,\nse invoca 
   return saga
   SREG -> SAGA ++ : saga.respuestaRecibida(ref)
   SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
   SREG -> ORDEN ++ : despertar(Instant.now())
   ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
@@ -150,7 +154,9 @@ alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   ORQ -> ORQ ++ : self.aplicarConciliacionDisponible(orden, saga, ref)  -- vía proxy (@Transactional)
   group Transacción
     ORQ -> SAGA ++ : saga.respuestaRecibida(ref)
-    return estado = TERMINADA
+    return nuevaSaga (estado = TERMINADA, instancia nueva: SAGA no muta)
+    ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
+    return
     ORQ -> ORDEN ++ : finalizar(Instant.now())
     return
     ORQ -> REPO ++ : guardar(orden)
@@ -193,6 +199,8 @@ group Transacción (@Transactional en respuestaError, cross-bean, sin self)
   return saga
   SREG -> SAGA ++ : saga.volverASolicitar()
   SAGA -> SAGA : estado = INICIAL
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
   SREG -> ORDEN ++ : programarReintento(politica,\nnew DetalleError(codigo, detalle), Instant.now())
   ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera;\nultimoError = error; liberarToken()

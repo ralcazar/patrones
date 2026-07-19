@@ -2,8 +2,9 @@ package com.ejemplo.app.business.sagas.dominio.sagasecundaria1;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-import org.jmolecules.ddd.annotation.Entity;
+import org.jmolecules.ddd.annotation.ValueObject;
 
 import com.ejemplo.app.business.ordermanager.dominio.AuditoriaIntervencion;
 import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
@@ -26,20 +27,22 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
  *
  * Nace cuando la principal alcanza TERMINADA (después del punto de no
  * retorno): nunca se cancela ni compensa.
+ *
+ * Value object inmutable (ver {@link Proceso}): cada transición devuelve una
+ * instancia nueva de {@code SagaSecundaria1}, dejando la original intacta.
  */
-@Entity
+@ValueObject
 public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
 
     public static final TipoOrden TIPO = new TipoOrden("SECUNDARIA1");
 
     private final RefPaso1 refPaso1;
-    private RefInicio refInicio;   // lo produce INICIO, lo consume CONFIRMACION
-    private RefConfirmacion refConfirmacion;
+    private final RefInicio refInicio;   // lo produce INICIO, lo consume CONFIRMACION
+    private final RefConfirmacion refConfirmacion;
 
     private SagaSecundaria1(OrdenId id, ExternalId externalId, RefPaso1 refPaso1,
             EstadoSagaSecundaria1 estado) {
-        super(id, externalId, estado);
-        this.refPaso1 = refPaso1;
+        this(id, externalId, refPaso1, null, null, estado, List.of());
     }
 
     private SagaSecundaria1(OrdenId id, ExternalId externalId, RefPaso1 refPaso1,
@@ -76,12 +79,11 @@ public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
     }
 
     @Override
-    public void aplicarYAvanzar(ResultadoPaso resultado) {
+    public SagaSecundaria1 aplicarYAvanzar(ResultadoPaso resultado) {
         if (!(resultado instanceof ResultadoPasoSecundaria1 r)) {
             throw new IllegalArgumentException("Resultado ajeno a la saga secundaria 1: " + resultado);
         }
-        aplicarDatos(r);
-        avanzar();
+        return conResultado(r, siguienteEstado(), auditoria);
     }
 
     @Override
@@ -90,7 +92,8 @@ public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
     }
 
     @Override
-    public void marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion, Map<String, String> datos) {
+    public SagaSecundaria1 marcarPasoActualOkManual(UsuarioSoporte quien, String justificacion,
+            Map<String, String> datos) {
         if (estado == EstadoSagaSecundaria1.TERMINADA) {
             throw new PasoNoIntervenibleException(id, "no tiene paso pendiente en estado " + estado);
         }
@@ -98,23 +101,27 @@ public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
             throw new DatosManualesRequeridosException(id, estado.name());
         }
         var resultado = construirResultadoManual(datos);
-        if (resultado != null) {
-            aplicarDatos(resultado);
-        }
-        var estadoAnterior = estado;
-        avanzar();
-        auditar(quien, "MARCAR_OK_MANUAL", estadoAnterior + ": " + justificacion);
+        var nuevaAuditoria = auditar(quien, "MARCAR_OK_MANUAL", estado + ": " + justificacion);
+        return conResultado(resultado, siguienteEstado(), nuevaAuditoria);
     }
 
-    private void aplicarDatos(ResultadoPasoSecundaria1 r) {
-        switch (r) {
-            case ResultadoPasoSecundaria1.Iniciada(var ref) -> this.refInicio = ref;
-            case ResultadoPasoSecundaria1.Confirmada(var ref) -> this.refConfirmacion = ref;
+    /** Construye la instancia siguiente aplicando (si lo hay) el resultado del paso sobre las refs actuales. */
+    private SagaSecundaria1 conResultado(ResultadoPasoSecundaria1 r, EstadoSagaSecundaria1 nuevoEstado,
+            List<AuditoriaIntervencion> nuevaAuditoria) {
+        var nuevoRefInicio = refInicio;
+        var nuevoRefConfirmacion = refConfirmacion;
+        if (r != null) {
+            switch (r) {
+                case ResultadoPasoSecundaria1.Iniciada(var ref) -> nuevoRefInicio = ref;
+                case ResultadoPasoSecundaria1.Confirmada(var ref) -> nuevoRefConfirmacion = ref;
+            }
         }
+        return new SagaSecundaria1(id, externalId, refPaso1, nuevoRefInicio, nuevoRefConfirmacion,
+                nuevoEstado, nuevaAuditoria);
     }
 
-    private void avanzar() {
-        estado = switch (estado) {
+    private EstadoSagaSecundaria1 siguienteEstado() {
+        return switch (estado) {
             case INICIAL -> EstadoSagaSecundaria1.INICIO_HECHO;
             case INICIO_HECHO -> EstadoSagaSecundaria1.TERMINADA;
             default -> throw new IllegalStateException(
@@ -141,4 +148,19 @@ public final class SagaSecundaria1 extends Proceso<EstadoSagaSecundaria1> {
     public RefPaso1 refPaso1() { return refPaso1; }
     public RefInicio refInicio() { return refInicio; }
     public RefConfirmacion refConfirmacion() { return refConfirmacion; }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!super.equals(o)) return false;
+        SagaSecundaria1 that = (SagaSecundaria1) o;
+        return Objects.equals(refPaso1, that.refPaso1)
+                && Objects.equals(refInicio, that.refInicio)
+                && Objects.equals(refConfirmacion, that.refConfirmacion);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), refPaso1, refInicio, refConfirmacion);
+    }
 }

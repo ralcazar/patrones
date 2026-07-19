@@ -44,6 +44,8 @@ ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactio
 group Transacción única: checkpoint del paso
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Ejecutada(ref))
   SAGA -> SAGA : refEjecucion = ref; estado = TERMINADA
+  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
   return
   ORQ -> ORDEN ++ : finalizar(Instant.now())
   return

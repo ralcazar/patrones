@@ -30,6 +30,7 @@ class OrdenRoot <<@AggregateRoot>> {
   +estaViva() : boolean  «completadaEn == null»
   +turnoVencido(ahora) : boolean  «!proximoReintentoEn.isAfter(ahora),\nespejo de buscarCandidatas, ver 17»
   +proceso() : Proceso<?>
+  +reemplazarProceso(Proceso<?> nuevo)  «ÚNICO punto de sustitución\ndel campo proceso»
   +id() : OrdenId
   +tipo() : TipoOrden  «delega en proceso.tipo()»
 }
@@ -40,26 +41,35 @@ note right of OrdenRoot
   ejecución (intentos/lease/ticket/completadaEn) + negocio (proceso):
   varios flujos mutan ambos en la misma tx (consumer Kafka,
   soporte, arranque de secundarias), así que separarlos en dos
-  agregados violaría "un agregado por transacción".
+  agregados violaría "un agregado por transacción". proceso ya NO
+  es final: cada transición de Proceso (VO inmutable, ver abajo)
+  devuelve una instancia nueva, y reemplazarProceso(nueva) es el
+  único método que la sustituye en el campo.
 end note
 
-abstract class "Proceso<E extends Enum<E>>" as Proceso <<@Entity>> {
+abstract class "Proceso<E extends Enum<E>>" as Proceso <<@ValueObject>> {
   #id : OrdenId  «@Identity»
   #externalId : ExternalId
   #estado : E
   #auditoria : List<AuditoriaIntervencion>
   {abstract} +tipo() : TipoOrden
   {abstract} +comandoActual() : ComandoPaso
-  {abstract} +aplicarYAvanzar(ResultadoPaso)
+  {abstract} +aplicarYAvanzar(ResultadoPaso) : Proceso<E>
   {abstract} +terminada() : boolean
-  {abstract} +marcarPasoActualOkManual(quien, justificacion, datos)
-  #auditar(quien, accion, detalle)
+  {abstract} +marcarPasoActualOkManual(quien, justificacion, datos) : Proceso<E>
+  #auditar(quien, accion, detalle) : List<AuditoriaIntervencion>
   +id() / +externalId() / +estado() / +auditoria()
 }
 note right of Proceso
-  Entidad interna del agregado: SOLO negocio (la FSM E y la
-  auditoría). Sin version propia (la controla OrdenRoot) y sin
-  reintentos/tiempo/token: eso es responsabilidad de OrdenRoot.
+  Value object INMUTABLE interno del agregado: SOLO negocio (la
+  FSM E y la auditoría). Sin version propia (la controla
+  OrdenRoot) y sin reintentos/tiempo/token: eso es responsabilidad
+  de OrdenRoot. Cada transición (aplicarYAvanzar,
+  marcarPasoActualOkManual, y las específicas de cada saga —
+  cancelar, compensacionCompletada, solicitudEnviada,
+  respuestaRecibida, volverASolicitar, ver 15/16) devuelve una
+  INSTANCIA NUEVA en vez de mutar; OrdenRoot.reemplazarProceso(nueva)
+  es quien sustituye el valor tras cada transición (ver 02-08).
   Clase neutra del motor: no conoce "saga". Sus subclases
   concretas (SagaPrincipal, SagaSecundariaN) viven en
   business.sagas.dominio — ver 15 y 16.
