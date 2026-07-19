@@ -1,0 +1,36 @@
+# Ráfaga corta de máxima concurrencia: muchos pods x muchos hilos contra un
+# lote deliberadamente pequeño (12 pods x 8 hilos = 96 candidatos a la vez,
+# lote 4: máxima pelea por las mismas órdenes -> colisiones optimistas).
+# NO mide throughput ni nada estadístico (demasiado pocas tramitaciones para
+# eso, ver base-sin-fallos/contencion-8-pods para esa clase de pregunta): su
+# valor es cualitativo — un log pequeño para que un agente LLM lo lea
+# COMPLETO (vía pods-compacto.log, fase 5) y detecte anomalías de
+# entrelazado que el analizador determinista no busca (reordenaciones raras,
+# reintentos apilados, pods que nunca ganan un reclamo, etc.).
+nombre: rafaga-extrema
+descripcion: Ráfaga corta de máxima concurrencia (12 pods x 8 hilos, lote mínimo) con log pequeño, pensada para análisis cualitativo por un agente LLM.
+
+semilla: 42
+duracion: PT20S
+drenaje-maximo: PT2M
+
+pods: 12
+
+inyeccion:
+  tramitaciones: 30
+  ritmo-por-segundo: 6
+
+rest:
+  latencia-ms: { min: 10, max: 50 }
+  tasa-fallo: 0.05        # algún fallo para que haya carreras de reintento
+
+kafka:
+  retraso-ms: { min: 100, max: 500 }
+  tasa-perdida: 0.0
+
+motor:
+  planificador:
+    intervalo-ms: 250
+    lote: 4               # lote << hilos totales (12x2): máxima pelea por
+    trabajadores: 2       # las mismas órdenes -> colisiones optimistas
+  lease: PT10M

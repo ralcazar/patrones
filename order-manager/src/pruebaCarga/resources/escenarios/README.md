@@ -75,6 +75,13 @@ Cada ejecución escribe en `build/pruebaCarga/<nombre>-<timestamp>/`
 - `bbdd.mv.db` — la H2 en fichero, consultable tras la prueba
 - `informe.md` — el resumen del analizador (throughput, colisiones,
   estados finales, invariantes pasa/falla)
+- `pods-compacto.log` — transformación 1:1 de `pods.log` (fase 5,
+  `CompactadorLogLlm`) pensada para que un agente LLM lea el log de eventos
+  completo dentro de su presupuesto de contexto: descarta las líneas que no
+  son eventos, recorta el timestamp a la hora, abrevia el pod y sustituye
+  cada UUID de orden por un alias corto
+- `leyenda-compacto.md` — formato de línea de `pods-compacto.log` y la tabla
+  de alias de orden -> UUID completo para volver a `pods.log`/la H2
 
 ## Matriz actual
 
@@ -88,6 +95,7 @@ Cada ejecución escribe en `build/pruebaCarga/<nombre>-<timestamp>/`
 | `contencion-8-pods` | ¿Cuánta colisión optimista hay con muchos pods y poco lote? |
 | `respuestas-perdidas` | ¿La conciliación de la secundaria 2 y los tickets reaccionan? |
 | `humo-contencion` | Versión corta de `contencion-8-pods` (~5 min): ¿el harness registra y cuenta colisiones optimistas reales en un tiempo asumible? |
+| `rafaga-extrema` | ¿Aparecen anomalías de entrelazado bajo concurrencia máxima? (log pequeño para análisis por agente LLM) |
 
 Los escenarios comparables entre sí (`base-sin-fallos`, `fallos-*`)
 mantienen idénticos todo lo demás (pods, carga, latencias, motor): solo

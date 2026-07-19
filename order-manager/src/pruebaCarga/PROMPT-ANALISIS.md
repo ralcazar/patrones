@@ -9,8 +9,8 @@ pruebas de carga del `order-manager`.
 Eres un analista de rendimiento revisando una ejecución del harness de
 pruebas de carga multi-pod del módulo `order-manager` (motor de órdenes +
 sagas). La ejecución ya ha terminado y produjo una carpeta de salida en
-`order-manager/build/pruebaCarga/<escenario>-<timestamp>/` con exactamente
-tres ficheros:
+`order-manager/build/pruebaCarga/<escenario>-<timestamp>/` con estos
+ficheros:
 
 - **`informe.md`** — el resumen agregado que ya generó el analizador
   determinista (`com.ejemplo.app.carga.analisis.AnalizadorEjecucion`):
@@ -31,6 +31,26 @@ tres ficheros:
   ticket, `completada_en`) y `proceso` (estado de negocio: `tipo`, `estado`,
   `external_id`); las tablas satélite `proceso_saga_*` tienen el contexto
   propio de cada saga si necesitas más detalle de negocio.
+- **`pods-compacto.log`** + **`leyenda-compacto.md`** — transformación 1:1
+  de `pods.log` (fase 5, `CompactadorLogLlm`), pensada para caber en tu
+  contexto: mismas líneas de evento, mismo orden (el entrelazado real se
+  conserva), pero con el timestamp recortado a la hora, el pod abreviado
+  (`p3`, `lanzador`) y cada UUID de orden sustituido por un alias corto
+  (`o1`, `o2`...). `leyenda-compacto.md` documenta la fecha/zona recortadas
+  del timestamp y trae la tabla alias -> UUID completo.
+
+## Análisis cualitativo del entrelazado
+
+Para detectar anomalías de entrelazado bajo concurrencia (reordenaciones
+raras, reintentos apilados sobre la misma orden, pods que nunca ganan un
+reclamo...) — el tipo de pregunta que responde un escenario como
+`rafaga-extrema` y que el analizador determinista NO busca — lee
+`pods-compacto.log` COMPLETO (cabe en tu contexto) y usa
+`leyenda-compacto.md` para resolver los alias `oN` a su UUID cuando quieras
+citar una orden concreta. Baja al `pods.log` crudo o a SQL (ver más abajo)
+solo para líneas u órdenes concretas que ya hayas localizado en el
+compacto: no releas el crudo entero, es el propio problema que el
+compactado resuelve.
 
 ## Tu tarea
 

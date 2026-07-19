@@ -25,6 +25,7 @@ import org.springframework.context.support.GenericApplicationContext;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion;
 import com.ejemplo.app.carga.analisis.AnalizadorEjecucion;
+import com.ejemplo.app.carga.analisis.CompactadorLogLlm;
 import com.ejemplo.app.carga.esquema.InicializadorEsquemaH2;
 import com.ejemplo.app.carga.logging.ConfiguradorLogging;
 
@@ -126,6 +127,11 @@ public final class LanzadorPruebaCarga {
 
         int codigoSalida = invocarAnalizadorSiExiste(carpetaSalida, escenario);
         log.info("evento=prueba_carga_finalizada escenario={} inyectadas={} pod=lanzador", escenario.nombre(), inyectadas);
+        // Último paso, tras el último evento que el lanzador escribe: así
+        // pods-compacto.log captura EXACTAMENTE las mismas líneas de evento
+        // que pods.log (si el compactador corriera antes, p. ej. junto al
+        // analizador, se dejaría fuera este propio evento y el de cierre).
+        invocarCompactadorLog(carpetaSalida);
         System.exit(codigoSalida);
     }
 
@@ -264,6 +270,20 @@ public final class LanzadorPruebaCarga {
      * invariante de solapes de ejecución necesita este dato para distinguir
      * un takeover legítimo (lease vencido) de un solape real.
      */
+    /**
+     * Invoca el compactador de la fase 5 ({@link CompactadorLogLlm}, genera
+     * {@code pods-compacto.log} + {@code leyenda-compacto.md} a partir de
+     * {@code pods.log}), el ÚLTIMO paso de la ejecución (tras el veredicto
+     * del analizador determinista): así {@code pods-compacto.log} captura
+     * exactamente las mismas líneas de evento que {@code pods.log}, sin
+     * dejar fuera los eventos finales que el propio lanzador todavía
+     * escribe después de invocar al analizador.
+     */
+    private static void invocarCompactadorLog(Path carpetaSalida) {
+        log.info("evento=compactador_log_iniciado carpeta={} pod=lanzador", carpetaSalida);
+        CompactadorLogLlm.compactar(carpetaSalida);
+    }
+
     private static int invocarAnalizadorSiExiste(Path carpetaSalida, EscenarioCarga escenario) {
         var lease = escenario.motor().lease() != null ? escenario.motor().lease() : AnalizadorEjecucion.LEASE_POR_DEFECTO;
         log.info("evento=analizador_iniciado carpeta={} lease={} pod=lanzador", carpetaSalida, lease);
