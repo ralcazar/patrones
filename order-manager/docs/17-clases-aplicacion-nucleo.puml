@@ -153,6 +153,11 @@ package "puerto.salida (transversales)" {
     24), una línea por evento. "Ticket abierto" NO pasa por este
     puerto: nace ya en AdaptadorTicketsLog (ver 22/24). Vocabulario
     neutro del motor: ningún método ni tipo nombra "saga".
+    reintentoProgramado tiene un segundo emisor fuera de este bucle:
+    business.sagas.aplicacion.servicio.comun.
+    ServicioRegistrarRespuestaSecundaria2 (ver 20) lo llama al
+    reprogramar tras una respuesta Kafka con exito=false, un fallo de
+    negocio que nunca pasa por ejecutarPaso.
   end note
 }
 

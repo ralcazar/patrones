@@ -177,6 +177,33 @@ class OrdenRootTest {
     }
 
     @Test
+    void finalizar_trasFalloEnElUltimoPasoQueLuegoTerminaLimpiaIntentosYUltimoError() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+        var politica = new PoliticaReintentos();
+        orden.programarReintento(politica, ERROR, T0); // el paso falló una vez...
+        var completada = orden.proximoReintentoEn().plusSeconds(1);
+
+        orden.finalizar(completada); // ...pero el reintento tiene éxito y la orden termina
+
+        assertThat(orden.completadaEn()).isEqualTo(completada);
+        assertThat(orden.intentos()).isZero();
+        assertThat(orden.ultimoError()).isNull();
+    }
+
+    @Test
+    void aparcar_trasUnFalloPrevioConservaIntentosYUltimoError() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+        var politica = new PoliticaReintentos();
+        orden.programarReintento(politica, ERROR, T0);
+        var ahora = orden.proximoReintentoEn();
+
+        orden.aparcar(Duration.ofHours(3), ahora); // orden aún viva: el historial de fallos se conserva
+
+        assertThat(orden.intentos()).isEqualTo(1);
+        assertThat(orden.ultimoError()).isEqualTo(ERROR);
+    }
+
+    @Test
     void turnoVencido_esFalsoSiProximoReintentoEnQuedaEnElFuturo() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         orden.aparcar(Duration.ofHours(3), T0); // proximoReintentoEn = T0 + 3h

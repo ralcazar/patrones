@@ -121,8 +121,15 @@ public final class OrdenRoot {
         liberarToken();
     }
 
-    /** La FSM de negocio llegó a un estado final (ver {@link Proceso#terminada}): no vuelve a ser candidata. */
+    /**
+     * La FSM de negocio llegó a un estado final (ver {@link Proceso#terminada}):
+     * no vuelve a ser candidata. Limpia intentos y último error igual que
+     * {@link #resetearIntentos}: una orden terminada en OK no debe quedar en
+     * BBDD con rastro de un fallo ya superado (a diferencia de {@link #aparcar},
+     * que sí lo conserva mientras la orden siga viva).
+     */
     public void finalizar(Instant ahora) {
+        resetearIntentos();
         this.completadaEn = ahora;
         liberarToken();
     }

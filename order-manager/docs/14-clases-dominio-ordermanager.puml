@@ -26,7 +26,7 @@ class OrdenRoot <<@AggregateRoot>> {
   +despertar(ahora)  «proximoReintentoEn=ahora, libera token»
   +aparcar(ventana, ahora)  «proximoReintentoEn=ahora+ventana»
   +programarReintento(PoliticaReintentos, DetalleError, ahora)  «intentos++; ultimoError=error»
-  +finalizar(ahora)
+  +finalizar(ahora)  «resetearIntentos() + completadaEn=ahora, libera token»
   +estaViva() : boolean  «completadaEn == null»
   +turnoVencido(ahora) : boolean  «!proximoReintentoEn.isAfter(ahora),\nespejo de buscarCandidatas, ver 17»
   +proceso() : Proceso<?>

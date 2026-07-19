@@ -253,6 +253,11 @@ package "infraestructure.sagas (config)" {
     pero el motor NUNCA depende de esta clase ni de las sagas (regla
     de frontera ArchUnit, ver 14). Mismo patrón @Lazy self que
     ConfiguracionOrderManager, aquí para los 4 ServicioSaga*.
+    servicioRegistrarRespuestaSecundaria2 recibe además
+    PuertoObservadorEjecucion (ver 17/20): mismo mecanismo que
+    servicioContinuarOrden/servicioLimpiezaDatos en
+    ConfiguracionOrderManager, Spring lo resuelve solo con
+    AdaptadorObservadorLog.
   end note
 }
 

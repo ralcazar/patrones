@@ -2,6 +2,7 @@ package com.ejemplo.app.business.sagas.aplicacion.servicio.comun;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
@@ -35,13 +37,15 @@ class ServicioRegistrarRespuestaSecundaria2Test {
 
     private RepositorioOrdenEnMemoria repo;
     private PuertoMensajesProcesados dedup;
+    private PuertoObservadorEjecucion observador;
     private ServicioRegistrarRespuestaSecundaria2 servicio;
 
     @BeforeEach
     void init() {
         repo = new RepositorioOrdenEnMemoria();
         dedup = mock(PuertoMensajesProcesados.class);
-        servicio = new ServicioRegistrarRespuestaSecundaria2(repo, dedup, new PoliticaReintentos());
+        observador = mock(PuertoObservadorEjecucion.class);
+        servicio = new ServicioRegistrarRespuestaSecundaria2(repo, dedup, new PoliticaReintentos(), observador);
     }
 
     private OrdenId crearOrdenEsperandoRespuesta() {
@@ -95,6 +99,10 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         assertThat(orden.intentos()).isEqualTo(1);
         assertThat(orden.proximoReintentoEn())
                 .isBetween(Instant.now().plus(Duration.ofSeconds(55)), Instant.now().plus(Duration.ofMinutes(1).plusSeconds(5)));
+        // El fallo llegó como respuesta de negocio (exito=false), no como una
+        // excepción de ejecutarPaso: sin este evento la espera del reintento
+        // queda invisible en el log (defecto 2).
+        verify(observador).reintentoProgramado(id, orden.tipo(), 1, Duration.ofMinutes(1));
     }
 
     @Test
@@ -107,5 +115,6 @@ class ServicioRegistrarRespuestaSecundaria2Test {
         assertThat(((SagaSecundaria2) repo.estadoActual(id).proceso()).estado())
                 .isEqualTo(EstadoSagaSecundaria2.ESPERANDO_RESPUESTA);
         verify(dedup, never()).registrar(any());
+        verify(observador, never()).reintentoProgramado(any(), any(), anyInt(), any());
     }
 }

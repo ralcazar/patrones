@@ -8,6 +8,7 @@ import org.jmolecules.ddd.annotation.Service;
 
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.MensajeId;
@@ -29,12 +30,14 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
     private final RepositorioOrden repo;
     private final PuertoMensajesProcesados dedup;
     private final PoliticaReintentos politica;
+    private final PuertoObservadorEjecucion observador;
 
     public ServicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
-            PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
+            PuertoMensajesProcesados dedup, PoliticaReintentos politica, PuertoObservadorEjecucion observador) {
         this.repo = repo;
         this.dedup = dedup;
         this.politica = politica;
+        this.observador = observador;
     }
 
     @Override
@@ -66,5 +69,9 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
         orden.reemplazarProceso(saga.volverASolicitar());
         orden.programarReintento(politica, new DetalleError(codigo, detalle), Instant.now());
         repo.guardar(orden);
+        // El fallo llegó como respuesta de negocio (exito=false), no como excepción
+        // de ejecutarPaso: sin este evento el reintento programado aquí queda
+        // invisible en el log (la orden "desaparece" durante la espera).
+        observador.reintentoProgramado(sagaId, orden.tipo(), orden.intentos(), politica.esperaTras(orden.intentos()));
     }
 }

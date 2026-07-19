@@ -115,11 +115,16 @@ La mayoría de eventos nacen en `business.ordermanager.aplicacion.servicio`
 (`ServicioContinuarOrden`, `ServicioLimpiezaDatos`) a través del puerto
 `PuertoObservadorEjecucion` (ver `order-manager/docs/17-clases-aplicacion-nucleo.puml`),
 implementado por `AdaptadorObservadorLog`
-(`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J. Tres
-eventos nacen ya en infraestructura (adaptadores de entrada, o el propio
-adaptador de tickets) y no pasan por ese puerto: `ticket_abierto`,
-`tramitacion_creada` y `respuesta_secundaria2_registrada`; se loguean con el
-mismo formato para que el analizador no tenga que distinguir el origen.
+(`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J.
+`reintento_programado` tiene un segundo origen por el mismo puerto:
+`business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2`
+(sagas -> ordermanager, sentido de dependencia permitido) lo emite también
+cuando el consumer de Kafka registra una respuesta de negocio con
+`exito=false` (ver la fila de la tabla). Tres eventos nacen ya en
+infraestructura (adaptadores de entrada, o el propio adaptador de tickets) y
+no pasan por ese puerto: `ticket_abierto`, `tramitacion_creada` y
+`respuesta_secundaria2_registrada`; se loguean con el mismo formato para que
+el analizador no tenga que distinguir el origen.
 
 | Evento | Campos (además de `orden`, `tipo`, `pod` salvo que se indique) | Emitido desde | Cuándo |
 |---|---|---|---|
@@ -128,7 +133,7 @@ mismo formato para que el analizador no tenga que distinguir el origen.
 | `colision_optimista` | `operacion` = `reclamarToken` \| `ejecutarPaso` \| `programarReintento` | `ServicioContinuarOrden.reclamarYEjecutar` | Un guardado del agregado pierde el optimistic lock (otro actor escribió entre medias) en esa operación concreta |
 | `paso_completado` | `duracion_ms` (medida con `System.nanoTime()` alrededor de `ProcesadorOrden.ejecutarPaso`) | `ServicioContinuarOrden.reclamarYEjecutar` | `ejecutarPaso` vuelve sin lanzar (independientemente de si la orden sigue, aparca o finaliza) |
 | `paso_fallido` | `intento` (nº de fallo acumulado tras este), `error_tipo` (FQCN de la excepción), `error_mensaje` | `ServicioContinuarOrden.reclamarYEjecutar` | `ejecutarPaso` lanza una `RuntimeException` que no es de concurrencia optimista |
-| `reintento_programado` | `intento`, `espera_ms` (según `PoliticaReintentos.esperaTras`) | `ServicioContinuarOrden.reclamarYEjecutar` | Tras un `paso_fallido`, el reintento se programa y persiste con éxito |
+| `reintento_programado` | `intento`, `espera_ms` (según `PoliticaReintentos.esperaTras`) | `ServicioContinuarOrden.reclamarYEjecutar` / `ServicioRegistrarRespuestaSecundaria2.respuestaError` | Tras un `paso_fallido`, el reintento se programa y persiste con éxito; o, en SECUNDARIA2, tras registrar una `respuesta_secundaria2_registrada` con `exito=false` (fallo de negocio, no de `ejecutarPaso`) |
 | `orden_aparcada` | `ventana_ms` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Aparcar` (espera un evento externo) |
 | `orden_finalizada` | `resultado=ok` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Finalizada`; en el diseño actual del motor la finalización siempre es éxito (los fallos nunca agotan la escalera de reintentos, se repiten indefinidamente cada 180 min con ticket abierto) |
 | `purga_datos_antiguos` | sin `orden`/`tipo` (evento agregado, no por orden): `ordenes_eliminadas`, `mensajes_eliminados` | `ServicioLimpiezaDatos.purgarAnterioresA` | Cada barrido de limpieza, con el recuento de filas purgadas de cada tipo |
@@ -148,3 +153,8 @@ Notas para el analizador:
   `colision_optimista` con `operacion=programarReintento` y la excepción se
   propaga (el pod se retira sin programar nada; el siguiente barrido del
   planificador la recogerá como candidata otra vez).
+- Un `reintento_programado` tampoco implica siempre un `paso_fallido`
+  precedente: en SECUNDARIA2, cuando la respuesta Kafka trae `exito=false`,
+  el `reintento_programado` viene precedido de `respuesta_secundaria2_registrada`
+  (con `exito=false`) en vez de `paso_fallido` — no hubo `ejecutarPaso` que
+  fallara, el fallo es de negocio.

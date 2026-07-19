@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Lazy;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
@@ -97,8 +98,8 @@ public class ConfiguracionSagas {
 
     @Bean
     ServicioRegistrarRespuestaSecundaria2 servicioRegistrarRespuestaSecundaria2(RepositorioOrden repo,
-            PuertoMensajesProcesados dedup, PoliticaReintentos politica) {
-        return new ServicioRegistrarRespuestaSecundaria2(repo, dedup, politica);
+            PuertoMensajesProcesados dedup, PoliticaReintentos politica, PuertoObservadorEjecucion observador) {
+        return new ServicioRegistrarRespuestaSecundaria2(repo, dedup, politica, observador);
     }
 
     @Bean
