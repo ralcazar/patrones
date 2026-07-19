@@ -14,9 +14,10 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
  * indexa las implementaciones por {@link #tipo()} y delega en ellas el
  * (des)armado de la forma persistible de cada tipo concreto, sin conocer sus
  * clases. Cada tipo guarda su propio contexto (las refs/datos que acumula
- * paso a paso) en SU tabla satélite relacional (ya no en el CLOB
- * {@code proceso.contexto}), con PK = el mismo {@code orden_id} de
- * {@code proceso}.
+ * paso a paso) en SU tabla satélite relacional, con PK = el mismo
+ * {@code orden_id} de la fila {@code orden}: una tabla por tipo de orden,
+ * en vez de una columna genérica compartida, para poder tipar y consultar
+ * cada campo del contexto con SQL normal.
  */
 public interface MapeadorProceso {
 

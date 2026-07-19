@@ -8,6 +8,7 @@ import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio;
 
+/** ÚNICO puerto de persistencia del agregado {@link DatosNegocio} (y sus {@link DocumentoNegocio}). */
 public interface RepositorioDatosNegocio {
     /**
      * Lanza {@link com.ejemplo.app.business.sagas.dominio.datosnegocio.ExternalIdDuplicadoException}

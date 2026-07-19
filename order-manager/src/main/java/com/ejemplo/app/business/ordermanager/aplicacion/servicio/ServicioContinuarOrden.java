@@ -104,9 +104,11 @@ public class ServicioContinuarOrden implements CasoUsoContinuarOrden {
             } catch (RuntimeException e) {
                 var error = DetalleError.de(e);
                 observador.pasoFallido(id, tipo, orden.intentos() + 1, error);
-                // Reintento sobre la MISMA orden usada arriba (fix del takeover
-                // seguro): si otro actor escribió entre medias, este guardado falla
-                // por version igual que el de cualquier otro paso.
+                // Reintento sobre la MISMA instancia de orden usada arriba, con su
+                // version original: si otro actor la hubiera escrito entre medias
+                // (p. ej. tras un takeover por lease vencido), este guardado fallaría
+                // por conflicto de version igual que el de cualquier otro paso, en vez
+                // de pisar silenciosamente ese cambio ajeno.
                 try {
                     self.programarReintento(orden, error);
                 } catch (ConcurrenciaOptimistaException ex) {

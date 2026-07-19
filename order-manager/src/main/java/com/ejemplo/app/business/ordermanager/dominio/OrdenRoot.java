@@ -61,6 +61,13 @@ public final class OrdenRoot {
                 tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
     }
 
+    /**
+     * Gana el reclamo de ejecución: se le asigna un token de trabajador con
+     * un lease que expira en {@code ahora + lease}. Mientras el lease esté
+     * vigente, ningún otro worker puede reclamar esta orden (ver
+     * {@link #tieneTokenVigente}); si el proceso que lo tiene muere sin
+     * liberarlo, el lease vence solo y la orden vuelve a ser reclamable.
+     */
     public void asignarToken(UUID token, Duration lease, Instant ahora) {
         this.tokenTrabajador = token;
         this.tokenExpiraEn = ahora.plus(lease);
@@ -71,10 +78,12 @@ public final class OrdenRoot {
         this.tokenExpiraEn = ahora.plus(lease);
     }
 
+    /** Hay un worker con el token en curso y su lease todavía no ha vencido. */
     public boolean tieneTokenVigente(Instant ahora) {
         return tokenTrabajador != null && tokenExpiraEn != null && tokenExpiraEn.isAfter(ahora);
     }
 
+    /** Deja la orden reclamable de nuevo, sin dueño de ejecución. */
     public void liberarToken() {
         this.tokenTrabajador = null;
         this.tokenExpiraEn = null;
@@ -87,6 +96,7 @@ public final class OrdenRoot {
         this.ultimoError = null;
     }
 
+    /** Escalera de reintentos consumida (ver {@link PoliticaReintentos}): soporte ya fue avisado. */
     public void marcarTicketAbierto(Instant ahora) {
         this.ticketAbiertoEn = ahora;
     }
@@ -103,6 +113,7 @@ public final class OrdenRoot {
         liberarToken();
     }
 
+    /** Un paso ha fallado: cuenta el intento, calcula la próxima ventana con la política y libera el token. */
     public void programarReintento(PoliticaReintentos politica, DetalleError error, Instant ahora) {
         this.intentos++;
         this.proximoReintentoEn = ahora.plus(politica.esperaTras(intentos));
@@ -110,11 +121,13 @@ public final class OrdenRoot {
         liberarToken();
     }
 
+    /** La FSM de negocio llegó a un estado final (ver {@link Proceso#terminada}): no vuelve a ser candidata. */
     public void finalizar(Instant ahora) {
         this.completadaEn = ahora;
         liberarToken();
     }
 
+    /** Todavía no ha finalizado: sigue siendo candidata a ejecución. */
     public boolean estaViva() {
         return completadaEn == null;
     }

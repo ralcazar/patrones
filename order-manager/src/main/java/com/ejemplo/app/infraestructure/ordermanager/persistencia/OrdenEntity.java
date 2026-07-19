@@ -27,11 +27,11 @@ import jakarta.persistence.Version;
  * Entidad JPA de OrdenRoot: la ÚNICA {@code @Version} del agregado, en UNA
  * ÚNICA fila que lleva TANTO el estado de negocio (FSM: {@code tipo},
  * {@code externalId}, {@code estado}, auditoría) COMO el de ejecución
- * (reintentos, lease del token, ticket, finalización). Antes de la fusión de
- * {@code orden}+{@code proceso} en una sola tabla, este agregado se leía en 2
- * SELECT separados con la {@code version} solo en uno de ellos, lo que podía
- * producir una lectura mixta (torn read) bajo READ_COMMITTED; con una única
- * fila y una única foto atómica ({@code findById}) eso deja de ser posible.
+ * (reintentos, lease del token, ticket, finalización). Al vivir negocio y
+ * ejecución en la misma fila, un único {@code findById} obtiene siempre una
+ * foto atómica y consistente de ambos bajo la misma {@code version}: no hay
+ * forma de que una consulta vea negocio y ejecución de instantes distintos
+ * (lectura mixta / torn read).
  *
  * {@code creadaEn}/{@code actualizadaEn} son bookkeeping puro de infraestructura
  * (para el criterio de limpieza y el modelo de lectura de soporte): el dominio
@@ -43,14 +43,14 @@ import jakarta.persistence.Version;
  * detección por versión se desactiva para tipos primitivos) y cae al
  * criterio por defecto (id no nulo = "no nueva"), lo que llevaría a
  * {@code EntityManager.merge()} en vez de {@code persist()} incluso para
- * altas. Con la colección {@code auditoria} ya no vacía desde la fusión con
- * Proceso, ese {@code merge()} de una fila nueva dispara el INSERT + un
- * UPDATE extra de Hibernate al finalizar el manejo de la colección — y ese
- * UPDATE incrementa {@code version} de 0 a 1 en el alta, antes de que nadie
- * haya modificado nada. {@link #marcarComoNueva()} lo evita: {@code crear()}
- * la llama para forzar {@code persist()} (un único INSERT, version se queda
- * en 0); {@code guardar()} no la llama, así que sigue yendo por
- * {@code merge()} con el candado optimista real de JPA.
+ * altas. Con la colección {@code auditoria} (no vacía en general), ese
+ * {@code merge()} de una fila nueva dispara el INSERT + un UPDATE extra de
+ * Hibernate al finalizar el manejo de la colección — y ese UPDATE incrementa
+ * {@code version} de 0 a 1 en el alta, antes de que nadie haya modificado
+ * nada. {@link #marcarComoNueva()} lo evita: {@code crear()} la llama para
+ * forzar {@code persist()} (un único INSERT, version se queda en 0);
+ * {@code guardar()} no la llama, así que sigue yendo por {@code merge()} con
+ * el candado optimista real de JPA.
  */
 @Entity
 @Table(name = "orden")

@@ -4,6 +4,7 @@ import org.jmolecules.ddd.annotation.ValueObject;
 
 import java.time.Instant;
 
+/** Rastro de una intervención manual de soporte sobre un {@link Proceso}: quién, cuándo, qué y por qué. */
 @ValueObject
 public record AuditoriaIntervencion(Instant cuando, UsuarioSoporte quien, String accion, String detalle) {
     public static AuditoriaIntervencion de(UsuarioSoporte quien, String accion, String detalle) {

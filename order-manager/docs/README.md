@@ -42,6 +42,9 @@ Las sagas implementan las 3 en `business.sagas`/`infraestructure.sagas`
 inyectados por Spring — el motor los indexa por `tipo()` sin conocer sus
 clases concretas.
 
+Guía paso a paso para añadir un tipo de orden nuevo (una saga nueva u otro
+proceso de negocio) sobre estas 3 SPI: [extender-saga.md](extender-saga.md).
+
 ## Convención de los diagramas de secuencia
 
 Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
@@ -78,10 +81,13 @@ un parámetro `@Lazy` en `ConfiguracionOrderManager` o `ConfiguracionSagas`
 según a qué módulo pertenezcan) e invocan su parte `@Transactional` a través
 de él (`self.aplicarX(...)`), porque una auto-invocación normal saltaría el
 proxy. Los servicios donde toda la operación pública es una única
-transacción sin REST intercalado (`ServicioIniciarTramitacion`,
-`ServicioLimpiezaDatos`, `ServicioSoporteOrdenes`,
-`ServicioCancelarTramitacion`, `ServicioRegistrarRespuestaSecundaria2`)
-anotan el método público directamente, sin necesidad de `self`.
+transacción sin REST intercalado (`ServicioLimpiezaDatos`,
+`ServicioSoporteOrdenes`, `ServicioCancelarTramitacion`,
+`ServicioRegistrarRespuestaSecundaria2`) anotan el método público
+directamente, sin necesidad de `self`. `ServicioIniciarTramitacion` sí lo
+necesita aunque no sea un `ProcesadorOrden`: pide los datos de negocio por
+REST antes de crear los agregados, así que su método público también
+intercala I/O externo con la parte `@Transactional`.
 Las flechas fluyen de izquierda a derecha y se muestran las líneas de
 activación.
 

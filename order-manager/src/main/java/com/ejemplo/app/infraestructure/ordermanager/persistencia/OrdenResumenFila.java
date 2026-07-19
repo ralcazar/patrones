@@ -3,8 +3,8 @@ package com.ejemplo.app.infraestructure.ordermanager.persistencia;
 import java.time.OffsetDateTime;
 
 /**
- * Proyección nativa plana (join orden+proceso) para el modelo de lectura de
- * soporte. Las columnas TIMESTAMP se declaran {@link OffsetDateTime} (no
+ * Proyección nativa plana sobre la tabla {@code orden} para el modelo de
+ * lectura de soporte. Las columnas TIMESTAMP se declaran {@link OffsetDateTime} (no
  * {@code Instant}): así lo entrega Hibernate para columnas mapeadas como
  * {@code Instant} (TIMESTAMP_UTC) en las proyecciones nativas, sin depender
  * del conversor estático (no configurable) de {@code ProxyProjectionFactory}.

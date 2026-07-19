@@ -11,9 +11,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * Tabla satélite 1:1 con {@code proceso} (PK = {@code orden_id}, FK a
- * {@code proceso.orden_id}, SIN {@code ON DELETE CASCADE}): el contexto propio
- * de la saga secundaria 1 (antes en el CLOB {@code proceso.contexto}).
+ * Tabla satélite 1:1 con {@code orden} (PK = {@code orden_id}, FK a
+ * {@code orden.orden_id}, SIN {@code ON DELETE CASCADE}): el contexto propio
+ * de la saga secundaria 1.
  */
 @Entity
 @Table(name = "proceso_saga_secundaria1")

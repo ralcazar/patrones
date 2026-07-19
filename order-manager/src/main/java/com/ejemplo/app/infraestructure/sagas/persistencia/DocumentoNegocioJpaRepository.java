@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Tabla hija de {@code datos_negocio}: los {@link com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio} de una tramitación. */
 public interface DocumentoNegocioJpaRepository extends JpaRepository<DocumentoNegocioEntity, DocumentoNegocioEntityId> {
     List<DocumentoNegocioEntity> findByDatosnegocioIdOrderBySecuenciaAsc(UUID datosnegocioId);
 

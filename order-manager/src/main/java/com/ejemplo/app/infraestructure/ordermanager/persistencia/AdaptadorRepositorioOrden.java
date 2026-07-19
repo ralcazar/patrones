@@ -44,11 +44,12 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
 
     @Override
     public void crear(OrdenRoot orden) {
-        // La fila orden (ahora padre, FK invertida respecto a antes de la fusión) tiene
-        // que existir antes de que la satélite (hija, FK a orden) se pueda insertar.
-        // marcarComoNueva() fuerza persist() en vez de merge() (el id lo asigna el
-        // dominio, no @GeneratedValue): sin esto, Hibernate haría un INSERT + un UPDATE
-        // extra al procesar la colección auditoria, bumpeando version de 0 a 1 en el alta.
+        // La fila orden es el padre de la relación (la satélite específica del tipo
+        // tiene FK a orden), así que debe existir antes de que se pueda insertar la
+        // satélite. marcarComoNueva() fuerza persist() en vez de merge() (el id lo
+        // asigna el dominio, no @GeneratedValue): sin esto, Hibernate haría un INSERT +
+        // un UPDATE extra al procesar la colección auditoria, bumpeando version de 0 a 1
+        // en el alta.
         var entity = entidadOrdenDe(orden);
         entity.marcarComoNueva();
         ordenes.save(entity);
@@ -58,14 +59,17 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     @Override
     public OrdenRoot cargar(OrdenId id) {
         var ordenId = id.valor();
-        // UN ÚNICO findById: foto atómica de negocio + ejecución (misma fila, misma
-        // version), ya no hay 2 SELECT separados que puedan intercalarse con un commit
-        // ajeno (defecto A / torn read, ver CargaConsistenteAgregadoIntegrationTest).
-        // El satélite se lee DESPUÉS, fuera de esta foto: si un commit ajeno se cuela
-        // entre medias, ese commit ya tuvo que pasar por guardar() (que hace su propio
-        // findById+save+flush sobre la MISMA fila orden) y por tanto bumpea su version;
-        // el guardado posterior de ESTA carga usará la version ya obsoleta que
-        // tenemos aquí y el candado optimista de JPA lo detectará al hacer flush.
+        // UN ÚNICO findById sobre la fila orden: negocio (estado del Proceso) y
+        // ejecución (intentos, token, lease) comparten fila y version, así que esta
+        // única consulta ya es una foto atómica de ambos. Si se leyeran en dos SELECT
+        // separados (uno por negocio, otro por ejecución) un commit ajeno podría colarse
+        // entre medias y devolver una combinación que nunca existió junta (torn read).
+        // El satélite específico del tipo (ver MapeadorProceso) se lee DESPUÉS, fuera de
+        // esta foto atómica: no hace falta que esté dentro porque cualquier commit ajeno
+        // que lo module tiene que pasar por guardar() (que hace su propio
+        // findById+save+flush sobre esta MISMA fila orden) y por tanto bumpea su version;
+        // el guardado posterior de ESTA carga usará la version ya obsoleta que tenemos
+        // aquí y el candado optimista de JPA lo detectará al hacer flush.
         var ordenEntity = ordenes.findById(ordenId)
                 .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + ordenId));
         return OrdenRoot.rehidratar(procesoDesde(ordenEntity), ordenEntity.getIntentos(),
@@ -108,8 +112,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         }
         // Sin ON DELETE CASCADE (prohibido, ver CLAUDE.md): el borrado de las hijas es
         // explícito, en la misma transacción, hijas antes que padre: auditoría ->
-        // satélites -> orden (la FK ahora es orden_id -> orden, invertida respecto a
-        // antes de la fusión, donde el padre era proceso).
+        // satélites -> orden (todas las FK son orden_id -> orden).
         ordenes.borrarAuditoriaPorIds(ids); // proceso_auditoria es hija de orden por FK
         // Cada mapeador borra en SU propia satélite; las filas de otros tipos no matchean.
         for (var mapeador : mapeadores.values()) {
