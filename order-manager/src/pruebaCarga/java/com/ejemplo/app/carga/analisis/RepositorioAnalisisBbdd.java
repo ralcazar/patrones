@@ -2,9 +2,12 @@ package com.ejemplo.app.carga.analisis;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,16 +34,36 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
 
     record FilaDistribucionEstado(String tipo, String estado, long total, long completadas) {}
 
-    /** Candidatas a "estancada": viva, sin ticket, con turno ya vencido (invariante 1). */
-    List<FilaOrdenViva> ordenesEstancadas() {
-        return consultarOrdenesVivas("""
+    /**
+     * Candidatas a "estancada": viva, sin ticket, con el turno vencido ANTES
+     * de {@code vencidasAntesDe} (invariante 1). El límite lo pone el llamante
+     * (ver {@code AnalizadorEjecucion}): el análisis corre post-mortem, con
+     * los pods ya cerrados, así que comparar contra el "ahora" del analizador
+     * marcaría como estancada cualquier orden cuyo turno venciera en los
+     * últimos instantes de vida de los pods, sin barrido restante que pudiera
+     * recogerla.
+     */
+    List<FilaOrdenViva> ordenesEstancadas(Instant vencidasAntesDe) {
+        String sql = """
                 SELECT o.orden_id, o.tipo, o.intentos, o.proximo_reintento_en
                 FROM orden o
                 WHERE o.completada_en IS NULL
                   AND o.ticket_abierto_en IS NULL
-                  AND o.proximo_reintento_en <= CURRENT_TIMESTAMP
+                  AND o.proximo_reintento_en <= ?
                 ORDER BY o.proximo_reintento_en
-                """);
+                """;
+        List<FilaOrdenViva> filas = new ArrayList<>();
+        try (PreparedStatement sentencia = conexion.prepareStatement(sql)) {
+            sentencia.setTimestamp(1, Timestamp.from(vencidasAntesDe));
+            try (ResultSet rs = sentencia.executeQuery()) {
+                while (rs.next()) {
+                    filas.add(mapearFilaOrdenViva(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Fallo consultando la BBDD del harness", e);
+        }
+        return filas;
     }
 
     /** Ticket abierto sin haber agotado la escalera de reintentos (invariante 4, dirección "de más"). */
@@ -70,13 +93,17 @@ final class RepositorioAnalisisBbdd implements AutoCloseable {
         try (Statement sentencia = conexion.createStatement();
                 ResultSet rs = sentencia.executeQuery(sql)) {
             while (rs.next()) {
-                filas.add(new FilaOrdenViva(rs.getString(1), rs.getString(2), rs.getInt(3),
-                        String.valueOf(rs.getTimestamp(4))));
+                filas.add(mapearFilaOrdenViva(rs));
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Fallo consultando la BBDD del harness", e);
         }
         return filas;
+    }
+
+    private static FilaOrdenViva mapearFilaOrdenViva(ResultSet rs) throws SQLException {
+        return new FilaOrdenViva(rs.getString(1), rs.getString(2), rs.getInt(3),
+                String.valueOf(rs.getTimestamp(4)));
     }
 
     long contarTotalOrdenes() {

@@ -7,6 +7,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -262,13 +263,16 @@ public final class LanzadorPruebaCarga {
      * Invoca el analizador determinista de la fase 3 sobre {@code carpetaSalida}
      * ({@link AnalizadorEjecucion}, genera {@code informe.md} a partir de
      * {@code pods.log} + la H2) y devuelve su veredicto (0 invariantes OK, 1
-     * violadas) como código de salida de este lanzador. Se le pasa el lease
-     * REAL usado por los pods de esta ejecución (el del escenario si lo
-     * sobreescribe, si no el mismo por defecto de {@code application.yml}
-     * que {@link AnalizadorEjecucion#LEASE_POR_DEFECTO} documenta): la
-     * carpeta de salida no conserva el .yml del escenario, así que el
-     * invariante de solapes de ejecución necesita este dato para distinguir
-     * un takeover legítimo (lease vencido) de un solape real.
+     * violadas) como código de salida de este lanzador. Se le pasan el lease
+     * y el intervalo de planificador REALES usados por los pods de esta
+     * ejecución (los del escenario, con el mismo por defecto de
+     * {@code application.yml} que {@link AnalizadorEjecucion} documenta si el
+     * escenario no sobreescribe el lease): la carpeta de salida no conserva
+     * el .yml del escenario, así que el invariante de solapes necesita el
+     * lease para distinguir un takeover legítimo de un solape real, y el
+     * invariante de estancadas necesita el intervalo para la gracia de
+     * cierre (una orden cuyo turno vence en el último barrido no está
+     * estancada, es la frontera del apagado).
      */
     /**
      * Invoca el compactador de la fase 5 ({@link CompactadorLogLlm}, genera
@@ -286,8 +290,10 @@ public final class LanzadorPruebaCarga {
 
     private static int invocarAnalizadorSiExiste(Path carpetaSalida, EscenarioCarga escenario) {
         var lease = escenario.motor().lease() != null ? escenario.motor().lease() : AnalizadorEjecucion.LEASE_POR_DEFECTO;
-        log.info("evento=analizador_iniciado carpeta={} lease={} pod=lanzador", carpetaSalida, lease);
-        return AnalizadorEjecucion.analizar(carpetaSalida, lease);
+        var intervaloPlanificador = Duration.ofMillis(escenario.motor().planificador().intervaloMs());
+        log.info("evento=analizador_iniciado carpeta={} lease={} intervalo_planificador={} pod=lanzador",
+                carpetaSalida, lease, intervaloPlanificador);
+        return AnalizadorEjecucion.analizar(carpetaSalida, lease, intervaloPlanificador);
     }
 
     private static void crearDirectorio(Path carpeta) {

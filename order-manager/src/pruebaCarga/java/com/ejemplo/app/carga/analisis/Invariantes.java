@@ -38,12 +38,26 @@ final class Invariantes {
      * (ver {@code OrdenRoot.aparcar}/{@code programarReintento}). Este
      * invariante generaliza "aparcada con causa viva" a cualquier espera
      * legítima (turno en el futuro), sea cual sea su origen.
+     *
+     * <p><b>Gracia de cierre</b>: el análisis corre post-mortem, con los pods
+     * ya apagados; una orden cuyo turno venció dentro de {@code graciaCierre}
+     * antes de {@code finEjecucion} (el instante del último evento del log,
+     * NO el "ahora" del analizador: así un re-análisis manual de una carpeta
+     * antigua da el mismo veredicto que el análisis en caliente) no es
+     * estancamiento sino frontera de apagado — ningún barrido del
+     * planificador quedaba en pie para recogerla. Caso real que motivó la
+     * gracia (rafaga-extrema): la respuesta Kafka de una Secundaria2 la
+     * despertó ({@code proximo_reintento_en = ahora}) ~50 ms antes de que el
+     * lanzador cerrara los contextos; en producción el siguiente barrido (a
+     * un intervalo de distancia) la habría finalizado.
      */
-    static ResultadoInvariante ningunaEstancadaSinDueno(RepositorioAnalisisBbdd db) {
-        var estancadas = db.ordenesEstancadas();
+    static ResultadoInvariante ningunaEstancadaSinDueno(RepositorioAnalisisBbdd db, Instant finEjecucion,
+            Duration graciaCierre) {
+        var estancadas = db.ordenesEstancadas(finEjecucion.minus(graciaCierre));
         if (estancadas.isEmpty()) {
             return ResultadoInvariante.ok("Ninguna orden estancada sin dueño",
-                    "0 órdenes vivas con turno vencido, sin ticket");
+                    "0 órdenes vivas con turno vencido, sin ticket (gracia de cierre: " + graciaCierre
+                            + " antes del fin de la ejecución)");
         }
         List<String> detalles = new ArrayList<>();
         for (var fila : estancadas) {
@@ -51,7 +65,8 @@ final class Invariantes {
                     .formatted(fila.ordenId(), fila.tipo(), fila.intentos(), fila.proximoReintentoEn()));
         }
         return ResultadoInvariante.fallo("Ninguna orden estancada sin dueño",
-                estancadas.size() + " orden(es) estancada(s): turno vencido, sin ticket abierto y sin finalizar",
+                estancadas.size() + " orden(es) estancada(s): turno vencido más allá de la gracia de cierre ("
+                        + graciaCierre + "), sin ticket abierto y sin finalizar",
                 detalles);
     }
 

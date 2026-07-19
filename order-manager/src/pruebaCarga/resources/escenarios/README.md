@@ -155,6 +155,11 @@ Notas para el analizador:
   planificador la recogerá como candidata otra vez).
 - Un `reintento_programado` tampoco implica siempre un `paso_fallido`
   precedente: en SECUNDARIA2, cuando la respuesta Kafka trae `exito=false`,
-  el `reintento_programado` viene precedido de `respuesta_secundaria2_registrada`
-  (con `exito=false`) en vez de `paso_fallido` — no hubo `ejecutarPaso` que
-  fallara, el fallo es de negocio.
+  el `reintento_programado` va emparejado con una
+  `respuesta_secundaria2_registrada` (con `exito=false`) en vez de con un
+  `paso_fallido` — no hubo `ejecutarPaso` que fallara, el fallo es de
+  negocio. En el log el `reintento_programado` aparece JUSTO ANTES de la
+  `respuesta_secundaria2_registrada`, no después: el consumer
+  (`ConsumidorRespuestaSecundaria2.onRespuesta`) delega primero en el caso
+  de uso (que emite el reintento por el puerto al registrar el error) y
+  loguea su propio evento al volver.

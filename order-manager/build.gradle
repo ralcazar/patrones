@@ -36,9 +36,9 @@ sourceSets {
 	// `test` ni `integrationTest`, no computa cobertura); solo necesita
 	// reutilizar las clases de producción (adaptadores, casos de uso).
 	// Fase 6: el paquete `carga.analisis` (analizador determinista de
-	// invariantes) SÍ lleva ahora un test JUnit propio (misma carpeta,
-	// mismo paquete que la clase que prueba: no hay árbol `src/pruebaCargaTest`
-	// separado, ver tarea `pruebaCargaTest` más abajo), ejecutado a mano,
+	// invariantes) SÍ lleva ahora tests JUnit propios (misma carpeta,
+	// mismo paquete que la clase que prueban: no hay árbol `src/pruebaCargaTest`
+	// separado, ver tarea `pruebaCargaTest` más abajo), ejecutados a mano,
 	// SIN engancharse a `check` ni a jacoco (sigue sin computar cobertura).
 	pruebaCarga {
 		compileClasspath += sourceSets.main.output
@@ -90,12 +90,13 @@ dependencies {
 	// pruebaCargaImplementation.extendsFrom implementation.
 	pruebaCargaImplementation 'com.h2database:h2'
 
-	// SOLO para el test JUnit del analizador determinista (fase 6,
-	// `carga.analisis.InvariantesTest`): no hay otro test en `src/pruebaCarga`
-	// (el resto del harness se valida de punta a punta, no con JUnit), pero
-	// el invariante de "sin solicitudes duplicadas en SECUNDARIA2" opera solo
-	// sobre `List<EventoLog>` en memoria (sin BBDD ni Spring), así que un
-	// test unitario puro es la forma natural de fijar su comportamiento.
+	// SOLO para los tests JUnit del analizador determinista (fase 6,
+	// `carga.analisis.InvariantesTest` y `MetricasTest`): no hay otros tests
+	// en `src/pruebaCarga` (el resto del harness se valida de punta a punta,
+	// no con JUnit). Operan sobre `List<EventoLog>` en memoria o, para el
+	// invariante de estancadas, sobre una H2 en memoria efímera con el
+	// esquema real de `db/` (sin Spring, sin contextos): un test unitario
+	// rápido es la forma natural de fijar su comportamiento.
 	// Versión gestionada por Spring Boot BOM (io.spring.dependency-management),
 	// igual que el resto de dependencias del proyecto sin versión explícita.
 	pruebaCargaImplementation 'org.junit.jupiter:junit-jupiter'

@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -17,13 +18,15 @@ import java.util.List;
  * <p>Se invoca de dos formas:
  * <ul>
  *   <li>Automáticamente, en proceso, desde {@code LanzadorPruebaCarga} al
- *       cerrar los contextos de todos los pods (usa {@link #analizar(Path, Duration)}
- *       con el lease REAL del escenario, para que el invariante de solapes
- *       distinga con precisión un takeover legítimo).</li>
+ *       cerrar los contextos de todos los pods (usa
+ *       {@link #analizar(Path, Duration, Duration)} con el lease y el
+ *       intervalo de planificador REALES del escenario: el lease para que el
+ *       invariante de solapes distinga un takeover legítimo, el intervalo
+ *       para la gracia de cierre del invariante 1).</li>
  *   <li>A mano, sobre una carpeta de salida ya existente, vía {@link #main}
- *       (usa {@link #analizar(Path)}, con el lease por defecto de
- *       {@code application.yml} salvo que se pase como segundo argumento —
- *       ver {@code PROMPT-ANALISIS.md}).</li>
+ *       (usa {@link #analizar(Path)}, con el lease y el intervalo por
+ *       defecto de {@code application.yml} salvo que se pasen como segundo y
+ *       tercer argumento — ver {@code PROMPT-ANALISIS.md}).</li>
  * </ul>
  *
  * <p>El código de salida es el veredicto: 0 BUENO (todos los invariantes se
@@ -39,26 +42,48 @@ public final class AnalizadorEjecucion {
      */
     public static final Duration LEASE_POR_DEFECTO = Duration.parse("PT10M");
 
+    /**
+     * Coincide con el valor por defecto de
+     * {@code ordermanager.planificador.intervalo-ms} en application.yml
+     * (5000). Mismo papel que {@link #LEASE_POR_DEFECTO}: el modo manual
+     * ({@link #main}) no conserva el escenario .yml, así que sin argumento se
+     * asume el valor de producción.
+     */
+    public static final Duration INTERVALO_PLANIFICADOR_POR_DEFECTO = Duration.ofMillis(5000);
+
+    /**
+     * Margen que se añade al intervalo del planificador para formar la gracia
+     * de cierre del invariante 1 (ver {@code Invariantes.ningunaEstancadaSinDueno}):
+     * cubre el tiempo entre el último barrido posible de un pod y el "ahora"
+     * del analizador (cierre secuencial de los contextos + arranque del
+     * análisis). Una orden estancada DE VERDAD lleva vencida al menos la
+     * espera mínima de la escalera (60 s), así que este margen no le da
+     * cobertura.
+     */
+    private static final Duration MARGEN_CIERRE_CONTEXTOS = Duration.ofSeconds(2);
+
     private AnalizadorEjecucion() {
     }
 
     public static void main(String[] args) {
-        if (args.length < 1 || args.length > 2) {
-            System.err.println("Uso: AnalizadorEjecucion <carpeta-de-salida> [lease ISO-8601, p.ej. PT10M]");
+        if (args.length < 1 || args.length > 3) {
+            System.err.println(
+                    "Uso: AnalizadorEjecucion <carpeta-de-salida> [lease ISO-8601, p.ej. PT10M] [intervalo-planificador ISO-8601, p.ej. PT0.25S]");
             System.exit(2);
             return;
         }
         Path carpetaSalida = Path.of(args[0]);
-        Duration lease = args.length == 2 ? Duration.parse(args[1]) : LEASE_POR_DEFECTO;
-        int codigoSalida = analizar(carpetaSalida, lease);
+        Duration lease = args.length >= 2 ? Duration.parse(args[1]) : LEASE_POR_DEFECTO;
+        Duration intervalo = args.length == 3 ? Duration.parse(args[2]) : INTERVALO_PLANIFICADOR_POR_DEFECTO;
+        int codigoSalida = analizar(carpetaSalida, lease, intervalo);
         System.out.println("[AnalizadorEjecucion] Veredicto: " + (codigoSalida == 0 ? "BUENO" : "MALO")
                 + " — ver " + carpetaSalida.resolve("informe.md"));
         System.exit(codigoSalida);
     }
 
-    /** Usa el lease por defecto de producción; para escenarios que sobreescriben {@code motor.lease}, ver {@link #analizar(Path, Duration)}. */
+    /** Usa el lease y el intervalo por defecto de producción; para escenarios que los sobreescriben, ver {@link #analizar(Path, Duration, Duration)}. */
     public static int analizar(Path carpetaSalida) {
-        return analizar(carpetaSalida, LEASE_POR_DEFECTO);
+        return analizar(carpetaSalida, LEASE_POR_DEFECTO, INTERVALO_PLANIFICADOR_POR_DEFECTO);
     }
 
     /**
@@ -66,15 +91,28 @@ public final class AnalizadorEjecucion {
      *              ejecución (necesario para que el invariante de solapes
      *              distinga un takeover legítimo de un solape real; la
      *              carpeta de salida no conserva el escenario .yml original).
+     * @param intervaloPlanificador el intervalo de barrido realmente usado
+     *              por los pods ({@code motor.planificador.intervalo-ms} del
+     *              escenario): junto con {@link #MARGEN_CIERRE_CONTEXTOS}
+     *              forma la gracia de cierre del invariante 1.
      * @return 0 si el veredicto es BUENO, 1 si es MALO.
      */
-    public static int analizar(Path carpetaSalida, Duration lease) {
+    public static int analizar(Path carpetaSalida, Duration lease, Duration intervaloPlanificador) {
         List<EventoLog> eventos = LectorLog.leer(carpetaSalida.resolve("pods.log"));
         String urlJdbc = "jdbc:h2:file:" + carpetaSalida.resolve("bbdd") + ";MODE=Oracle";
 
         try (var db = new RepositorioAnalisisBbdd(urlJdbc)) {
+            Duration graciaCierre = intervaloPlanificador.plus(MARGEN_CIERRE_CONTEXTOS);
+            // Ancla del invariante 1: el fin de la ejecución según el propio log
+            // (último evento), no el reloj del analizador — así re-analizar una
+            // carpeta antigua reproduce el mismo veredicto que el análisis en
+            // caliente. Un log sin eventos no ocurre en una ejecución real
+            // (el lanzador siempre escribe los suyos); si pasara, se cae al
+            // "ahora" y el invariante se evalúa sin frontera de apagado.
+            Instant finEjecucion = eventos.isEmpty() ? Instant.now()
+                    : eventos.get(eventos.size() - 1).timestamp();
             List<ResultadoInvariante> invariantes = List.of(
-                    Invariantes.ningunaEstancadaSinDueno(db),
+                    Invariantes.ningunaEstancadaSinDueno(db, finEjecucion, graciaCierre),
                     Invariantes.sinSolapesDeEjecucion(eventos, lease),
                     Invariantes.reintentosRespetanPolitica(eventos),
                     Invariantes.ticketsCoherentesConReintentos(db),

@@ -177,6 +177,25 @@ final class Metricas {
      * {@code reintento_programado}. Sin esta cancelación, escenarios con
      * Secundaria2 (todos) mostrarían una entrada fantasma en la cola horas
      * después de que la orden ya hubiera finalizado.
+     *
+     * <p>La cancelación aplica también cuando lo que llega antes es OTRA
+     * programación de regreso: una Secundaria2 aparcada cuya respuesta Kafka
+     * trae {@code exito=false} emite un {@code reintento_programado} sin
+     * pasar por {@code reclamo_ganado} (ver el catálogo de eventos), y ese
+     * reintento SUSTITUYE a la ventana de conciliación de 3h — el {@code +1}
+     * de la ventana debe cancelarse igual, o quedaría huérfano y pintaría
+     * minutos fantasma horas después del fin de la ejecución.
+     *
+     * <p>Y la tercera vía que adelanta la ventana: la respuesta Kafka con
+     * {@code exito=true} despierta la orden aparcada como candidata INMEDIATA
+     * ({@code ServicioRegistrarRespuestaSecundaria2.respuestaOk} →
+     * {@code OrdenRoot.despertar}, {@code proximo_reintento_en = ahora}). El
+     * evento {@code respuesta_secundaria2_registrada} con {@code exito=true}
+     * cancela por tanto el regreso programado de la ventana y suma {@code +1}
+     * en su propio instante (la orden vuelve a la cola YA): sin esto, el
+     * {@code -1} del reclamo posterior restaba sin {@code +1} previo
+     * (infracontando), y si el apagado llegaba antes del reclamo la ventana
+     * de 3h quedaba huérfana pintando un minuto fantasma.
      */
     static ProfundidadCola profundidadCola(List<EventoLog> eventos) {
         List<EventoLog> ordenados = new ArrayList<>(eventos);
@@ -193,14 +212,25 @@ final class Metricas {
                 }
                 case "orden_finalizada" -> cancelarRegresoSiSeAdelanto(deltas, proximoRegresoProgramado, evento);
                 case "reintento_programado" -> {
+                    cancelarRegresoSiSeAdelanto(deltas, proximoRegresoProgramado, evento);
                     Instant regresa = evento.timestamp().plusMillis(evento.campoLong("espera_ms"));
                     deltas.merge(regresa, 1L, Long::sum);
                     proximoRegresoProgramado.put(evento.orden(), regresa);
                 }
                 case "orden_aparcada" -> {
+                    cancelarRegresoSiSeAdelanto(deltas, proximoRegresoProgramado, evento);
                     Instant regresa = evento.timestamp().plusMillis(evento.campoLong("ventana_ms"));
                     deltas.merge(regresa, 1L, Long::sum);
                     proximoRegresoProgramado.put(evento.orden(), regresa);
+                }
+                case "respuesta_secundaria2_registrada" -> {
+                    // Solo exito=true despierta la orden (candidata inmediata); con
+                    // exito=false el regreso ya lo reprogramó su reintento_programado.
+                    if ("true".equals(evento.campo("exito"))) {
+                        cancelarRegresoSiSeAdelanto(deltas, proximoRegresoProgramado, evento);
+                        deltas.merge(evento.timestamp(), 1L, Long::sum);
+                        proximoRegresoProgramado.put(evento.orden(), evento.timestamp());
+                    }
                 }
                 default -> { /* resto de eventos no afectan a la cola de ejecutables */ }
             }
@@ -254,9 +284,10 @@ final class Metricas {
      * Si la orden tenía un "regreso a la cola" programado (por
      * {@code reintento_programado} o {@code orden_aparcada}) para un instante
      * futuro TODAVÍA no alcanzado, y ahora se resuelve antes por otra vía
-     * ({@code reclamo_ganado} o {@code orden_finalizada} llegando antes de
-     * esa hora), el {@code +1} que habíamos programado para ese instante
-     * futuro nunca debe contar: se cancela restándolo del mismo instante.
+     * ({@code reclamo_ganado}, {@code orden_finalizada} o una NUEVA
+     * programación de regreso que lo sustituye, llegando antes de esa hora),
+     * el {@code +1} que habíamos programado para ese instante futuro nunca
+     * debe contar: se cancela restándolo del mismo instante.
      */
     private static void cancelarRegresoSiSeAdelanto(TreeMap<Instant, Long> deltas,
             Map<String, Instant> proximoRegresoProgramado, EventoLog evento) {
