@@ -99,7 +99,7 @@ public class OrdenEntity implements Persistable<UUID> {
     @Column(name = "ultimo_error_tipo", length = 200)
     private String ultimoErrorTipo;
 
-    @Column(name = "ultimo_error_mensaje", length = 1000)
+    @Column(name = "ultimo_error_mensaje", length = 4000)
     private String ultimoErrorMensaje;
 
     @Version
