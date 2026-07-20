@@ -1,5 +1,5 @@
 @startuml 09-limpieza-datos
-title Limpieza periódica: purgar órdenes finalizadas y antiguas + registros de deduplicación
+title Limpieza periódica: purgar órdenes finalizadas y antiguas
 
 box "Adaptadores de entrada" #EFF5FB
   participant "PlanificadorLimpieza\n(@Scheduled cron 0 0 3 * * *)" as PLAN
@@ -9,7 +9,6 @@ box "Aplicación" #F5FBEF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
-  participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
 end box
 
 note over PLAN, LIMP
@@ -37,12 +36,9 @@ group Transacción única (@Transactional)
     REPO -> REPO : return ids.size()
   end
   return nº órdenes borradas
-  LIMP -> DEDUP ++ : purgarAnterioresA(corte)
-  DEDUP -> DEDUP : borra registros de deduplicación\nanteriores al corte
-  return nº registros dedup borrados
 end
-return ResultadoLimpieza(ordenes, mensajesDedup)
-PLAN -> PLAN : log.info("Limpieza de datos (corte {}):\n{} órdenes y {} registros dedup borrados", ...)
+return ResultadoLimpieza(ordenes)
+PLAN -> PLAN : log.info("Limpieza de datos (corte {}): {} órdenes borradas", ...)
 deactivate PLAN
 
 note over REPO
@@ -52,7 +48,6 @@ note over REPO
   (antes lo era proceso): proceso_auditoria y cada satélite de
   MapeadorProceso son hijas de orden por FK (una tabla por tipo de
   orden) y se borran antes; orden se borra el último, ya libre de FKs
-  de sus hijas. Todo o nada: un solo commit para órdenes + satélites +
-  dedup.
+  de sus hijas. Todo o nada: un solo commit para órdenes + satélites.
 end note
 @enduml

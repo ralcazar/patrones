@@ -73,8 +73,7 @@ com/ejemplo/app/
                          CasoUsoAbrirTicketsPendientes,
                          CasoUsoLimpiarDatosAntiguos
         puerto/salida/   RepositorioOrden, PuertoConsultaOrdenesSoporte,
-                         PuertoOrdenesTicketPendiente, PuertoTicketsSoporte,
-                         PuertoMensajesProcesados
+                         PuertoOrdenesTicketPendiente, PuertoTicketsSoporte
         servicio/        ServicioContinuarOrden, ProcesadorOrden (SPI, una
                          implementación por tipo de orden), SenalPaso,
                          ServicioSoporteOrdenes, ServicioTicketsSoporte,
@@ -153,8 +152,12 @@ La reentrega por lease implica at-least-once hacia los servicios externos:
 si un paso quedó en curso sin resultado registrado, el siguiente
 `continuarSiguiente()` lo re-ejecuta. Los servicios REST de los pasos deben
 ser idempotentes por `externalId` (o tolerar el duplicado). El consumer de
-Kafka de la saga secundaria 2 deduplica por `mensajeId`
-(`PuertoMensajesProcesados`).
+Kafka de la saga secundaria 2 no deduplica por `mensajeId`: el evento real
+solo trae éxito y `respuestaRecibida` es una transición a TERMINADA (estado
+absorbente), así que un duplicado reentregado por Kafka llega a una orden ya
+terminada (o purgada) y el guard de
+`ServicioRegistrarRespuestaSecundaria2.respuestaOk` lo ignora sin reescribir
+nada.
 
 ## Pendiente de implementar (infra restante)
 

@@ -6,8 +6,8 @@ title Máquinas de estado de NEGOCIO (EstadoSaga*) y el modelo OPERATIVO de fina
 note as NInmutabilidad
   Proceso<E> y las 4 sagas son @ValueObject inmutables (ver 14-16, 25):
   cada transición de las de abajo (aplicarYAvanzar, cancelar,
-  compensacionCompletada, solicitudEnviada, respuestaRecibida,
-  volverASolicitar) NO muta el objeto -- devuelve una instancia
+  compensacionCompletada, solicitudEnviada, respuestaRecibida)
+  NO muta el objeto -- devuelve una instancia
   NUEVA en el estado siguiente. OrdenRoot.reemplazarProceso(nueva)
   es quien sustituye el valor en el agregado tras cada transición
   (ver 02, 03, 04, 05, 06, 08).
@@ -73,8 +73,7 @@ state "EstadoSagaSecundaria2 (SagaSecundaria2)" as MSec2 {
 
   [*] --> INICIAL3 : crear(id, ArranqueSecundaria2)
   INICIAL3 --> ESPERANDO_RESPUESTA : solicitudEnviada()\n(tras puerto.solicitar REST)
-  ESPERANDO_RESPUESTA --> TERMINADA3 : respuestaRecibida(ref)\n(evento Kafka o conciliación\nDisponible(ref))
-  ESPERANDO_RESPUESTA --> INICIAL3 : volverASolicitar()\n(evento Kafka de error o\nconciliación FalloRegistrado)
+  ESPERANDO_RESPUESTA --> TERMINADA3 : respuestaRecibida(ref)\n(evento Kafka, siempre éxito,\no conciliación Disponible(ref))
   TERMINADA3 --> [*] : saga.terminada() = true
 }
 

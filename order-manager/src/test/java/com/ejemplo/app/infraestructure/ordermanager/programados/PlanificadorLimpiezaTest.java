@@ -16,7 +16,7 @@ class PlanificadorLimpiezaTest {
     @Test
     void ejecutar_invocaLaLimpiezaConElCorteDerivadoDeLaRetencion() {
         var limpieza = mock(CasoUsoLimpiarDatosAntiguos.class);
-        when(limpieza.purgarAnterioresA(any())).thenReturn(new ResultadoLimpieza(3, 5));
+        when(limpieza.purgarAnterioresA(any())).thenReturn(new ResultadoLimpieza(3));
         var planificador = new PlanificadorLimpieza(limpieza, 30);
 
         planificador.ejecutar();

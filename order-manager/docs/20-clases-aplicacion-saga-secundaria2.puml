@@ -6,13 +6,13 @@ skinparam classAttributeIconSize 0
 
 package "business.sagas.aplicacion.puerto.entrada" {
   interface CasoUsoRegistrarRespuestaSecundaria2 {
-    +respuestaOk(ordenId, ref, mensajeId)
-    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)
+    +respuestaOk(ordenId, ref)
   }
   note bottom of CasoUsoRegistrarRespuestaSecundaria2
     Entrada del consumer Kafka: el adaptador de entrada no toca el
     agregado ni RepositorioOrden directamente — pasa por aquí
-    (regla de arquitectura del CLAUDE.md).
+    (regla de arquitectura del CLAUDE.md). El evento real solo trae
+    éxito: no hay caso de error en el contrato.
   end note
 }
 
@@ -54,25 +54,21 @@ package "business.sagas.aplicacion.servicio.sagasecundaria2" {
 
   class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
     -repo : RepositorioOrden
-    -dedup : PuertoMensajesProcesados
-    -politica : PoliticaReintentos
-    -observador : PuertoObservadorEjecucion
-    +respuestaOk(ordenId, ref, mensajeId)  «@Transactional: dedup +\norden.reemplazarProceso(saga.respuestaRecibida(ref)) + orden.despertar(ahora)»
-    +respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)  «@Transactional: dedup +\norden.reemplazarProceso(saga.volverASolicitar()) + orden.programarReintento(politica, ahora)\n+ observador.reintentoProgramado(ordenId, tipo, intentos, espera)»
+    +respuestaOk(ordenId, ref)  «@Transactional: cargar (catch si ya\npurgada) + guard !estaViva()||terminada() +\norden.reemplazarProceso(saga.respuestaRecibida(ref)) + orden.despertar(ahora)»
   }
   note bottom of ServicioRegistrarRespuestaSecundaria2
-    @Transactional directamente en respuestaOk/respuestaError: se
-    invocan cross-bean desde el consumer de Kafka, así que el proxy
-    aplica sin necesidad de self. Castea orden.proceso() a
-    SagaSecundaria2 y deja la saga en TERMINADA (o de vuelta en
-    INICIAL), solo despertando/reprogramando la orden: el cierre
-    operativo final (orden.finalizar) lo hace
+    @Transactional directamente en respuestaOk: se invoca cross-bean
+    desde el consumer de Kafka, así que el proxy aplica sin necesidad
+    de self. Castea orden.proceso() a SagaSecundaria2 y deja la saga
+    en TERMINADA, solo despertando la orden: el cierre operativo
+    final (orden.finalizar) lo hace
     ServicioSagaSecundaria2.aplicarFinalizacionYaResuelta() en la
     siguiente pasada del planificador — un único punto decide cuándo
-    la orden queda finalizada. respuestaError emite reintentoProgramado
-    tras guardar(orden): sin este evento el reintento programado aquí
-    queda invisible en el log (la orden "desaparece" durante la
-    espera) — ver la nota de PuertoObservadorEjecucion en 17.
+    la orden queda finalizada. La idempotencia ante duplicados
+    descansa en TERMINADA como estado absorbente (guard antes de
+    escribir), no en deduplicación por mensajeId: si el contrato
+    añadiera un caso de error habría que volver al patrón idempotent
+    consumer (ver javadoc de la clase).
   end note
 }
 
@@ -84,14 +80,6 @@ package "puerto.salida" {
   interface PuertoConciliacionSecundaria2 {
     +consultar(ordenId, externalId) :\nDisponible(ref) | FalloRegistrado(motivo) | SinResultado()
   }
-  interface "PuertoMensajesProcesados\n(business.ordermanager — ver 17)" as PuertoMensajesProcesados {
-    +yaProcesado(msgId) : boolean
-    +registrar(msgId)
-    +purgarAnterioresA(corte) : long
-  }
-  interface "PuertoObservadorEjecucion\n(business.ordermanager — ver 17)" as PuertoObservadorEjecucion {
-    +reintentoProgramado(id, tipo, intento : int, espera : Duration)
-  }
 }
 
 CasoUsoRegistrarRespuestaSecundaria2 <|.. ServicioRegistrarRespuestaSecundaria2
@@ -100,6 +88,4 @@ ServicioSagaSecundaria2 --> RepositorioOrden
 ServicioSagaSecundaria2 --> PuertoSagaSecundaria2 : REST de solicitud
 ServicioSagaSecundaria2 --> PuertoConciliacionSecundaria2 : REST de conciliación\nal vencer el aparcado
 ServicioRegistrarRespuestaSecundaria2 --> RepositorioOrden
-ServicioRegistrarRespuestaSecundaria2 --> PuertoMensajesProcesados : dedup por mensajeId\n(at-least-once)
-ServicioRegistrarRespuestaSecundaria2 --> PuertoObservadorEjecucion : reintentoProgramado tras\nuna respuesta exito=false
 @enduml

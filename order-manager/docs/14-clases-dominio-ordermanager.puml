@@ -67,7 +67,7 @@ note right of Proceso
   de OrdenRoot. Cada transición (aplicarYAvanzar,
   marcarPasoActualOkManual, y las específicas de cada saga —
   cancelar, compensacionCompletada, solicitudEnviada,
-  respuestaRecibida, volverASolicitar, ver 15/16) devuelve una
+  respuestaRecibida, ver 15/16) devuelve una
   INSTANCIA NUEVA en vez de mutar; OrdenRoot.reemplazarProceso(nueva)
   es quien sustituye el valor tras cada transición (ver 02-08).
   Clase neutra del motor: no conoce "saga". Sus subclases
@@ -129,12 +129,10 @@ class DetalleError <<@ValueObject, record>> {
 }
 note bottom of DetalleError
   Lo que soporte ve de un fallo: clase de la excepción + mensaje,
-  NUNCA el stacktrace. La rellena tanto ServicioContinuarOrden
-  (DetalleError.de(e) sobre la RuntimeException de un paso) como
-  ServicioRegistrarRespuestaSecundaria2 (codigo/detalle del
-  evento Kafka de error) -- ver 17 y 07.
+  NUNCA el stacktrace. La rellena ServicioContinuarOrden
+  (DetalleError.de(e) sobre la RuntimeException de un paso) -- ver 17.
 end note
-class "OrdenId, ExternalId, MensajeId,\nUsuarioSoporte, AuditoriaIntervencion" as VOs <<@ValueObject>>
+class "OrdenId, ExternalId,\nUsuarioSoporte, AuditoriaIntervencion" as VOs <<@ValueObject>>
 
 OrdenRoot "1" *-- "1" Proceso : proceso
 OrdenRoot ..> PoliticaReintentos : programarReintento(politica, error, ahora)

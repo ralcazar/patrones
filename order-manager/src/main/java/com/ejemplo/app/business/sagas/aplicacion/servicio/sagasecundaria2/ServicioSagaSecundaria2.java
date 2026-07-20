@@ -26,11 +26,10 @@ import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
  * perdida se concilia con el servicio destino: puede que el evento se
  * perdiera o esté aún en camino.
  *
- * Cuando el consumer de Kafka resuelve la saga directamente (respuestaOk /
- * respuestaError), solo despierta o reprograma la orden: es este servicio,
- * en su siguiente pasada, quien deja el agregado en su estado operativo final
- * (finalizar u otra solicitud), manteniendo un único punto que decide cuándo
- * una orden queda finalizada.
+ * Cuando el consumer de Kafka resuelve la saga directamente (respuestaOk),
+ * solo despierta la orden: es este servicio, en su siguiente pasada, quien
+ * deja el agregado en su estado operativo final (finalizar), manteniendo un
+ * único punto que decide cuándo una orden queda finalizada.
  *
  * El REST (solicitud/conciliación) ocurre fuera de transacción; aplicar el
  * resultado y guardar van en {@code @Transactional}. Como este servicio es un

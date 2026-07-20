@@ -23,8 +23,7 @@ import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
  * el servicio destino responde a posteriori publicando un evento Kafka que
  * puede tardar (ventana de 3h vigilada por la capa de aplicación). El
  * agregado no sabe nada de ese mecanismo: solo modela sus tres estados
- * (INICIAL -&gt; ESPERANDO_RESPUESTA -&gt; TERMINADA) y, si la conciliación
- * detecta un fallo registrado, permite volver a solicitar.
+ * (INICIAL -&gt; ESPERANDO_RESPUESTA -&gt; TERMINADA).
  *
  * Nace cuando la principal alcanza TERMINADA (después del punto de no
  * retorno): nunca se cancela ni compensa.
@@ -110,11 +109,6 @@ public final class SagaSecundaria2 extends Proceso<EstadoSagaSecundaria2> {
     /** Llega el evento Kafka (o la conciliación) con la respuesta: la saga termina. */
     public SagaSecundaria2 respuestaRecibida(RefRespuesta ref) {
         return new SagaSecundaria2(id, externalId, refPaso5, ref, EstadoSagaSecundaria2.TERMINADA, auditoria);
-    }
-
-    /** La conciliación detectó un fallo registrado en destino: hay que reintentar la solicitud. */
-    public SagaSecundaria2 volverASolicitar() {
-        return new SagaSecundaria2(id, externalId, refPaso5, refRespuesta, EstadoSagaSecundaria2.INICIAL, auditoria);
     }
 
     public RefPaso5 refPaso5() { return refPaso5; }

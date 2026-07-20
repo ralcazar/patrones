@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
@@ -75,8 +74,7 @@ public class ConfiguracionOrderManager {
     }
 
     @Bean
-    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoMensajesProcesados dedup,
-            PuertoObservadorEjecucion observador) {
-        return new ServicioLimpiezaDatos(repo, dedup, observador);
+    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoObservadorEjecucion observador) {
+        return new ServicioLimpiezaDatos(repo, observador);
     }
 }

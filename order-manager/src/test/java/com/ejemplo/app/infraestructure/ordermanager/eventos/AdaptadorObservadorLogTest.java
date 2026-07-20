@@ -104,9 +104,8 @@ class AdaptadorObservadorLogTest {
 
     @Test
     void datosAntiguosPurgados() {
-        var mensaje = unicoMensaje(() -> adaptador.datosAntiguosPurgados(4, 9));
+        var mensaje = unicoMensaje(() -> adaptador.datosAntiguosPurgados(4));
 
-        assertThat(mensaje).isEqualTo(
-                "evento=purga_datos_antiguos ordenes_eliminadas=4 mensajes_eliminados=9 pod=pod-7");
+        assertThat(mensaje).isEqualTo("evento=purga_datos_antiguos ordenes_eliminadas=4 pod=pod-7");
     }
 }

@@ -16,16 +16,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Consumer FINO del topic de respuesta de la saga secundaria 2 (el único uso
- * de Kafka en la aplicación): no procesa la saga, solo parsea el evento y lo
- * entrega al caso de uso de registro, que lo encola como tarea. Ventajas:
- *  - El commit del offset de Kafka y el insert de la orden son casi
- *    instantáneos: sin rebalanceos por procesamiento lento.
- *  - Todo el trabajo de saga pasa por el mismo pool con lease e idempotencia.
- *  - Si Kafka reentrega, se insertan dos órdenes; la deduplicación por
- *    mensajeId hace la segunda inofensiva.
- * Como adaptador de entrada, no toca la cola (adaptador de salida): pasa por
- * la capa de aplicación (regla de arquitectura del CLAUDE.md).
- * Ajusta el parseo del evento al esquema real de tu topic.
+ * de Kafka en la aplicación): el evento real solo trae éxito (no hay caso de
+ * error en el contrato), así que este adaptador se limita a parsear el
+ * evento y aplicarlo directamente sobre el agregado a través del caso de uso
+ * de registro, en la misma transacción. Como adaptador de entrada, no toca
+ * el agregado ni sus puertos de salida directamente: pasa por la capa de
+ * aplicación (regla de arquitectura del CLAUDE.md). Ajusta el parseo del
+ * evento al esquema real de tu topic.
+ *
+ * <p>Si Kafka reentrega el mensaje (entrega at-least-once), la segunda
+ * aplicación es inofensiva porque {@code respuestaRecibida} lleva la saga a
+ * un estado absorbente (TERMINADA): ver la caveat de diseño en el javadoc de
+ * {@code ServicioRegistrarRespuestaSecundaria2}.
  *
  * El registro de la respuesta nace ya en este adaptador de entrada: se
  * loguea aquí mismo, con el mismo formato que {@code PuertoObservadorEjecucion}
@@ -51,16 +53,11 @@ public class ConsumidorRespuestaSecundaria2 {
                             @Header(name = "kafka_receivedMessageKey", required = false) String key) throws Exception {
         JsonNode n = mapper.readTree(mensaje);
         var sagaId = OrdenId.de(n.get("sagaId").asText());   // clave de correlación puesta por PuertoSagaSecundaria2
-        var mensajeId = n.get("mensajeId").asText();        // id único del evento (dedup)
-        var exito = n.get("exito").asBoolean();
+        var mensajeId = n.get("mensajeId").asText();        // id único del evento, solo para el log
 
-        if (exito) {
-            registro.respuestaOk(sagaId, new RefRespuesta(n.get("ref").asText()), mensajeId);
-        } else {
-            registro.respuestaError(sagaId, n.get("codigo").asText(), n.get("detalle").asText(),
-                    n.path("reintentable").asBoolean(true), mensajeId);
-        }
+        registro.respuestaOk(sagaId, new RefRespuesta(n.get("ref").asText()));
+
         log.info("evento=respuesta_secundaria2_registrada orden={} tipo={} exito={} mensaje_id={} pod={}",
-                sagaId.valor(), SagaSecundaria2.TIPO.valor(), exito, mensajeId, pod);
+                sagaId.valor(), SagaSecundaria2.TIPO.valor(), true, mensajeId, pod);
     }
 }

@@ -17,7 +17,6 @@ box "Dominio" #FBF5EF
 end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden" as REPO
-  participant "PuertoMensajes\nProcesados (dedup)" as DEDUP
   participant "PuertoSagaSecundaria2\n(REST de solicitud)" as PSOL
   participant "PuertoConciliacionSecundaria2\n(REST)" as PCON
 end box
@@ -74,30 +73,36 @@ CONT -> CONT : switch(señal): Aparcar -> return (fin del bucle)
 return true (el worker sigue con la siguiente candidata\nhasta que continuarSiguiente() devuelva false)
 deactivate TRAB
 
-== El servicio externo responde a posteriori (puede tardar) por Kafka: éxito ==
+== El servicio externo responde a posteriori (puede tardar) por Kafka: SIEMPRE éxito (el contrato no tiene caso de error) ==
 [o-> CONS : evento en topic sagas.topics.respuesta-secundaria2 (JSON)
 activate CONS
-CONS -> CONS : parsear ordenId, mensajeId, ref
-CONS -> SREG ++ : respuestaOk(ordenId, RefRespuesta(ref), mensajeId)
-SREG -> DEDUP ++ : yaProcesado(MensajeId.externo(mensajeId))
-return no
+CONS -> CONS : parsear ordenId, mensajeId (solo para el log), ref
+CONS -> SREG ++ : respuestaOk(ordenId, RefRespuesta(ref))
 group Transacción (@Transactional en respuestaOk: método público,\nse invoca cross-bean desde el consumer, el proxy aplica sin self)
-  SREG -> DEDUP ++ : registrar(msgId)
-  return
   SREG -> REPO ++ : cargar(ordenId)
-  return orden
-  SREG -> ORDEN ++ : orden.proceso()
-  return saga
-  SREG -> SAGA ++ : saga.respuestaRecibida(ref)
-  SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
-  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
-  SREG -> ORDEN ++ : despertar(Instant.now())
-  ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
-  return
-  SREG -> REPO ++ : guardar(orden)
-  return
+  alt la orden ya no existe (limpieza de datos la purgó)
+    REPO --> SREG : lanza IllegalArgumentException
+    deactivate REPO
+    SREG -> SREG : catch -- duplicado tardío inofensivo\n(evita el poison pill del listener)
+  else la orden existe
+    return orden
+    alt !orden.estaViva() || orden.proceso().terminada() (duplicado tardío)
+      SREG -> SREG : ignora -- no reescribe el agregado
+    else orden viva y proceso no terminado (camino normal)
+      SREG -> ORDEN ++ : orden.proceso()
+      return saga (SagaSecundaria2)
+      SREG -> SAGA ++ : saga.respuestaRecibida(ref)
+      SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
+      return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
+      SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
+      return
+      SREG -> ORDEN ++ : despertar(Instant.now())
+      ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
+      return
+      SREG -> REPO ++ : guardar(orden)
+      return
+    end
+  end
 end
 return
 [<-o CONS : ack del offset
@@ -108,6 +113,9 @@ note over SREG
   orden.finalizar(): el cierre operativo lo hace el mismo
   servicio en su siguiente pasada (rama TERMINADA de abajo),
   manteniendo un único punto que decide cuándo la orden acaba.
+  La idempotencia ante duplicados descansa en TERMINADA como
+  estado absorbente (guard de arriba), no en deduplicación por
+  mensajeId: ver javadoc de ServicioRegistrarRespuestaSecundaria2.
 end note
 
 == Un worker recoge la orden despierta: cierre operativo ==
@@ -183,34 +191,6 @@ else FalloRegistrado(motivo): el destino terminó con error
     usada arriba (backoff 1..180 min) — ver 07.
   end note
 end
-
-== Kafka responde con error: vuelve a solicitar ==
-[o-> CONS : evento en topic sagas.topics.respuesta-secundaria2 (error)
-activate CONS
-CONS -> SREG ++ : respuestaError(ordenId, codigo, detalle,\nreintentable, mensajeId)
-SREG -> DEDUP ++ : yaProcesado(msgId)
-return no
-group Transacción (@Transactional en respuestaError, cross-bean, sin self)
-  SREG -> DEDUP ++ : registrar(msgId)
-  return
-  SREG -> REPO ++ : cargar(ordenId)
-  return orden
-  SREG -> ORDEN ++ : orden.proceso()
-  return saga
-  SREG -> SAGA ++ : saga.volverASolicitar()
-  SAGA -> SAGA : estado = INICIAL
-  return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
-  SREG -> ORDEN ++ : programarReintento(politica,\nnew DetalleError(codigo, detalle), Instant.now())
-  ORDEN -> ORDEN : intentos++; proximoReintentoEn = ahora + espera;\nultimoError = error; liberarToken()
-  return
-  SREG -> REPO ++ : guardar(orden)
-  return
-end
-return
-[<-o CONS : ack del offset
-deactivate CONS
 
 note over SAGA, PCON
   El aparcado nunca da la respuesta por perdida: cada 3h concilia

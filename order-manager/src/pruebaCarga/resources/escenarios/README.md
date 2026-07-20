@@ -115,16 +115,11 @@ La mayoría de eventos nacen en `business.ordermanager.aplicacion.servicio`
 (`ServicioContinuarOrden`, `ServicioLimpiezaDatos`) a través del puerto
 `PuertoObservadorEjecucion` (ver `order-manager/docs/17-clases-aplicacion-nucleo.puml`),
 implementado por `AdaptadorObservadorLog`
-(`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J.
-`reintento_programado` tiene un segundo origen por el mismo puerto:
-`business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2`
-(sagas -> ordermanager, sentido de dependencia permitido) lo emite también
-cuando el consumer de Kafka registra una respuesta de negocio con
-`exito=false` (ver la fila de la tabla). Tres eventos nacen ya en
-infraestructura (adaptadores de entrada, o el propio adaptador de tickets) y
-no pasan por ese puerto: `ticket_abierto`, `tramitacion_creada` y
-`respuesta_secundaria2_registrada`; se loguean con el mismo formato para que
-el analizador no tenga que distinguir el origen.
+(`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J. Tres
+eventos nacen ya en infraestructura (adaptadores de entrada, o el propio
+adaptador de tickets) y no pasan por ese puerto: `ticket_abierto`,
+`tramitacion_creada` y `respuesta_secundaria2_registrada`; se loguean con el
+mismo formato para que el analizador no tenga que distinguir el origen.
 
 | Evento | Campos (además de `orden`, `tipo`, `pod` salvo que se indique) | Emitido desde | Cuándo |
 |---|---|---|---|
@@ -133,13 +128,13 @@ el analizador no tenga que distinguir el origen.
 | `colision_optimista` | `operacion` = `reclamarToken` \| `ejecutarPaso` \| `programarReintento` | `ServicioContinuarOrden.reclamarYEjecutar` | Un guardado del agregado pierde el optimistic lock (otro actor escribió entre medias) en esa operación concreta |
 | `paso_completado` | `duracion_ms` (medida con `System.nanoTime()` alrededor de `ProcesadorOrden.ejecutarPaso`) | `ServicioContinuarOrden.reclamarYEjecutar` | `ejecutarPaso` vuelve sin lanzar (independientemente de si la orden sigue, aparca o finaliza) |
 | `paso_fallido` | `intento` (nº de fallo acumulado tras este), `error_tipo` (FQCN de la excepción), `error_mensaje` | `ServicioContinuarOrden.reclamarYEjecutar` | `ejecutarPaso` lanza una `RuntimeException` que no es de concurrencia optimista |
-| `reintento_programado` | `intento`, `espera_ms` (según `PoliticaReintentos.esperaTras`) | `ServicioContinuarOrden.reclamarYEjecutar` / `ServicioRegistrarRespuestaSecundaria2.respuestaError` | Tras un `paso_fallido`, el reintento se programa y persiste con éxito; o, en SECUNDARIA2, tras registrar una `respuesta_secundaria2_registrada` con `exito=false` (fallo de negocio, no de `ejecutarPaso`) |
+| `reintento_programado` | `intento`, `espera_ms` (según `PoliticaReintentos.esperaTras`) | `ServicioContinuarOrden.reclamarYEjecutar` | Tras un `paso_fallido`, el reintento se programa y persiste con éxito |
 | `orden_aparcada` | `ventana_ms` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Aparcar` (espera un evento externo) |
 | `orden_finalizada` | `resultado=ok` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Finalizada`; en el diseño actual del motor la finalización siempre es éxito (los fallos nunca agotan la escalera de reintentos, se repiten indefinidamente cada 180 min con ticket abierto) |
-| `purga_datos_antiguos` | sin `orden`/`tipo` (evento agregado, no por orden): `ordenes_eliminadas`, `mensajes_eliminados` | `ServicioLimpiezaDatos.purgarAnterioresA` | Cada barrido de limpieza, con el recuento de filas purgadas de cada tipo |
+| `purga_datos_antiguos` | sin `orden`/`tipo` (evento agregado, no por orden): `ordenes_eliminadas` | `ServicioLimpiezaDatos.purgarAnterioresA` | Cada barrido de limpieza, con el recuento de órdenes purgadas |
 | `ticket_abierto` | `external_id`, `intentos`, `error_tipo`, `error_mensaje` (`sin-registrar` si no hay error) | `AdaptadorTicketsLog.abrir` (infraestructura; no pasa por `PuertoObservadorEjecucion`) | Una línea por orden del barrido de tickets (`ServicioTicketsSoporte`), tras escribir el ticket |
 | `tramitacion_creada` | `external_id` (`tipo` siempre `PRINCIPAL`) | `ControladorTramitaciones.iniciar` (infraestructura) | `POST /tramitaciones` crea el agregado inicial con éxito |
-| `respuesta_secundaria2_registrada` | `exito` (boolean), `mensaje_id` (`tipo` siempre `SECUNDARIA2`) | `ConsumidorRespuestaSecundaria2.onRespuesta` (infraestructura) | Tras delegar en `CasoUsoRegistrarRespuestaSecundaria2`, tanto si la respuesta es de éxito como de error |
+| `respuesta_secundaria2_registrada` | `exito` (boolean, siempre `true`: el evento real no tiene caso de error), `mensaje_id` (`tipo` siempre `SECUNDARIA2`) | `ConsumidorRespuestaSecundaria2.onRespuesta` (infraestructura) | Tras delegar en `CasoUsoRegistrarRespuestaSecundaria2.respuestaOk` |
 
 Notas para el analizador:
 
@@ -153,13 +148,3 @@ Notas para el analizador:
   `colision_optimista` con `operacion=programarReintento` y la excepción se
   propaga (el pod se retira sin programar nada; el siguiente barrido del
   planificador la recogerá como candidata otra vez).
-- Un `reintento_programado` tampoco implica siempre un `paso_fallido`
-  precedente: en SECUNDARIA2, cuando la respuesta Kafka trae `exito=false`,
-  el `reintento_programado` va emparejado con una
-  `respuesta_secundaria2_registrada` (con `exito=false`) en vez de con un
-  `paso_fallido` — no hubo `ejecutarPaso` que fallara, el fallo es de
-  negocio. En el log el `reintento_programado` aparece JUSTO ANTES de la
-  `respuesta_secundaria2_registrada`, no después: el consumer
-  (`ConsumidorRespuestaSecundaria2.onRespuesta`) delega primero en el caso
-  de uso (que emite el reintento por el puerto al registrar el error) y
-  loguea su propio evento al volver.

@@ -27,7 +27,7 @@ public class ObservadorEjecucionEnMemoria implements PuertoObservadorEjecucion {
         record ReintentoProgramado(OrdenId id, TipoOrden tipo, int intento, Duration espera) implements Evento {}
         record OrdenAparcada(OrdenId id, TipoOrden tipo, Duration ventana) implements Evento {}
         record OrdenFinalizada(OrdenId id, TipoOrden tipo) implements Evento {}
-        record DatosAntiguosPurgados(long ordenesEliminadas, long mensajesEliminados) implements Evento {}
+        record DatosAntiguosPurgados(long ordenesEliminadas) implements Evento {}
     }
 
     private final List<Evento> eventos = new ArrayList<>();
@@ -75,7 +75,7 @@ public class ObservadorEjecucionEnMemoria implements PuertoObservadorEjecucion {
     }
 
     @Override
-    public void datosAntiguosPurgados(long ordenesEliminadas, long mensajesEliminados) {
-        eventos.add(new Evento.DatosAntiguosPurgados(ordenesEliminadas, mensajesEliminados));
+    public void datosAntiguosPurgados(long ordenesEliminadas) {
+        eventos.add(new Evento.DatosAntiguosPurgados(ordenesEliminadas));
     }
 }

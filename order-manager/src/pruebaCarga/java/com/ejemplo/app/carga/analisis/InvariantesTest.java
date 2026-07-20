@@ -30,10 +30,10 @@ import com.ejemplo.app.carga.esquema.InicializadorEsquemaH2;
  */
 class InvariantesTest {
 
-    private static EventoLog respuestaSecundaria2(Instant timestamp, String orden, String mensajeId, boolean exito) {
+    private static EventoLog respuestaSecundaria2(Instant timestamp, String orden, String mensajeId) {
         return new EventoLog(timestamp, "respuesta_secundaria2_registrada",
                 Map.of("orden", orden, "tipo", "SECUNDARIA2", "mensaje_id", mensajeId, "exito",
-                        Boolean.toString(exito), "pod", "1"));
+                        "true", "pod", "1"));
     }
 
     @Test
@@ -45,28 +45,9 @@ class InvariantesTest {
     }
 
     @Test
-    void unaUnicaRespuestaExitosaSinFallosPrevios_pasa() {
+    void unaUnicaRespuesta_pasa() {
         var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", true));
-
-        var resultado = Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos);
-
-        assertTrue(resultado.pasa());
-        assertTrue(resultado.detalles().isEmpty());
-    }
-
-    /**
-     * Reintentos legítimos: dos fallos consecutivos habilitan, cada uno, un
-     * reintento de solicitud; la tercera respuesta (éxito) es la que agotan
-     * esos dos fallos. distintas=3, fallosPrevios=2, máximo permitido=3: NO
-     * es una violación.
-     */
-    @Test
-    void variasRespuestasTrasFallosPrevios_noEsViolacion() {
-        var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", false),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:05:00Z"), "orden-1", "msg-2", false),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:10:00Z"), "orden-1", "msg-3", true));
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1"));
 
         var resultado = Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos);
 
@@ -77,14 +58,13 @@ class InvariantesTest {
     /**
      * Reentrega de Kafka: el mismo {@code mensaje_id} llega dos veces (mismo
      * evento, no una solicitud nueva). No debe contar como una respuesta más:
-     * sigue habiendo 1 sola respuesta distinta y 0 fallos, dentro del máximo
-     * permitido (1).
+     * sigue habiendo 1 sola respuesta distinta, dentro del máximo permitido.
      */
     @Test
     void reentregaConMismoMensajeId_noCuentaComoRespuestaAdicional() {
         var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", true),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:01Z"), "orden-1", "msg-1", true));
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1"),
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:01Z"), "orden-1", "msg-1"));
 
         var resultado = Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos);
 
@@ -93,15 +73,15 @@ class InvariantesTest {
 
     /**
      * Duplicación real (el Defecto A a nivel de prueba de carga): dos
-     * respuestas de éxito con {@code mensaje_id} DISTINTO para la misma
-     * orden sin ningún fallo previo que habilite un segundo reintento.
-     * distintas=2, fallosPrevios=0, máximo permitido=1: violación.
+     * respuestas con {@code mensaje_id} DISTINTO para la misma orden. Sin
+     * caso de error en el evento real, ninguna orden debería solicitar más
+     * de una vez: distintas=2, máximo permitido=1, violación.
      */
     @Test
-    void dosRespuestasDistintasSinFallosPrevios_esViolacion() {
+    void dosRespuestasDistintas_esViolacion() {
         var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", true),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:02Z"), "orden-1", "msg-2", true));
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1"),
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:02Z"), "orden-1", "msg-2"));
 
         var resultado = Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos);
 
@@ -120,9 +100,9 @@ class InvariantesTest {
     @Test
     void violacionEnUnaOrden_noAfectaAOtraOrdenSana() {
         var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", true),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:02Z"), "orden-1", "msg-2", true),
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-2", "msg-3", true));
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1"),
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:02Z"), "orden-1", "msg-2"),
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-2", "msg-3"));
 
         var resultado = Invariantes.sinSolicitudesDuplicadasSecundaria2(eventos);
 
@@ -146,7 +126,7 @@ class InvariantesTest {
     @Test
     void respuestaDuplicadaPerdidaPorTasaPerdida_noProduceFalsoPositivo() {
         var eventos = List.of(
-                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1", true));
+                respuestaSecundaria2(Instant.parse("2026-07-19T08:00:00Z"), "orden-1", "msg-1"));
         // La segunda solicitud duplicada existió en la realidad simulada,
         // pero su respuesta se perdió (tasa-perdida): nunca se logueó, así
         // que no aparece en `eventos`. El invariante, correctamente, no

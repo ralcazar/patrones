@@ -77,8 +77,7 @@ public class AdaptadorObservadorLog implements PuertoObservadorEjecucion {
     }
 
     @Override
-    public void datosAntiguosPurgados(long ordenesEliminadas, long mensajesEliminados) {
-        log.info("evento=purga_datos_antiguos ordenes_eliminadas={} mensajes_eliminados={} pod={}",
-                ordenesEliminadas, mensajesEliminados, pod);
+    public void datosAntiguosPurgados(long ordenesEliminadas) {
+        log.info("evento=purga_datos_antiguos ordenes_eliminadas={} pod={}", ordenesEliminadas, pod);
     }
 }

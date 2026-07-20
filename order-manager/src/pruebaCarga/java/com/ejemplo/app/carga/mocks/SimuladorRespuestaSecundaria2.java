@@ -33,12 +33,8 @@ import com.ejemplo.app.carga.ContextoPod;
  * <p>Parámetros del bloque {@code kafka:} del escenario: {@code retraso-ms}
  * (min-max, uniforme) y {@code tasa-perdida} (probabilidad de que la
  * respuesta simulada nunca llegue, forzando el camino de conciliación/ticket).
- *
- * <p>Si la respuesta SÍ llega, decide éxito vs error de negocio reutilizando
- * {@code rest.tasa-fallo} (o su override {@code por-puerto.PuertoSagaSecundaria2})
- * en vez de añadir una clave nueva al esquema del escenario: un único knob de
- * "probabilidad de fallo" ya cubre este caso sin ampliar innecesariamente el
- * esquema (decisión documentada en el informe de la fase 2).
+ * El evento real de respuesta de esta saga no tiene caso de error (siempre
+ * es de éxito), así que este mock tampoco lo simula.
  *
  * <p>Como este evento nace ya en este adaptador de entrada simulado (no hay
  * broker real, así que {@code ConsumidorRespuestaSecundaria2} nunca se
@@ -51,7 +47,6 @@ import com.ejemplo.app.carga.ContextoPod;
 public class SimuladorRespuestaSecundaria2 implements PuertoSagaSecundaria2 {
 
     private static final Logger log = LoggerFactory.getLogger(SimuladorRespuestaSecundaria2.class);
-    private static final String NOMBRE_PUERTO = "PuertoSagaSecundaria2";
 
     private final ContextoPod contexto;
     private final CasoUsoRegistrarRespuestaSecundaria2 registro;
@@ -81,25 +76,19 @@ public class SimuladorRespuestaSecundaria2 implements PuertoSagaSecundaria2 {
                 ? rango.min()
                 : rango.min() + (long) (random.nextDouble() * (rango.max() - rango.min()));
         boolean sePierde = random.nextDouble() < kafka.tasaPerdida();
-        boolean esError = random.nextDouble() < contexto.escenario().rest().tasaFalloPara(NOMBRE_PUERTO);
         String mensajeId = "mock-mensaje-" + Long.toHexString(random.nextLong());
 
         if (sePierde) {
             return; // Respuesta que nunca llega: fuerza el camino de conciliación/ticket.
         }
-        scheduler.schedule(() -> emitirRespuesta(sagaId, esError, mensajeId), retraso, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> emitirRespuesta(sagaId, mensajeId), retraso, TimeUnit.MILLISECONDS);
     }
 
-    private void emitirRespuesta(OrdenId sagaId, boolean esError, String mensajeId) {
+    private void emitirRespuesta(OrdenId sagaId, String mensajeId) {
         try {
-            if (esError) {
-                registro.respuestaError(sagaId, "ERROR_NEGOCIO_SIMULADO",
-                        "Fallo de negocio simulado por " + NOMBRE_PUERTO, false, mensajeId);
-            } else {
-                registro.respuestaOk(sagaId, new RefRespuesta("mock-respuesta-" + mensajeId), mensajeId);
-            }
+            registro.respuestaOk(sagaId, new RefRespuesta("mock-respuesta-" + mensajeId));
             log.info("evento=respuesta_secundaria2_registrada orden={} tipo={} exito={} mensaje_id={} pod={}",
-                    sagaId.valor(), SagaSecundaria2.TIPO.valor(), !esError, mensajeId, pod);
+                    sagaId.valor(), SagaSecundaria2.TIPO.valor(), true, mensajeId, pod);
         } catch (RuntimeException e) {
             // La orden pudo ya no existir/estar viva (drenaje al final de la prueba,
             // orden cancelada, etc.): no derribar el hilo del scheduler por eso.

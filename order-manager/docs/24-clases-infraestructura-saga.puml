@@ -46,17 +46,17 @@ package "infraestructure.sagas.sagasecundaria2.eventos" {
     +onRespuesta(mensaje, key)  «@KafkaListener\ntopic sagas.topics.respuesta-secundaria2»
   }
   note right of ConsumidorRespuestaSecundaria2
-    Consumer FINO: parsea el JSON (ordenId, mensajeId, exito, ref |
-    codigo/detalle/reintentable) y llama a
-    registro.respuestaOk(...)/respuestaError(...). No toca el
-    agregado ni RepositorioOrden directamente (regla de
+    Consumer FINO: el evento real solo trae éxito (no hay caso de
+    error en el contrato), así que parsea el JSON (ordenId, mensajeId
+    -- solo para el log --, ref) y llama a registro.respuestaOk(...).
+    No toca el agregado ni RepositorioOrden directamente (regla de
     arquitectura del CLAUDE.md). CasoUsoRegistrarRespuestaSecundaria2
     es específico de la saga secundaria 2 y vive en business.sagas
     (ver 20): por eso este consumer vive en
     infraestructure.sagas.sagasecundaria2.eventos, no en
     infraestructure.ordermanager. Tras delegar, loguea
     evento=respuesta_secundaria2_registrada orden=... tipo=SECUNDARIA2
-    exito=... mensaje_id=... pod=... (evento nacido en infraestructura,
+    exito=true mensaje_id=... pod=... (evento nacido en infraestructura,
     no pasa por PuertoObservadorEjecucion — ver 17).
   end note
 }

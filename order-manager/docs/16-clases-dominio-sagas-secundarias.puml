@@ -57,7 +57,6 @@ package "dominio.sagasecundaria2" {
     +terminada() : boolean  «estado == TERMINADA»
     +solicitudEnviada() : SagaSecundaria2  «INICIAL -> ESPERANDO_RESPUESTA»
     +respuestaRecibida(RefRespuesta) : SagaSecundaria2  «-> TERMINADA»
-    +volverASolicitar() : SagaSecundaria2  «-> INICIAL»
   }
   enum EstadoSagaSecundaria2 {
     INICIAL

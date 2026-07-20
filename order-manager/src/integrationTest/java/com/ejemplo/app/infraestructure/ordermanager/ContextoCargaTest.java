@@ -14,7 +14,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.context.TestPropertySource;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
-import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoMensajesProcesados;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
@@ -93,7 +92,6 @@ class ContextoCargaTest {
 
         @Bean RepositorioOrden repositorioOrden() { return mock(RepositorioOrden.class); }
         @Bean PuertoConsultaOrdenesSoporte puertoConsultaOrdenesSoporte() { return mock(PuertoConsultaOrdenesSoporte.class); }
-        @Bean PuertoMensajesProcesados puertoMensajesProcesados() { return mock(PuertoMensajesProcesados.class); }
         @Bean PuertoOrdenesTicketPendiente puertoOrdenesTicketPendiente() { return mock(PuertoOrdenesTicketPendiente.class); }
         @Bean PuertoTicketsSoporte puertoTicketsSoporte() { return mock(PuertoTicketsSoporte.class); }
         @Bean PuertoObservadorEjecucion puertoObservadorEjecucion() { return mock(PuertoObservadorEjecucion.class); }

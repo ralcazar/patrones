@@ -65,17 +65,6 @@ class SagaSecundaria2Test {
     }
 
     @Test
-    void volverASolicitar_desdeEsperandoRespuestaVuelveAInicial() {
-        var saga = nueva();
-        saga = saga.solicitudEnviada();
-
-        saga = saga.volverASolicitar();
-
-        assertThat(saga.estado()).isEqualTo(EstadoSagaSecundaria2.INICIAL);
-        assertThat(saga.comandoActual()).isInstanceOf(ComandoPasoSecundaria2.Solicitar.class);
-    }
-
-    @Test
     void marcarPasoActualOkManual_enTerminadaNoEsIntervenible() {
         var saga = nueva();
         saga = saga.solicitudEnviada();

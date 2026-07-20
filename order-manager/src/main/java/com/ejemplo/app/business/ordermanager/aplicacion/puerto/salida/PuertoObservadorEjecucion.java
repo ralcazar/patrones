@@ -53,8 +53,8 @@ public interface PuertoObservadorEjecucion {
      */
     void ordenFinalizada(OrdenId id, TipoOrden tipo);
 
-    /** Barrido de limpieza de datos antiguos: cuántas filas se purgaron de cada tipo. */
-    void datosAntiguosPurgados(long ordenesEliminadas, long mensajesEliminados);
+    /** Barrido de limpieza de datos antiguos: cuántas órdenes se purgaron. */
+    void datosAntiguosPurgados(long ordenesEliminadas);
 
     /** Motivo por el que un intento de reclamo no consigue el token. */
     enum MotivoReclamoPerdido {
