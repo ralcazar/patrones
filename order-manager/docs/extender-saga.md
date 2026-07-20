@@ -31,8 +31,9 @@ importa ni nombra ninguna clase de tu saga.
 | [`DescriptorSoporteOrden`](../src/main/java/com/ejemplo/app/infraestructure/ordermanager/persistencia/DescriptorSoporteOrden.java) | `infraestructure.ordermanager.persistencia` | Deriva, a partir del estado de la FSM, el paso pendiente / si es cancelable / si exige datos manuales, para la pantalla de soporte (sin cargar el agregado). |
 
 `MapeadorProceso` y `DescriptorSoporteOrden` casi siempre los implementa la
-misma clase (ver `SoporteSagaPrincipal`/`SoporteSagaSecundaria1/2/3` en
-`infraestructure.sagas.persistencia`), porque ambas leen el mismo estado.
+misma clase (ver `SoporteSagaPrincipal`/`SoporteSagaSecundaria1/2/3`, cada una
+en su propio paquete `infraestructure.sagas.<tutipo>.persistencia`), porque
+ambas leen el mismo estado.
 `ProcesadorOrden` en cambio vive en la capa de aplicación (`business.sagas`),
 porque orquesta casos de uso y puertos de salida, no persistencia.
 

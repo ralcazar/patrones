@@ -69,8 +69,9 @@ package "persistencia" {
     Punto de extensión nº2 (persistencia por tipo): una
     implementación por tipo de orden, indexadas por tipo(). Las 4
     implementaciones concretas (SoporteSagaPrincipal/Secundaria1/2/3)
-    viven en infraestructure.sagas.persistencia — ver 24 — cada una
-    con su propio JpaRepository sobre su tabla satélite (p. ej.
+    viven cada una en su propio paquete
+    infraestructure.sagas.sagaX.persistencia — ver 24 — con su propio
+    JpaRepository sobre su tabla satélite (p. ej.
     proceso_saga_principal, FK a orden Y a datos_negocio — ver 26).
     Ya no hay ProcesoPersistible/desarmar ni un contexto común
     serializado: el contexto de cada tipo es SU tabla relacional, no
@@ -109,8 +110,8 @@ package "persistencia" {
   }
   note right of OrdenJpa
     Es PUBLIC (no package-private): AdaptadorBusquedaTramitacion
-    (infraestructure.sagas.persistencia, ver 24) lo usa directamente
-    para findByExternalIdAndTipo, sin pasar por
+    (infraestructure.sagas.sagaprincipal.persistencia, ver 24) lo usa
+    directamente para findByExternalIdAndTipo, sin pasar por
     AdaptadorRepositorioOrden — no carga el agregado completo para una
     simple comprobación de existencia. Desde la fusión de la fase 2 ya
     no existe un ProcesoJpaRepository separado: todas las columnas

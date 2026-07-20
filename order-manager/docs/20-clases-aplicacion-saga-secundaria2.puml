@@ -51,9 +51,7 @@ package "business.sagas.aplicacion.servicio.sagasecundaria2" {
     actor escribió entre medias (consumer de Kafka, takeover),
     guardar falla por version.
   end note
-}
 
-package "business.sagas.aplicacion.servicio.comun" {
   class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
     -repo : RepositorioOrden
     -dedup : PuertoMensajesProcesados

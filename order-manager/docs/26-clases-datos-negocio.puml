@@ -102,7 +102,7 @@ RepositorioDatosNegocio ..> DatosNegocio
 RepositorioDatosNegocio ..> DocumentoNegocio
 RepositorioDatosNegocio ..> ExternalIdDuplicadoException : crear()
 
-package "infraestructure.sagas.persistencia" {
+package "infraestructure.sagas.datosnegocio.persistencia" {
   class AdaptadorDatosNegocio <<@Component>> {
     -datosNegocio : DatosNegocioJpaRepository
     -documentos : DocumentoNegocioJpaRepository

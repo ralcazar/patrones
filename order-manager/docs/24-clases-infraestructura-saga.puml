@@ -37,7 +37,7 @@ package "infraestructure.ordermanager.eventos" {
   end note
 }
 
-package "infraestructure.sagas.eventos" {
+package "infraestructure.sagas.sagasecundaria2.eventos" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class ConsumidorRespuestaSecundaria2 <<@Component>> {
     -registro : CasoUsoRegistrarRespuestaSecundaria2
@@ -52,15 +52,16 @@ package "infraestructure.sagas.eventos" {
     agregado ni RepositorioOrden directamente (regla de
     arquitectura del CLAUDE.md). CasoUsoRegistrarRespuestaSecundaria2
     es específico de la saga secundaria 2 y vive en business.sagas
-    (ver 20): por eso este consumer vive en infraestructure.sagas,
-    no en infraestructure.ordermanager. Tras delegar, loguea
+    (ver 20): por eso este consumer vive en
+    infraestructure.sagas.sagasecundaria2.eventos, no en
+    infraestructure.ordermanager. Tras delegar, loguea
     evento=respuesta_secundaria2_registrada orden=... tipo=SECUNDARIA2
     exito=... mensaje_id=... pod=... (evento nacido en infraestructura,
     no pasa por PuertoObservadorEjecucion — ver 17).
   end note
 }
 
-package "infraestructure.sagas.rest" {
+package "infraestructure.sagas.comun.rest" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class ControladorTramitaciones <<@RestController>> {
     -casoUso : CasoUsoIniciarTramitacion
@@ -127,7 +128,7 @@ package "infraestructure.ordermanager.programados" {
   end note
 }
 
-package "infraestructure.sagas.programados" {
+package "infraestructure.sagas.datosnegocio.programados" {
   ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
   class PlanificadorPurgaDatosNegocio <<@Component>> {
     -purga : CasoUsoPurgarDatosNegocioHuerfanos
@@ -179,8 +180,9 @@ package "infraestructure.ordermanager.persistencia" {
   }
   note bottom of AdaptadorOrdenesTicketPendiente
     OrdenJpaRepository (ver 23) es PUBLIC: lo usa también
-    AdaptadorBusquedaTramitacion, en infraestructure.sagas.persistencia
-    (ver más abajo). Desde la fusión de la fase 2 ya no hay un
+    AdaptadorBusquedaTramitacion, en
+    infraestructure.sagas.sagaprincipal.persistencia (ver más abajo).
+    Desde la fusión de la fase 2 ya no hay un
     ProcesoJpaRepository separado: negocio + ejecución viven en la
     MISMA tabla/repo. Tampoco hay ContextoCodec: el contexto de cada
     tipo es su tabla satélite relacional (ver 23 y 26), no un mapa
@@ -210,7 +212,7 @@ package "infraestructure.ordermanager (config)" {
   end note
 }
 
-package "infraestructure.sagas.persistencia" {
+package "infraestructure.sagas.{sagaprincipal,sagasecundaria1,sagasecundaria2,sagasecundaria3}.persistencia" {
   ' --- adaptadores de SALIDA (implementan las 2 SPI de persistencia/lectura por tipo) ---
   class "SoporteSagaPrincipal,\nSoporteSagaSecundaria1/2/3" as SoporteSaga <<@Component>> {
     -repo : ProcesoSagaPrincipalJpaRepository\n(o su equivalente ProcesoSagaSecundariaNJpaRepository)
@@ -220,14 +222,15 @@ package "infraestructure.sagas.persistencia" {
   }
   note right of SoporteSaga
     Una clase por saga implementa LAS DOS SPI del motor
-    (MapeadorProceso + DescriptorSoporteOrden — ver 23), cada una con
-    SU propio JpaRepository inyectado por constructor sobre SU tabla
-    satélite (proceso_saga_principal / _secundaria1/2/3): ya no hay
-    un contexto común serializado, así que AyudanteContexto y su mapa
-    JSON (ponerSiNoNulo/refONull) ya NO EXISTEN. guardarContexto/
-    rearmar/borrarContexto delegan directo en ese repositorio (upsert/
-    findById/DELETE); SoporteSagaPrincipal además referencia
-    datos_negocio por su datosnegocio_id (FK, ver 26).
+    (MapeadorProceso + DescriptorSoporteOrden — ver 23), cada una en
+    SU PROPIO paquete infraestructure.sagas.sagaX.persistencia (mismo
+    reparto que la capa de dominio, ver 20), con SU propio JpaRepository
+    inyectado por constructor sobre SU tabla satélite (proceso_saga_principal
+    / _secundaria1/2/3): ya no hay un contexto común serializado, así
+    que AyudanteContexto y su mapa JSON (ponerSiNoNulo/refONull) ya NO
+    EXISTEN. guardarContexto/rearmar/borrarContexto delegan directo en
+    ese repositorio (upsert/findById/DELETE); SoporteSagaPrincipal
+    además referencia datos_negocio por su datosnegocio_id (FK, ver 26).
   end note
 
   class AdaptadorBusquedaTramitacion <<@Component>> {
@@ -238,11 +241,13 @@ package "infraestructure.sagas.persistencia" {
     Busca directamente sobre orden (la tabla común de la FSM, fusionada
     con la ejecución desde la fase 2; OrdenJpaRepository — ver 23), sin
     cargar el agregado completo: idempotencia de POST /tramitaciones
-    (ver 01 y 22).
+    (ver 01 y 22). Vive en infraestructure.sagas.sagaprincipal.persistencia
+    (busca específicamente por SagaPrincipal.TIPO), aunque lo use
+    ServicioIniciarTramitacion, un servicio COMÚN (ver 22).
   end note
 }
 
-package "infraestructure.sagas (config)" {
+package "infraestructure.sagas.comun (config)" {
   class ConfiguracionSagas <<@Configuration>> {
     +@Bean de los 4 ServicioSaga* (ProcesadorOrden),\nservicioIniciarTramitacion, servicioRegistrarRespuestaSecundaria2,\nservicioCancelarTramitacion, servicioVistaTramitacion
   }
@@ -284,11 +289,14 @@ note as NRegla
   casos de uso de la capa de aplicación; los adaptadores de SALIDA
   (AdaptadorConsultaOrdenesSoporte, AdaptadorOrdenesTicketPendiente,
   AdaptadorTicketsLog, SoporteSaga*, AdaptadorBusquedaTramitacion)
-  implementan puertos de salida / SPI. Los paquetes
-  (eventos/rest/programados/persistencia) agrupan por TIPO de
-  adaptador, no por dirección entrada/salida. Regla de frontera
-  ArchUnit (ver 14): ninguna clase de ..ordermanager.. puede depender
-  de ..sagas.. — la dependencia real de este diagrama va siempre
+  implementan puertos de salida / SPI. Dentro de infraestructure.sagas
+  los paquetes se dividen PRIMERO por saga (comun/datosnegocio/
+  sagaprincipal/sagasecundaria1/2/3, mismo reparto que la capa de
+  dominio — ver 20) y DENTRO de cada una por TIPO de adaptador
+  (eventos/rest/programados/persistencia); infraestructure.ordermanager,
+  al ser genérico en el tipo de orden, solo se divide por TIPO. Regla
+  de frontera ArchUnit (ver 14): ninguna clase de ..ordermanager.. puede
+  depender de ..sagas.. — la dependencia real de este diagrama va siempre
   infraestructure.sagas -> business.sagas y
   infraestructure.sagas -> {business,infraestructure}.ordermanager,
   nunca al revés. PlanificadorContinuacion y AdaptadorRepositorioOrden

@@ -46,15 +46,18 @@ import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria1.SagaSecundaria1;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaPrincipalEntity;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaPrincipalJpaRepository;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria1JpaRepository;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria2JpaRepository;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria3JpaRepository;
-import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaPrincipal;
-import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria1;
-import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria2;
-import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria3;
+import com.ejemplo.app.infraestructure.sagas.sagaprincipal.persistencia.ProcesoSagaPrincipalEntity;
+import com.ejemplo.app.infraestructure.sagas.sagaprincipal.persistencia.ProcesoSagaPrincipalJpaRepository;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria1.persistencia.ProcesoSagaSecundaria1Entity;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria1.persistencia.ProcesoSagaSecundaria1JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.ProcesoSagaSecundaria2Entity;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.ProcesoSagaSecundaria2JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria3.persistencia.ProcesoSagaSecundaria3Entity;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria3.persistencia.ProcesoSagaSecundaria3JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.sagaprincipal.persistencia.SoporteSagaPrincipal;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria1.persistencia.SoporteSagaSecundaria1;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.SoporteSagaSecundaria2;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria3.persistencia.SoporteSagaSecundaria3;
 
 /**
  * Adaptadores JPA reales sobre H2 en memoria (modo Oracle, ver
@@ -568,8 +571,10 @@ class PersistenciaOrdenIntegrationTest {
      */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
-    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
+    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class,
+            ProcesoSagaSecundaria1Entity.class, ProcesoSagaSecundaria2Entity.class, ProcesoSagaSecundaria3Entity.class})
+    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class,
+            ProcesoSagaSecundaria1Entity.class, ProcesoSagaSecundaria2Entity.class, ProcesoSagaSecundaria3Entity.class})
     static class ContextoTest {
 
         @Bean

@@ -117,7 +117,7 @@ La mayoría de eventos nacen en `business.ordermanager.aplicacion.servicio`
 implementado por `AdaptadorObservadorLog`
 (`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J.
 `reintento_programado` tiene un segundo origen por el mismo puerto:
-`business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2`
+`business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2`
 (sagas -> ordermanager, sentido de dependencia permitido) lo emite también
 cuando el consumer de Kafka registra una respuesta de negocio con
 `exito=false` (ver la fila de la tabla). Tres eventos nacen ya en

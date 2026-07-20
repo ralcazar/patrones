@@ -9,7 +9,7 @@ import org.springframework.context.annotation.ComponentScan.Filter;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
-import com.ejemplo.app.infraestructure.sagas.eventos.ConsumidorRespuestaSecundaria2;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.eventos.ConsumidorRespuestaSecundaria2;
 
 /**
  * Arranque Spring Boot de cada "pod" del harness de pruebas de carga. NO

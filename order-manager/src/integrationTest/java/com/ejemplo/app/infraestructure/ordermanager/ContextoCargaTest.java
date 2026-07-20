@@ -41,14 +41,14 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecunda
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
-import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioRegistrarRespuestaSecundaria2;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria1.ServicioSagaSecundaria1;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioSagaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria3.ServicioSagaSecundaria3;
 import com.ejemplo.app.infraestructure.ordermanager.programados.ConfiguracionEjecucionAsincrona;
-import com.ejemplo.app.infraestructure.sagas.ConfiguracionSagas;
+import com.ejemplo.app.infraestructure.sagas.comun.ConfiguracionSagas;
 
 /**
  * Arranca el contexto Spring real de {@link ConfiguracionOrderManager},

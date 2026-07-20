@@ -50,9 +50,9 @@ import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.EstadoSagaSecundaria2;
 import com.ejemplo.app.business.sagas.dominio.sagasecundaria2.SagaSecundaria2;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaPrincipalEntity;
-import com.ejemplo.app.infraestructure.sagas.persistencia.ProcesoSagaSecundaria2JpaRepository;
-import com.ejemplo.app.infraestructure.sagas.persistencia.SoporteSagaSecundaria2;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.ProcesoSagaSecundaria2Entity;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.ProcesoSagaSecundaria2JpaRepository;
+import com.ejemplo.app.infraestructure.sagas.sagasecundaria2.persistencia.SoporteSagaSecundaria2;
 import com.ejemplo.app.testsoporte.InspectorSqlPausable;
 import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria;
 
@@ -230,8 +230,8 @@ class CargaConsistenteAgregadoIntegrationTest {
      */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
-    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaPrincipalEntity.class})
+    @EntityScan(basePackageClasses = {OrdenEntity.class, ProcesoSagaSecundaria2Entity.class})
+    @EnableJpaRepositories(basePackageClasses = {OrdenEntity.class, ProcesoSagaSecundaria2Entity.class})
     static class ContextoTest {
 
         // Único bean para el puerto genérico RepositorioOrden: si además se publicara

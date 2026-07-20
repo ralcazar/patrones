@@ -18,12 +18,12 @@ CREATE TABLE orden (
     token_trabajador     VARCHAR2(36),
     token_expira_en      TIMESTAMP(6),
     ticket_abierto_en    TIMESTAMP(6),
-    completada_en        TIMESTAMP(6),
     ultimo_error_tipo    VARCHAR2(200),
-    ultimo_error_mensaje VARCHAR2(1000),
+    ultimo_error_mensaje VARCHAR2(4000),
     version              NUMBER(19)     NOT NULL,
     creada_en            TIMESTAMP(6)   NOT NULL,
     actualizada_en       TIMESTAMP(6)   NOT NULL,
+    completada_en        TIMESTAMP(6),
     CONSTRAINT pk_orden PRIMARY KEY (orden_id)
 );
 
