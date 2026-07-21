@@ -11,16 +11,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoIncidencias;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
@@ -29,15 +25,15 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 
 /**
- * Selección por corte (30 días), idempotencia (la selección por lote ya
- * excluye lo purgado en una pasada anterior) y el camino de reintento +
- * incidencia (todas las ramas: éxito al primer intento, éxito tras fallo, y
- * agotar reintentos).
+ * Selección por el corte recibido (lo calcula el planificador de
+ * infraestructura, ver PlanificadorPurgaAdjuntosTest), idempotencia (la
+ * selección por lote ya excluye lo purgado en una pasada anterior), el
+ * recuento devuelto y el camino de reintento + incidencia (todas las ramas:
+ * éxito al primer intento, éxito tras fallo, y agotar reintentos).
  */
 class ServicioPurgarAdjuntosTest {
 
-    private static final Instant AHORA = Instant.parse("2026-07-21T10:00:00Z");
-    private static final Clock RELOJ = Clock.fixed(AHORA, ZoneOffset.UTC);
+    private static final Instant CORTE = Instant.parse("2026-06-21T10:00:00Z");
 
     private RepositorioOrden motor;
     private RepositorioDatosNegocio repoDatos;
@@ -49,96 +45,98 @@ class ServicioPurgarAdjuntosTest {
         motor = mock(RepositorioOrden.class);
         repoDatos = mock(RepositorioDatosNegocio.class);
         incidencias = mock(PuertoIncidencias.class);
-        servicio = new ServicioPurgarAdjuntos(motor, repoDatos, incidencias, RELOJ);
+        servicio = new ServicioPurgarAdjuntos(motor, repoDatos, incidencias);
         when(motor.externalIdsFinalizadosAntesDe(any())).thenReturn(List.of());
     }
 
     @Test
-    void ejecutar_calculaElCorteComoAhoraMenos30Dias() {
-        var corteCapturado = ArgumentCaptor.forClass(Instant.class);
+    void ejecutar_consultaConElCorteRecibidoSinCalcularlo() {
+        servicio.ejecutar(CORTE);
 
-        servicio.ejecutar();
-
-        verify(motor).externalIdsFinalizadosAntesDe(corteCapturado.capture());
-        assertThat(corteCapturado.getValue()).isEqualTo(AHORA.minus(Duration.ofDays(30)));
+        verify(motor).externalIdsFinalizadosAntesDe(CORTE);
     }
 
     @Test
-    void ejecutar_sinExternalIdsFinalizados_noConsultaNiTocaDatosNegocio() {
-        servicio.ejecutar();
+    void ejecutar_sinExternalIdsFinalizados_noConsultaNiTocaDatosNegocioYDevuelveCero() {
+        var tocadas = servicio.ejecutar(CORTE);
 
         verifyNoInteractions(repoDatos);
+        assertThat(tocadas).isZero();
     }
 
     @Test
-    void ejecutar_conExternalIdsFinalizados_purgaSoloLosDatosNegocioSinPurgarDelLote() {
+    void ejecutar_conExternalIdsFinalizados_purgaSoloLosDatosNegocioSinPurgarDelLoteYDevuelveElRecuento() {
         var externalId1 = ExternalId.de(UUID.randomUUID().toString());
         var externalId2 = ExternalId.de(UUID.randomUUID().toString());
-        when(motor.externalIdsFinalizadosAntesDe(any())).thenReturn(List.of(externalId1, externalId2));
+        when(motor.externalIdsFinalizadosAntesDe(CORTE)).thenReturn(List.of(externalId1, externalId2));
         var idSinPurgar1 = DatosNegocioId.nuevo();
         var idSinPurgar2 = DatosNegocioId.nuevo();
         when(repoDatos.idsPorExternalIdsSinPurgar(List.of(externalId1, externalId2)))
                 .thenReturn(List.of(idSinPurgar1, idSinPurgar2));
 
-        servicio.ejecutar();
+        var tocadas = servicio.ejecutar(CORTE);
 
         verify(repoDatos).purgarAdjuntos(idSinPurgar1);
         verify(repoDatos).purgarAdjuntos(idSinPurgar2);
+        assertThat(tocadas).isEqualTo(2L);
     }
 
     @Test
-    void ejecutar_segundaPasadaSinDatosNegocioSinPurgar_noPurgaNada() {
+    void ejecutar_segundaPasadaSinDatosNegocioSinPurgar_noPurgaNadaYDevuelveCero() {
         var externalId = ExternalId.de(UUID.randomUUID().toString());
-        when(motor.externalIdsFinalizadosAntesDe(any())).thenReturn(List.of(externalId));
+        when(motor.externalIdsFinalizadosAntesDe(CORTE)).thenReturn(List.of(externalId));
         when(repoDatos.idsPorExternalIdsSinPurgar(anyList())).thenReturn(List.of()); // ya purgado antes
 
-        servicio.ejecutar();
+        var tocadas = servicio.ejecutar(CORTE);
 
         verify(repoDatos, never()).purgarAdjuntos(any());
+        assertThat(tocadas).isZero();
     }
 
     @Test
     void purgarAdjuntos_exitoAlPrimerIntento_noAbreIncidencia() {
-        servicio.purgarAdjuntos();
+        servicio.purgarAdjuntos(CORTE);
 
         verifyNoInteractions(incidencias);
     }
 
     @Test
-    void purgarAdjuntos_exitoTrasUnFallo_reintentaYNoAbreIncidencia() {
+    void purgarAdjuntos_exitoTrasUnFallo_reintentaYNoAbreIncidenciaYDevuelveElRecuento() {
         var proxy = mock(ServicioPurgarAdjuntos.class);
         servicio.establecerSelf(proxy);
         var fallo = new RuntimeException("fallo transitorio");
-        org.mockito.Mockito.doThrow(fallo).doNothing().when(proxy).ejecutar();
+        when(proxy.ejecutar(CORTE)).thenThrow(fallo).thenReturn(3L);
 
-        servicio.purgarAdjuntos();
+        var tocadas = servicio.purgarAdjuntos(CORTE);
 
-        verify(proxy, times(2)).ejecutar();
+        verify(proxy, times(2)).ejecutar(CORTE);
         verifyNoInteractions(incidencias);
+        assertThat(tocadas).isEqualTo(3L);
     }
 
     @Test
-    void purgarAdjuntos_agotaLosReintentosYAbreIncidenciaConLaCausaDelUltimoFallo() {
+    void purgarAdjuntos_agotaLosReintentosYAbreIncidenciaConLaCausaDelUltimoFalloYDevuelveCero() {
         var proxy = mock(ServicioPurgarAdjuntos.class);
         servicio.establecerSelf(proxy);
-        org.mockito.Mockito.doThrow(
+        when(proxy.ejecutar(CORTE)).thenThrow(
                 new RuntimeException("boom1"), new RuntimeException("boom2"), new RuntimeException("boom3"),
-                new RuntimeException("boom4"), new RuntimeException("boom5"))
-                .when(proxy).ejecutar();
+                new RuntimeException("boom4"), new RuntimeException("boom5"));
 
-        servicio.purgarAdjuntos();
+        var tocadas = servicio.purgarAdjuntos(CORTE);
 
-        verify(proxy, times(5)).ejecutar();
+        verify(proxy, times(5)).ejecutar(CORTE);
         verify(incidencias).abrir(eq("purga-adjuntos"), eq("RuntimeException: boom5"), eq(5));
+        assertThat(tocadas).isZero();
     }
 
     @Test
     void establecerSelf_sustituyeElProxyUsadoParaLaAutoInvocacionTransaccional() {
         var proxy = mock(ServicioPurgarAdjuntos.class);
         servicio.establecerSelf(proxy);
+        when(proxy.ejecutar(CORTE)).thenReturn(0L);
 
-        servicio.purgarAdjuntos();
+        servicio.purgarAdjuntos(CORTE);
 
-        verify(proxy).ejecutar();
+        verify(proxy).ejecutar(CORTE);
     }
 }

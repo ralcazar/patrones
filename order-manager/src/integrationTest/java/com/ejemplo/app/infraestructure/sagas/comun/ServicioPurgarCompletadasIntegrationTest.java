@@ -4,10 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
-import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -76,6 +75,7 @@ import com.ejemplo.app.infraestructure.sagas.sagasecundaria3.persistencia.Soport
 class ServicioPurgarCompletadasIntegrationTest {
 
     private static final Instant AHORA = Instant.now();
+    private static final Instant CORTE = AHORA.minus(Duration.ofDays(180));
 
     @Autowired
     private ServicioPurgarCompletadas servicio;
@@ -138,7 +138,7 @@ class ServicioPurgarCompletadasIntegrationTest {
                 .anyMatch(p -> p.getDatosnegocioId().equals(datosNegocioIdAntes.valor())))
                 .as("la satélite con FK a datos_negocio existe antes de purgar").isTrue();
 
-        servicio.ejecutar();
+        servicio.ejecutar(CORTE);
 
         assertThat(datosNegocioJpaRepository.findById(datosNegocioIdAntes.valor())).isEmpty();
         assertThat(documentoNegocioJpaRepository.findByDatosnegocioIdOrderBySecuenciaAsc(datosNegocioIdAntes.valor()))
@@ -158,7 +158,7 @@ class ServicioPurgarCompletadasIntegrationTest {
         repoOrdenes.crear(OrdenRoot.nueva(principal, AHORA)); // viva: sin completadaEn
         ordenJpaRepository.flush();
 
-        servicio.ejecutar();
+        servicio.ejecutar(CORTE);
 
         assertThat(repoDatos.cargar(datosNegocioId)).isNotNull();
     }
@@ -194,14 +194,9 @@ class ServicioPurgarCompletadasIntegrationTest {
         }
 
         @Bean
-        Clock clock() {
-            return Clock.fixed(AHORA, ZoneOffset.UTC);
-        }
-
-        @Bean
         ServicioPurgarCompletadas servicioPurgarCompletadas(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
-                PuertoIncidencias incidencias, Clock reloj, @Lazy ServicioPurgarCompletadas self) {
-            var servicio = new ServicioPurgarCompletadas(repo, repoDatos, incidencias, reloj);
+                PuertoIncidencias incidencias, @Lazy ServicioPurgarCompletadas self) {
+            var servicio = new ServicioPurgarCompletadas(repo, repoDatos, incidencias);
             servicio.establecerSelf(self);
             return servicio;
         }

@@ -1,5 +1,7 @@
 package com.ejemplo.app.business.sagas.aplicacion.servicio.comun;
 
+import java.util.function.Supplier;
+
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoIncidencias;
 
 /**
@@ -21,19 +23,22 @@ final class ReintentoOperativo {
      * Reintenta {@code accion} hasta {@value #MAX_REINTENTOS} veces. Cada
      * intento es independiente (típicamente una llamada a través de
      * {@code self} a un método {@code @Transactional}): si uno falla, el
-     * siguiente repite la acción completa desde el principio.
+     * siguiente repite la acción completa desde el principio. Si se agotan
+     * los reintentos, abre la incidencia y devuelve {@code valorSiFalla} (la
+     * última transacción falló y se deshizo, así que no hay recuento real
+     * que ofrecer).
      */
-    static void ejecutar(String tarea, PuertoIncidencias incidencias, Runnable accion) {
+    static <T> T ejecutar(String tarea, PuertoIncidencias incidencias, Supplier<T> accion, T valorSiFalla) {
         RuntimeException ultima = null;
         for (var intento = 0; intento < MAX_REINTENTOS; intento++) {
             try {
-                accion.run();
-                return;
+                return accion.get();
             } catch (RuntimeException e) {
                 ultima = e;
             }
         }
         incidencias.abrir(tarea, causaDe(ultima), MAX_REINTENTOS);
+        return valorSiFalla;
     }
 
     private static String causaDe(RuntimeException e) {

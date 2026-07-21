@@ -1,7 +1,5 @@
 package com.ejemplo.app.business.sagas.aplicacion.servicio.comun;
 
-import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 
 import jakarta.transaction.Transactional;
@@ -14,16 +12,20 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoPurgarAdj
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 
 /**
- * Purga de adjuntos (corte 30 días, criterio por tramitación): para cada
- * grupo de las 4 sagas que comparten {@code external_id} y están todas
- * terminadas hace más del corte, anula el contenido de los documentos de su
+ * Purga de adjuntos (criterio por tramitación): para cada grupo de las 4
+ * sagas que comparten {@code external_id} y están todas terminadas antes del
+ * corte recibido, anula el contenido de los documentos de su
  * {@code datos_negocio} SIN borrar filas (ver
- * {@link RepositorioDatosNegocio#purgarAdjuntos}). Idempotente: la selección
+ * {@link RepositorioDatosNegocio#purgarAdjuntos}). El corte (retención) lo
+ * calcula el planificador de infraestructura -- este servicio no conoce
+ * "hoy" ni cuántos días de retención hay, solo el {@link Instant} recibido
+ * (mismo contrato que {@code ServicioLimpiezaDatos.purgarAnterioresA}).
+ * Idempotente: la selección
  * ({@link RepositorioDatosNegocio#idsPorExternalIdsSinPurgar}) ya excluye lo
  * purgado en una pasada anterior, así que repetir el batch completo no
  * reprocesa nada.
  *
- * Reintento operativo (ver {@link ReintentoOperativo}): {@link #purgarAdjuntos()}
+ * Reintento operativo (ver {@link ReintentoOperativo}): {@link #purgarAdjuntos}
  * NO es transaccional; reintenta la ejecución completa hasta agotar
  * reintentos y, si los agota, abre una incidencia en vez de propagar el
  * fallo. Cada intento pasa por {@code self} (el proxy transaccional de
@@ -34,20 +36,17 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
 public class ServicioPurgarAdjuntos implements CasoUsoPurgarAdjuntos {
 
     private static final String TAREA = "purga-adjuntos";
-    private static final Duration RETENCION = Duration.ofDays(30);
 
     private final RepositorioOrden motor;
     private final RepositorioDatosNegocio repoDatos;
     private final PuertoIncidencias incidencias;
-    private final Clock reloj;
     private ServicioPurgarAdjuntos self;
 
     public ServicioPurgarAdjuntos(RepositorioOrden motor, RepositorioDatosNegocio repoDatos,
-            PuertoIncidencias incidencias, Clock reloj) {
+            PuertoIncidencias incidencias) {
         this.motor = motor;
         this.repoDatos = repoDatos;
         this.incidencias = incidencias;
-        this.reloj = reloj;
         this.self = this; // valor por defecto (tests unitarios); ConfiguracionSagas lo sustituye por el proxy
     }
 
@@ -57,18 +56,19 @@ public class ServicioPurgarAdjuntos implements CasoUsoPurgarAdjuntos {
     }
 
     @Override
-    public void purgarAdjuntos() {
-        ReintentoOperativo.ejecutar(TAREA, incidencias, () -> self.ejecutar()); // via proxy -> @Transactional
+    public long purgarAdjuntos(Instant corte) {
+        // via proxy -> @Transactional; si se agotan los reintentos, 0L (la última tx falló y deshizo)
+        return ReintentoOperativo.ejecutar(TAREA, incidencias, () -> self.ejecutar(corte), 0L);
     }
 
     @Transactional
-    public void ejecutar() {
-        var corte = Instant.now(reloj).minus(RETENCION);
+    public long ejecutar(Instant corte) {
         var externalIds = motor.externalIdsFinalizadosAntesDe(corte);
         if (externalIds.isEmpty()) {
-            return;
+            return 0L;
         }
         var idsSinPurgar = repoDatos.idsPorExternalIdsSinPurgar(externalIds);
         idsSinPurgar.forEach(repoDatos::purgarAdjuntos);
+        return idsSinPurgar.size();
     }
 }

@@ -1,7 +1,5 @@
 package com.ejemplo.app.business.sagas.aplicacion.servicio.comun;
 
-import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 
 import jakarta.transaction.Transactional;
@@ -14,10 +12,14 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoPurgarCom
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
 
 /**
- * Purga de tramitaciones completadas (corte 180 días, criterio por
- * tramitación): a diferencia de la purga de adjuntos (que solo anula el
- * contenido), esta BORRA el agregado completo -- {@code datos_negocio} +
- * documentos y las 4 órdenes de la tramitación (satélites + auditoría).
+ * Purga de tramitaciones completadas (criterio por tramitación): a
+ * diferencia de la purga de adjuntos (que solo anula el contenido), esta
+ * BORRA el agregado completo -- {@code datos_negocio} + documentos y las 4
+ * órdenes de la tramitación (satélites + auditoría) -- para cada grupo
+ * terminado antes del corte recibido. El corte (retención) lo calcula el
+ * planificador de infraestructura -- este servicio no conoce "hoy" ni
+ * cuántos días de retención hay, solo el {@link Instant} recibido (mismo
+ * contrato que {@code ServicioLimpiezaDatos.purgarAnterioresA}).
  *
  * Orden de borrado (respeta las FK reales, sin {@code ON DELETE CASCADE} --
  * ver CLAUDE.md): la satélite {@code proceso_saga_principal} (borrada por
@@ -32,7 +34,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
  * {@link RepositorioDatosNegocio#buscarPorExternalId}), así que reintentar el
  * batch completo es seguro.
  *
- * Reintento operativo (ver {@link ReintentoOperativo}): {@link #purgarCompletadas()}
+ * Reintento operativo (ver {@link ReintentoOperativo}): {@link #purgarCompletadas}
  * NO es transaccional; reintenta la ejecución completa hasta agotar
  * reintentos y, si los agota, abre una incidencia en vez de propagar el
  * fallo. Cada intento pasa por {@code self} (el proxy transaccional de
@@ -43,20 +45,17 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
 public class ServicioPurgarCompletadas implements CasoUsoPurgarCompletadas {
 
     private static final String TAREA = "purga-completadas";
-    private static final Duration RETENCION = Duration.ofDays(180);
 
     private final RepositorioOrden motor;
     private final RepositorioDatosNegocio repoDatos;
     private final PuertoIncidencias incidencias;
-    private final Clock reloj;
     private ServicioPurgarCompletadas self;
 
     public ServicioPurgarCompletadas(RepositorioOrden motor, RepositorioDatosNegocio repoDatos,
-            PuertoIncidencias incidencias, Clock reloj) {
+            PuertoIncidencias incidencias) {
         this.motor = motor;
         this.repoDatos = repoDatos;
         this.incidencias = incidencias;
-        this.reloj = reloj;
         this.self = this; // valor por defecto (tests unitarios); ConfiguracionSagas lo sustituye por el proxy
     }
 
@@ -66,22 +65,28 @@ public class ServicioPurgarCompletadas implements CasoUsoPurgarCompletadas {
     }
 
     @Override
-    public void purgarCompletadas() {
-        ReintentoOperativo.ejecutar(TAREA, incidencias, () -> self.ejecutar()); // via proxy -> @Transactional
+    public long purgarCompletadas(Instant corte) {
+        // via proxy -> @Transactional; si se agotan los reintentos, 0L (la última tx falló y deshizo)
+        return ReintentoOperativo.ejecutar(TAREA, incidencias, () -> self.ejecutar(corte), 0L);
     }
 
     @Transactional
-    public void ejecutar() {
-        var corte = Instant.now(reloj).minus(RETENCION);
+    public long ejecutar(Instant corte) {
         var externalIds = motor.externalIdsFinalizadosAntesDe(corte);
         if (externalIds.isEmpty()) {
-            return;
+            return 0L;
         }
         // Las órdenes (con sus satélites, incluida la que referencia datos_negocio) se
         // borran ANTES que datos_negocio: ver la javadoc de la clase.
         motor.purgarPorExternalIds(externalIds);
+        var tramitacionesPurgadas = 0L;
         for (var externalId : externalIds) {
-            repoDatos.buscarPorExternalId(externalId).ifPresent(datos -> repoDatos.borrar(datos.id()));
+            var datos = repoDatos.buscarPorExternalId(externalId);
+            if (datos.isPresent()) {
+                repoDatos.borrar(datos.get().id());
+                tramitacionesPurgadas++;
+            }
         }
+        return tramitacionesPurgadas;
     }
 }

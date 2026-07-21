@@ -1,6 +1,5 @@
 package com.ejemplo.app.infraestructure.sagas.comun;
 
-import java.time.Clock;
 import java.time.Duration;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -117,25 +116,21 @@ public class ConfiguracionSagas {
         return new ServicioPurgarDatosNegocioHuerfanos(repoDatos);
     }
 
-    // Reloj compartido por las purgas por tramitación (ver ServicioPurgarAdjuntos/Completadas):
-    // inyectable para poder fijar "ahora" de forma determinista en los tests unitarios.
-    @Bean
-    Clock clock() {
-        return Clock.systemUTC();
-    }
-
+    // Sin Clock: el corte (retención) lo calcula el planificador de infraestructura y se
+    // pasa como Instant (ver PlanificadorPurgaAdjuntos/Completadas), igual que
+    // PlanificadorLimpieza -> CasoUsoLimpiarDatosAntiguos.purgarAnterioresA.
     @Bean
     ServicioPurgarAdjuntos servicioPurgarAdjuntos(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
-            PuertoIncidencias incidencias, Clock reloj, @Lazy ServicioPurgarAdjuntos self) {
-        var servicio = new ServicioPurgarAdjuntos(repo, repoDatos, incidencias, reloj);
+            PuertoIncidencias incidencias, @Lazy ServicioPurgarAdjuntos self) {
+        var servicio = new ServicioPurgarAdjuntos(repo, repoDatos, incidencias);
         servicio.establecerSelf(self);
         return servicio;
     }
 
     @Bean
     ServicioPurgarCompletadas servicioPurgarCompletadas(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
-            PuertoIncidencias incidencias, Clock reloj, @Lazy ServicioPurgarCompletadas self) {
-        var servicio = new ServicioPurgarCompletadas(repo, repoDatos, incidencias, reloj);
+            PuertoIncidencias incidencias, @Lazy ServicioPurgarCompletadas self) {
+        var servicio = new ServicioPurgarCompletadas(repo, repoDatos, incidencias);
         servicio.establecerSelf(self);
         return servicio;
     }

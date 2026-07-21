@@ -23,6 +23,12 @@ sagas:
     respuesta-secundaria2: respuesta.secundaria2
   purga-datos-negocio:
     cron: "0 30 3 * * *"   # cada noche, después de la limpieza del motor (03:00)
+  purga-adjuntos:
+    cron: "0 0 23 * * *"   # cada noche a las 23:00
+    retencion-dias: 30     # solo se anulan adjuntos de tramitaciones terminadas hace más de esto
+  purga-completadas:
+    cron: "0 30 23 * * *"  # cada noche, tras la purga de adjuntos (23:00)
+    retencion-dias: 180    # solo se borran tramitaciones terminadas hace más de esto
 
 spring:
   datasource:
