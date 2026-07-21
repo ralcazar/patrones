@@ -14,6 +14,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.context.TestPropertySource;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoIncidencias;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoObservadorEjecucion;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrdenesTicketPendiente;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
@@ -39,6 +40,8 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecunda
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarAdjuntos;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarCompletadas;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
@@ -83,6 +86,8 @@ class ContextoCargaTest {
         assertThat(contexto.getBean(ServicioCancelarTramitacion.class)).isNotNull();
         assertThat(contexto.getBean(ServicioVistaTramitacion.class)).isNotNull();
         assertThat(contexto.getBean(ServicioPurgarDatosNegocioHuerfanos.class)).isNotNull();
+        assertThat(contexto.getBean(ServicioPurgarAdjuntos.class)).isNotNull();
+        assertThat(contexto.getBean(ServicioPurgarCompletadas.class)).isNotNull();
         assertThat(contexto.getBean("ejecutorContinuacion", ThreadPoolTaskExecutor.class)).isNotNull();
     }
 
@@ -95,6 +100,7 @@ class ContextoCargaTest {
         @Bean PuertoOrdenesTicketPendiente puertoOrdenesTicketPendiente() { return mock(PuertoOrdenesTicketPendiente.class); }
         @Bean PuertoTicketsSoporte puertoTicketsSoporte() { return mock(PuertoTicketsSoporte.class); }
         @Bean PuertoObservadorEjecucion puertoObservadorEjecucion() { return mock(PuertoObservadorEjecucion.class); }
+        @Bean PuertoIncidencias puertoIncidencias() { return mock(PuertoIncidencias.class); }
 
         @Bean PuertoPaso1 puertoPaso1() { return mock(PuertoPaso1.class); }
         @Bean PuertoPaso2 puertoPaso2() { return mock(PuertoPaso2.class); }

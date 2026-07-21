@@ -198,6 +198,54 @@ class AdaptadorDatosNegocioIntegrationTest {
     }
 
     @Test
+    void purgarAdjuntos_dejaElContenidoDeLosDocumentosANullYSellaPurgadoEnConservandoElRestoDeMetadatos() {
+        var id = DatosNegocioId.nuevo();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var datosNegocio = nuevoDatosNegocio(id, externalId);
+        repo.crear(datosNegocio, List.of(new DocumentoNegocio("factura.pdf", "application/pdf", new byte[] {1, 2, 3})));
+        var antes = Instant.now();
+
+        repo.purgarAdjuntos(id);
+
+        var despues = Instant.now();
+        var documentos = repo.documentosDe(id);
+        assertThat(documentos).hasSize(1);
+        assertThat(documentos.get(0).contenido()).as("contenido anulado").isNull();
+        assertThat(documentos.get(0).nombre()).as("metadatos conservados").isEqualTo("factura.pdf");
+        assertThat(documentos.get(0).mimeType()).isEqualTo("application/pdf");
+        var entity = datosNegocioJpaRepository.findById(id.valor()).orElseThrow();
+        assertThat(entity.getPurgadoEn()).isBetween(antes, despues);
+        var recargado = repo.cargar(id);
+        assertThat(recargado.datoNegocio1()).isEqualTo(datosNegocio.datoNegocio1());
+        assertThat(recargado.datoNegocio2()).isEqualTo(datosNegocio.datoNegocio2());
+        assertThat(recargado.datoNegocio3()).isEqualTo(datosNegocio.datoNegocio3());
+    }
+
+    @Test
+    void idsPorExternalIdsSinPurgar_conListaVaciaDevuelveListaVacia() {
+        assertThat(repo.idsPorExternalIdsSinPurgar(List.of())).isEmpty();
+    }
+
+    @Test
+    void idsPorExternalIdsSinPurgar_soloDevuelveLosDelLoteQueTodaviaNoTienenPurgadoEnSellado() {
+        var externalIdSinPurgar = ExternalId.de(UUID.randomUUID().toString());
+        var idSinPurgar = DatosNegocioId.nuevo();
+        repo.crear(nuevoDatosNegocio(idSinPurgar, externalIdSinPurgar), List.of());
+
+        var externalIdYaPurgado = ExternalId.de(UUID.randomUUID().toString());
+        var idYaPurgado = DatosNegocioId.nuevo();
+        repo.crear(nuevoDatosNegocio(idYaPurgado, externalIdYaPurgado), List.of());
+        repo.purgarAdjuntos(idYaPurgado);
+
+        var externalIdFueraDelLote = ExternalId.de(UUID.randomUUID().toString());
+        repo.crear(nuevoDatosNegocio(DatosNegocioId.nuevo(), externalIdFueraDelLote), List.of());
+
+        var resultado = repo.idsPorExternalIdsSinPurgar(List.of(externalIdSinPurgar, externalIdYaPurgado));
+
+        assertThat(resultado).containsExactly(idSinPurgar);
+    }
+
+    @Test
     void borrar_borraLosDocumentosYElPropioRegistroDatosNegocio() {
         var id = DatosNegocioId.nuevo();
         var externalId = ExternalId.de(UUID.randomUUID().toString());

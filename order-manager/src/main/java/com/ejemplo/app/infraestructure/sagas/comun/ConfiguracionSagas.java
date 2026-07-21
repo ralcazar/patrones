@@ -1,5 +1,6 @@
 package com.ejemplo.app.infraestructure.sagas.comun;
 
+import java.time.Clock;
 import java.time.Duration;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -8,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoConsultaOrdenesSoporte;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoIncidencias;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoConciliacionSecundaria2;
@@ -26,6 +28,8 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecunda
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoSagaSecundaria3;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarAdjuntos;
+import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarCompletadas;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
@@ -111,5 +115,28 @@ public class ConfiguracionSagas {
     @Bean
     ServicioPurgarDatosNegocioHuerfanos servicioPurgarDatosNegocioHuerfanos(RepositorioDatosNegocio repoDatos) {
         return new ServicioPurgarDatosNegocioHuerfanos(repoDatos);
+    }
+
+    // Reloj compartido por las purgas por tramitación (ver ServicioPurgarAdjuntos/Completadas):
+    // inyectable para poder fijar "ahora" de forma determinista en los tests unitarios.
+    @Bean
+    Clock clock() {
+        return Clock.systemUTC();
+    }
+
+    @Bean
+    ServicioPurgarAdjuntos servicioPurgarAdjuntos(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
+            PuertoIncidencias incidencias, Clock reloj, @Lazy ServicioPurgarAdjuntos self) {
+        var servicio = new ServicioPurgarAdjuntos(repo, repoDatos, incidencias, reloj);
+        servicio.establecerSelf(self);
+        return servicio;
+    }
+
+    @Bean
+    ServicioPurgarCompletadas servicioPurgarCompletadas(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
+            PuertoIncidencias incidencias, Clock reloj, @Lazy ServicioPurgarCompletadas self) {
+        var servicio = new ServicioPurgarCompletadas(repo, repoDatos, incidencias, reloj);
+        servicio.establecerSelf(self);
+        return servicio;
     }
 }

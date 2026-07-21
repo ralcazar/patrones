@@ -34,4 +34,21 @@ public interface RepositorioDatosNegocio {
 
     /** Borra un datos_negocio huérfano: documentos primero (sin cascade), luego el propio registro. */
     void borrar(DatosNegocioId id);
+
+    /**
+     * Ids de los {@code datos_negocio} de esos externalIds que TODAVÍA no
+     * tienen sellado {@code purgado_en} (para no reprocesar en pasadas
+     * sucesivas de la purga de adjuntos). UNA query por lote: evita el N+1
+     * de resolver externalId a externalId con {@link #buscarPorExternalId}.
+     */
+    List<DatosNegocioId> idsPorExternalIdsSinPurgar(List<ExternalId> externalIds);
+
+    /**
+     * Purga de adjuntos (sin borrar filas): pone a NULL el {@code contenido}
+     * de todos los documentos del datos_negocio y sella
+     * {@code datos_negocio.purgado_en} con el instante de la purga. Seguro
+     * de repetir sobre un id ya purgado (NULL sobre NULL); en la práctica no
+     * se reinvoca porque {@link #idsPorExternalIdsSinPurgar} ya lo excluye.
+     */
+    void purgarAdjuntos(DatosNegocioId id);
 }

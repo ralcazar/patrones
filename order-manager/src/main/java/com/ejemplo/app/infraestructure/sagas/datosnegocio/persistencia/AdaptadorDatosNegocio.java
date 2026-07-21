@@ -1,5 +1,6 @@
 package com.ejemplo.app.infraestructure.sagas.datosnegocio.persistencia;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -77,6 +78,21 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     public void borrar(DatosNegocioId id) {
         documentos.deleteByDatosnegocioId(id.valor()); // hija primero: sin ON DELETE CASCADE (ver CLAUDE.md)
         datosNegocio.deleteById(id.valor());
+    }
+
+    @Override
+    public List<DatosNegocioId> idsPorExternalIdsSinPurgar(List<ExternalId> externalIds) {
+        if (externalIds.isEmpty()) {
+            return List.of();
+        }
+        var valores = externalIds.stream().map(id -> id.valor().toString()).toList();
+        return datosNegocio.idsPorExternalIdsSinPurgar(valores).stream().map(UUID::fromString).map(DatosNegocioId::new).toList();
+    }
+
+    @Override
+    public void purgarAdjuntos(DatosNegocioId id) {
+        documentos.purgarContenidoDe(id.valor()); // contenido de los documentos primero, luego el sello del padre
+        datosNegocio.sellarPurgadoEn(id.valor(), Instant.now());
     }
 
     // ------------------------------------------------------------------
