@@ -84,8 +84,9 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     // ------------------------------------------------------------------
 
     private static DatosNegocioEntity entidadDatosNegocioDe(DatosNegocio d) {
+        // purgadoEn siempre NULL al crear: el sello lo pone la purga de adjuntos (fase aparte).
         return new DatosNegocioEntity(d.id().valor(), d.externalId().valor().toString(),
-                d.datoNegocio1().valor(), d.datoNegocio2().valor(), d.datoNegocio3().valor());
+                d.datoNegocio1().valor(), d.datoNegocio2().valor(), d.datoNegocio3().valor(), null);
     }
 
     private static DatosNegocio datosNegocioDesde(DatosNegocioEntity entity) {

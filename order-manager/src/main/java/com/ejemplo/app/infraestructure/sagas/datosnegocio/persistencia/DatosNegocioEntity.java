@@ -1,5 +1,6 @@
 package com.ejemplo.app.infraestructure.sagas.datosnegocio.persistencia;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -41,17 +42,23 @@ public class DatosNegocioEntity {
     @Column(name = "dato_negocio3", nullable = false, length = 400)
     private String datoNegocio3;
 
+    // NULL mientras los documentos conservan su contenido; se sella con la fecha
+    // de la purga de adjuntos (contenido de los documentos puesto a NULL).
+    @Column(name = "purgado_en")
+    private Instant purgadoEn;
+
     protected DatosNegocioEntity() {
         // requerido por JPA
     }
 
     public DatosNegocioEntity(UUID datosnegocioId, String externalId, Integer datoNegocio1,
-            LocalDate datoNegocio2, String datoNegocio3) {
+            LocalDate datoNegocio2, String datoNegocio3, Instant purgadoEn) {
         this.datosnegocioId = datosnegocioId;
         this.externalId = externalId;
         this.datoNegocio1 = datoNegocio1;
         this.datoNegocio2 = datoNegocio2;
         this.datoNegocio3 = datoNegocio3;
+        this.purgadoEn = purgadoEn;
     }
 
     public UUID getDatosnegocioId() { return datosnegocioId; }
@@ -59,4 +66,5 @@ public class DatosNegocioEntity {
     public Integer getDatoNegocio1() { return datoNegocio1; }
     public LocalDate getDatoNegocio2() { return datoNegocio2; }
     public String getDatoNegocio3() { return datoNegocio3; }
+    public Instant getPurgadoEn() { return purgadoEn; }
 }

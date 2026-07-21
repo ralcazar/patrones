@@ -8,6 +8,7 @@ CREATE TABLE datos_negocio (
     dato_negocio1   NUMBER(10)    NOT NULL,
     dato_negocio2   DATE          NOT NULL,
     dato_negocio3   VARCHAR2(400) NOT NULL,
+    purgado_en      TIMESTAMP     NULL,
     CONSTRAINT pk_datos_negocio PRIMARY KEY (datosnegocio_id)
 );
 

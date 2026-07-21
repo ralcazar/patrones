@@ -106,6 +106,16 @@ class AdaptadorDatosNegocioIntegrationTest {
     }
 
     @Test
+    void crear_dejaPurgadoEnANullHastaQueSePurgueLaTramitacion() {
+        var id = DatosNegocioId.nuevo();
+        repo.crear(nuevoDatosNegocio(id, ExternalId.de(UUID.randomUUID().toString())), List.of());
+
+        var entity = datosNegocioJpaRepository.findById(id.valor()).orElseThrow();
+
+        assertThat(entity.getPurgadoEn()).isNull();
+    }
+
+    @Test
     void cargar_inexistente_lanzaIllegalArgumentException() {
         assertThatThrownBy(() -> repo.cargar(DatosNegocioId.nuevo()))
                 .isInstanceOf(IllegalArgumentException.class);

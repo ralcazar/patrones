@@ -33,8 +33,10 @@ public class DocumentoNegocioEntity {
     @Column(name = "mime_type", nullable = false, length = 100)
     private String mimeType;
 
+    // Anulable: la purga de adjuntos pone el contenido a NULL sin borrar la fila
+    // (conserva nombre/mime_type), ver DatosNegocioEntity.purgadoEn.
     @Lob
-    @Column(name = "contenido", nullable = false)
+    @Column(name = "contenido", nullable = true)
     private byte[] contenido;
 
     protected DocumentoNegocioEntity() {
