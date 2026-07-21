@@ -15,8 +15,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoPurgarCom
  * Disparador periódico de la purga de tramitaciones completadas (criterio
  * por tramitación): el QUÉ se borra vive en la aplicación
  * (ServicioPurgarCompletadas, con reintento e incidencia), aquí solo el
- * CUÁNDO y la retención -- mismo patrón que PlanificadorLimpieza ->
- * CasoUsoLimpiarDatosAntiguos. Se ejecuta después de la purga de adjuntos
+ * CUÁNDO y la retención. Se ejecuta después de la purga de adjuntos
  * (23:00, ver sagas.purga-adjuntos.cron).
  */
 @Component

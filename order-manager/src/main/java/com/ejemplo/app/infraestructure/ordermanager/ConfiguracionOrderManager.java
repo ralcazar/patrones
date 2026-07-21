@@ -15,7 +15,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrde
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ProcesadorOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
@@ -71,10 +70,5 @@ public class ConfiguracionOrderManager {
         var servicio = new ServicioTicketsSoporte(pendientes, tickets, repo);
         servicio.establecerSelf(self);
         return servicio;
-    }
-
-    @Bean
-    ServicioLimpiezaDatos servicioLimpiezaDatos(RepositorioOrden repo, PuertoObservadorEjecucion observador) {
-        return new ServicioLimpiezaDatos(repo, observador);
     }
 }

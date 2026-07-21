@@ -20,7 +20,6 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoOrde
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoTicketsSoporte;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioContinuarOrden;
-import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioLimpiezaDatos;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioSoporteOrdenes;
 import com.ejemplo.app.business.ordermanager.aplicacion.servicio.ServicioTicketsSoporte;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
@@ -42,7 +41,6 @@ import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelar
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarAdjuntos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarCompletadas;
-import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
@@ -76,7 +74,6 @@ class ContextoCargaTest {
         assertThat(contexto.getBean(ServicioContinuarOrden.class)).isNotNull();
         assertThat(contexto.getBean(ServicioSoporteOrdenes.class)).isNotNull();
         assertThat(contexto.getBean(ServicioTicketsSoporte.class)).isNotNull();
-        assertThat(contexto.getBean(ServicioLimpiezaDatos.class)).isNotNull();
         assertThat(contexto.getBean(ServicioSagaPrincipal.class)).isNotNull();
         assertThat(contexto.getBean(ServicioSagaSecundaria1.class)).isNotNull();
         assertThat(contexto.getBean(ServicioSagaSecundaria2.class)).isNotNull();
@@ -85,7 +82,6 @@ class ContextoCargaTest {
         assertThat(contexto.getBean(ServicioRegistrarRespuestaSecundaria2.class)).isNotNull();
         assertThat(contexto.getBean(ServicioCancelarTramitacion.class)).isNotNull();
         assertThat(contexto.getBean(ServicioVistaTramitacion.class)).isNotNull();
-        assertThat(contexto.getBean(ServicioPurgarDatosNegocioHuerfanos.class)).isNotNull();
         assertThat(contexto.getBean(ServicioPurgarAdjuntos.class)).isNotNull();
         assertThat(contexto.getBean(ServicioPurgarCompletadas.class)).isNotNull();
         assertThat(contexto.getBean("ejecutorContinuacion", ThreadPoolTaskExecutor.class)).isNotNull();

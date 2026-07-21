@@ -102,10 +102,4 @@ class AdaptadorObservadorLogTest {
                 "evento=orden_finalizada orden=%s tipo=PRINCIPAL resultado=ok pod=pod-7".formatted(id.valor()));
     }
 
-    @Test
-    void datosAntiguosPurgados() {
-        var mensaje = unicoMensaje(() -> adaptador.datosAntiguosPurgados(4));
-
-        assertThat(mensaje).isEqualTo("evento=purga_datos_antiguos ordenes_eliminadas=4 pod=pod-7");
-    }
 }

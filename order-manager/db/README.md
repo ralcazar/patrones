@@ -29,4 +29,4 @@ Las FKs obligan este orden:
 Ninguna tabla de este esquema usa `ON DELETE CASCADE` (prohibido, ver
 CLAUDE.md): los borrados de filas hijas los hace explícitos, en la misma
 transacción y en el orden correcto (hijas antes que padre), el adaptador de
-persistencia (`AdaptadorRepositorioOrden.purgarFinalizadasAntesDe`).
+persistencia (`AdaptadorRepositorioOrden.purgarPorExternalIds`).

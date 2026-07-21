@@ -28,15 +28,11 @@ import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DocumentoNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.ExternalIdDuplicadoException;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenEntity;
-import com.ejemplo.app.infraestructure.ordermanager.persistencia.OrdenJpaRepository;
 
 /**
  * Adaptador JPA real sobre H2 en memoria (modo Oracle, ver
  * application-test.yml): ejercita {@link AdaptadorDatosNegocio}, el agregado
- * de datos de negocio (Fase 1), incluida la purga de huérfanos (Fase 4) que
- * necesita también el esquema de {@code proceso} (motor de órdenes) para el
- * anti-join, así que el contexto de test escanea ambos paquetes de entidades.
+ * de datos de negocio, incluida la purga de adjuntos por tramitación.
  */
 @SpringBootTest(classes = AdaptadorDatosNegocioIntegrationTest.ContextoTest.class)
 @ActiveProfiles("test")
@@ -50,9 +46,6 @@ class AdaptadorDatosNegocioIntegrationTest {
 
     @Autowired
     private DocumentoNegocioJpaRepository documentoNegocioJpaRepository;
-
-    @Autowired
-    private OrdenJpaRepository ordenJpaRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -170,33 +163,6 @@ class AdaptadorDatosNegocioIntegrationTest {
         assertThat(encontrado).isEmpty();
     }
 
-    /** Inserta una fila mínima en orden (sin pasar por el agregado OrdenRoot completo, ver CLAUDE.md tarea). */
-    private void insertarProcesoCon(ExternalId externalId) {
-        var ahora = Instant.now();
-        ordenJpaRepository.save(new OrdenEntity(UUID.randomUUID(), "PRINCIPAL",
-                externalId.valor().toString(), "INICIAL", List.of(),
-                0, ahora, null, null, null, null, null, null, 0L));
-    }
-
-    @Test
-    void idsHuerfanos_soloDevuelveLosDatosNegocioSinNingunProcesoConSuExternalId() {
-        // El contexto Spring (y la BD H2) se comparte entre los tests de esta clase (sin
-        // @Transactional/rollback por test), así que la aserción no puede ser un containsExactly
-        // sobre el resultado completo: otros tests ya dejan huérfanos propios en la tabla.
-        var externalIdHuerfano = ExternalId.de(UUID.randomUUID().toString());
-        var idHuerfano = DatosNegocioId.nuevo();
-        repo.crear(nuevoDatosNegocio(idHuerfano, externalIdHuerfano), List.of());
-
-        var externalIdVivo = ExternalId.de(UUID.randomUUID().toString());
-        var idVivo = DatosNegocioId.nuevo();
-        repo.crear(nuevoDatosNegocio(idVivo, externalIdVivo), List.of());
-        insertarProcesoCon(externalIdVivo); // el proceso comparte el externalId: NO es huérfano
-
-        var huerfanos = repo.idsHuerfanos();
-
-        assertThat(huerfanos).contains(idHuerfano).doesNotContain(idVivo);
-    }
-
     @Test
     void purgarAdjuntos_dejaElContenidoDeLosDocumentosANullYSellaPurgadoEnConservandoElRestoDeMetadatos() {
         var id = DatosNegocioId.nuevo();
@@ -258,16 +224,11 @@ class AdaptadorDatosNegocioIntegrationTest {
         assertThat(datosNegocioJpaRepository.findById(id.valor())).isEmpty();
     }
 
-    /**
-     * Contexto Spring de test: escanea DatosNegocioEntity (este agregado) Y
-     * OrdenEntity (motor de órdenes), porque idsHuerfanos() hace un
-     * anti-join nativo contra la tabla orden (ver DatosNegocioJpaRepository;
-     * external_id vivía en proceso, fusionada en orden desde la fase 2).
-     */
+    /** Contexto Spring de test: escanea solo DatosNegocioEntity (este agregado). */
     @Configuration
     @EnableAutoConfiguration
-    @EntityScan(basePackageClasses = {DatosNegocioEntity.class, OrdenEntity.class})
-    @EnableJpaRepositories(basePackageClasses = {DatosNegocioEntity.class, OrdenEntity.class})
+    @EntityScan(basePackageClasses = DatosNegocioEntity.class)
+    @EnableJpaRepositories(basePackageClasses = DatosNegocioEntity.class)
     static class ContextoTest {
 
         @Bean

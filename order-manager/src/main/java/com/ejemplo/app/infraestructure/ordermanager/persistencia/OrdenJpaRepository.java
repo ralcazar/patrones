@@ -54,11 +54,6 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             """, nativeQuery = true)
     int existeCandidata(@Param("ahora") Instant ahora);
 
-    @Query(value = """
-            SELECT orden_id FROM orden WHERE completada_en IS NOT NULL AND actualizada_en < :corte
-            """, nativeQuery = true)
-    List<UUID> idsFinalizadasAntesDe(@Param("corte") Instant corte);
-
     /**
      * Purga por tramitación (grupo de órdenes que comparten external_id):
      * solo grupos SIN ninguna orden viva (el COUNT del CASE cuenta las
@@ -87,7 +82,7 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
 
     // clearAutomatically: ver el mismo comentario en borrarPorIds. Sin ON DELETE CASCADE
     // (prohibido, ver CLAUDE.md) el borrado de la hija proceso_auditoria es explícito, y
-    // tiene que ocurrir ANTES del borrado del padre (orden) en purgarFinalizadasAntesDe.
+    // tiene que ocurrir ANTES del borrado del padre (orden), ver AdaptadorRepositorioOrden.
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM proceso_auditoria WHERE orden_id IN :ids", nativeQuery = true)
     void borrarAuditoriaPorIds(@Param("ids") List<UUID> ids);

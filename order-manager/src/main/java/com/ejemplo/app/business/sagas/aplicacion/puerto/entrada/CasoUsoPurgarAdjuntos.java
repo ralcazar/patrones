@@ -10,8 +10,7 @@ import java.time.Instant;
  * {@link com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio#purgarAdjuntos}).
  * Lo invoca un planificador de infraestructura una vez al día, que calcula
  * {@code corte} a partir de la retención configurable (por defecto 30 días;
- * ver {@code PlanificadorPurgaAdjuntos}) -- el mismo contrato que
- * {@code CasoUsoLimpiarDatosAntiguos.purgarAnterioresA}.
+ * ver {@code PlanificadorPurgaAdjuntos}).
  */
 public interface CasoUsoPurgarAdjuntos {
 

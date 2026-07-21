@@ -159,11 +159,11 @@ public final class LanzadorPruebaCarga {
         if (motor.cron().tickets() != null) {
             propiedades.put("ordermanager.tickets.cron", motor.cron().tickets());
         }
-        if (motor.cron().limpieza() != null) {
-            propiedades.put("ordermanager.limpieza.cron", motor.cron().limpieza());
+        if (motor.cron().purgaAdjuntos() != null) {
+            propiedades.put("sagas.purga-adjuntos.cron", motor.cron().purgaAdjuntos());
         }
-        if (motor.cron().purga() != null) {
-            propiedades.put("sagas.purga-datos-negocio.cron", motor.cron().purga());
+        if (motor.cron().purgaCompletadas() != null) {
+            propiedades.put("sagas.purga-completadas.cron", motor.cron().purgaCompletadas());
         }
 
         // NOTA (corregido tras la primera prueba de humo, que arrancó Tomcat

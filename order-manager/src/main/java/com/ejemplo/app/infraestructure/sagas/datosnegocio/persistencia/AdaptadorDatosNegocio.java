@@ -70,11 +70,6 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     }
 
     @Override
-    public List<DatosNegocioId> idsHuerfanos() {
-        return datosNegocio.idsHuerfanos().stream().map(UUID::fromString).map(DatosNegocioId::new).toList();
-    }
-
-    @Override
     public void borrar(DatosNegocioId id) {
         documentos.deleteByDatosnegocioId(id.valor()); // hija primero: sin ON DELETE CASCADE (ver CLAUDE.md)
         datosNegocio.deleteById(id.valor());

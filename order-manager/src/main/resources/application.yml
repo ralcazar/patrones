@@ -10,9 +10,6 @@ ordermanager:
     lote: 16             # candidatas que mira cada pull; regla: >= trabajadores, para que
                          # los N workers recién despertados no agoten el lote solo con colisiones
     tamano-pool: 4        # pool de hilos compartido por los @Scheduled del módulo
-  limpieza:
-    cron: "0 0 3 * * *"   # cada noche a las 03:00
-    retencion-dias: 30    # solo se purga lo finalizado-bien más viejo que esto
   tickets:
     cron: "0 0 8-17/3 * * *"   # cada 3h en horario de soporte
 
@@ -21,8 +18,6 @@ sagas:
   topics:
     # Único uso de Kafka: la respuesta (diferida, puede tardar horas) de la saga secundaria 2
     respuesta-secundaria2: respuesta.secundaria2
-  purga-datos-negocio:
-    cron: "0 30 3 * * *"   # cada noche, después de la limpieza del motor (03:00)
   purga-adjuntos:
     cron: "0 0 23 * * *"   # cada noche a las 23:00
     retencion-dias: 30     # solo se anulan adjuntos de tramitaciones terminadas hace más de esto

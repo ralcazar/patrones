@@ -9,8 +9,7 @@ import java.time.Instant;
  * documentos y las 4 órdenes (satélites + auditoría). Lo invoca un
  * planificador de infraestructura una vez al día, que calcula {@code corte}
  * a partir de la retención configurable (por defecto 180 días; ver
- * {@code PlanificadorPurgaCompletadas}) -- el mismo contrato que
- * {@code CasoUsoLimpiarDatosAntiguos.purgarAnterioresA}.
+ * {@code PlanificadorPurgaCompletadas}).
  */
 public interface CasoUsoPurgarCompletadas {
 

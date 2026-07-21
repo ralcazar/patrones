@@ -329,65 +329,6 @@ class PersistenciaOrdenIntegrationTest {
 
     @Test
     @Transactional
-    void purgarFinalizadasAntesDe_sinCandidatas_devuelveCero() {
-        assertThat(repo.purgarFinalizadasAntesDe(Instant.now())).isZero();
-    }
-
-    @Test
-    @Transactional
-    void purgarFinalizadasAntesDe_borraLasFinalizadasAntesDelCorteYRespetaLasDemas() {
-        var ahora = Instant.now();
-        var idVieja = OrdenId.nuevo();
-        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idVieja), 0, ahora,
-                null, null, null, ahora, null, 0L));
-        var idNoFinalizada = OrdenId.nuevo();
-        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idNoFinalizada), 0, ahora,
-                null, null, null, null, null, 0L));
-        // Las candidatas de la query nativa de purga solo ven filas YA en BD: forzamos el
-        // flush porque crear() (a diferencia de guardar()) no lo hace.
-        ordenJpaRepository.flush();
-        // actualizada_en se fija en el @PrePersist al momento de crear la fila; un corte
-        // muy futuro la incluye sin depender de forzar la marca de tiempo desde fuera.
-        var corteFuturo = Instant.now().plusSeconds(3600);
-
-        var borradas = repo.purgarFinalizadasAntesDe(corteFuturo);
-
-        assertThat(borradas).isGreaterThanOrEqualTo(1);
-        assertThatThrownBy(() -> repo.cargar(idVieja)).isInstanceOf(IllegalArgumentException.class);
-        assertThat(repo.cargar(idNoFinalizada)).isNotNull(); // nunca finalizada: la purga no la toca
-    }
-
-    @Test
-    @Transactional
-    void purgarFinalizadasAntesDe_borraExplicitamenteLaAuditoriaYLaSateliteDeSuTipo() {
-        // Ya no hay ON DELETE CASCADE (prohibido, ver CLAUDE.md): si el borrado explícito de
-        // las hijas (proceso_auditoria y la satélite) no ocurriera ANTES que el del padre
-        // (orden, desde la fusión de la fase 2), el DELETE nativo de orden violaría la FK
-        // real que genera Hibernate para proceso_auditoria (@ElementCollection) y este test
-        // fallaría con una excepción en vez de completar.
-        var ahora = Instant.now();
-        var id = OrdenId.nuevo();
-        var saga = nuevaSagaPrincipal(id);
-        saga = saga.cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
-        repo.crear(OrdenRoot.rehidratar(saga, 0, ahora, null, null, null, ahora, null, 0L));
-        ordenJpaRepository.flush();
-        assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor())).as("la satélite existe antes de purgar").isPresent();
-        var corteFuturo = Instant.now().plusSeconds(3600);
-
-        var borradas = repo.purgarFinalizadasAntesDe(corteFuturo);
-
-        assertThat(borradas).isEqualTo(1);
-        assertThat(procesoSagaPrincipalJpaRepository.findById(id.valor()))
-                .as("la satélite queda borrada de forma explícita en la purga").isEmpty();
-        var auditoriaRestante = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM proceso_auditoria WHERE orden_id = :id")
-                .setParameter("id", id.valor().toString())
-                .getSingleResult()).longValue();
-        assertThat(auditoriaRestante).as("la auditoría queda borrada de forma explícita en la purga").isZero();
-    }
-
-    @Test
-    @Transactional
     void externalIdsFinalizadosAntesDe_grupoConUnaOrdenVivaQuedaExcluido() {
         var ahora = Instant.now();
         var externalId = ExternalId.de(UUID.randomUUID().toString());

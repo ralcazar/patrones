@@ -14,8 +14,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoPurgarAdj
 /**
  * Disparador periódico de la purga de adjuntos (criterio por tramitación):
  * el QUÉ se anula vive en la aplicación (ServicioPurgarAdjuntos, con
- * reintento e incidencia), aquí solo el CUÁNDO y la retención -- mismo
- * patrón que PlanificadorLimpieza -> CasoUsoLimpiarDatosAntiguos.
+ * reintento e incidencia), aquí solo el CUÁNDO y la retención.
  */
 @Component
 public class PlanificadorPurgaAdjuntos {

@@ -20,9 +20,13 @@ que un atasco posterior abre un ticket NUEVO. Soporte puede cancelar (solo la
 principal, solo pre-PASO7, arranca la compensación), reintentar, marcar-OK
 manual y consultar/filtrar las órdenes — viendo el marcador de ticket, la
 fecha del próximo reintento y si el paso pendiente requiere datos manuales.
-Un planificador purga periódicamente los datos antiguos que acabaron bien
-(`ServicioLimpiezaDatos`). **Todo termina cuando las sagas se completan: no
-se publican eventos de salida.**
+Dos planificadores purgan periódicamente por tramitación (grupo de las 4
+sagas que comparten `external_id`): la purga de adjuntos (diaria 23:00, corte
+30 días) anula el contenido de los documentos y sella `purgado_en` sin borrar
+filas; la purga de completadas (diaria 23:30, corte 180 días) borra
+`datos_negocio` + documentos + las 4 órdenes de la tramitación
+(`ServicioPurgarAdjuntos` / `ServicioPurgarCompletadas`). **Todo termina
+cuando las sagas se completan: no se publican eventos de salida.**
 
 No hay órdenes "padre" ni "hijas" como concepto de infraestructura: cada
 saga es su propio agregado `OrdenRoot` (ejecución) que contiene su propio
@@ -70,14 +74,13 @@ com/ejemplo/app/
       aplicacion/
         puerto/entrada/  CasoUsoContinuarOrden, CasoUsoIntervenirOrden,
                          CasoUsoConsultarOrdenesSoporte,
-                         CasoUsoAbrirTicketsPendientes,
-                         CasoUsoLimpiarDatosAntiguos
+                         CasoUsoAbrirTicketsPendientes
         puerto/salida/   RepositorioOrden, PuertoConsultaOrdenesSoporte,
-                         PuertoOrdenesTicketPendiente, PuertoTicketsSoporte
+                         PuertoOrdenesTicketPendiente, PuertoTicketsSoporte,
+                         PuertoIncidencias
         servicio/        ServicioContinuarOrden, ProcesadorOrden (SPI, una
                          implementación por tipo de orden), SenalPaso,
-                         ServicioSoporteOrdenes, ServicioTicketsSoporte,
-                         ServicioLimpiezaDatos
+                         ServicioSoporteOrdenes, ServicioTicketsSoporte
     sagas/                         Aquí "saga" es vocabulario correcto
       dominio/comun/     ContextoArranque, RefPaso1/5/7 (shared kernel de
                         las 4 sagas)
@@ -89,13 +92,15 @@ com/ejemplo/app/
       aplicacion/puerto/entrada/  CasoUsoIniciarTramitacion,
                                   CasoUsoCancelarTramitacion,
                                   CasoUsoVistaTramitacion,
-                                  CasoUsoRegistrarRespuestaSecundaria2
+                                  CasoUsoRegistrarRespuestaSecundaria2,
+                                  CasoUsoPurgarAdjuntos, CasoUsoPurgarCompletadas
       aplicacion/puerto/salida/   PuertoPaso1..8, PuertoSagaSecundaria1/2/3,
-                                  PuertoConciliacionSecundaria2
+                                  PuertoConciliacionSecundaria2, RepositorioDatosNegocio
       aplicacion/servicio/comun/  ServicioIniciarTramitacion,
                                   ServicioCancelarTramitacion,
                                   ServicioVistaTramitacion,
-                                  ServicioRegistrarRespuestaSecundaria2
+                                  ServicioRegistrarRespuestaSecundaria2,
+                                  ServicioPurgarAdjuntos, ServicioPurgarCompletadas
       aplicacion/servicio/sagaprincipal|sagasecundariaN/
                                   ServicioSagaPrincipal / ServicioSagaSecundariaN
                                   (implementan ProcesadorOrden del motor)
@@ -106,15 +111,17 @@ com/ejemplo/app/
                         DescriptorSoporteOrden (SPI por tipo),
                         AdaptadorConsultaOrdenesSoporte,
                         AdaptadorOrdenesTicketPendiente, ContextoCodec
-      eventos/          AdaptadorTicketsLog
+      eventos/          AdaptadorTicketsLog, AdaptadorIncidenciasLog
       programados/      PlanificadorContinuacion, TrabajadorContinuacion,
-                        PlanificadorLimpieza, PlanificadorTicketsSoporte,
+                        PlanificadorTicketsSoporte,
                         ConfiguracionEjecucionAsincrona
       ConfiguracionOrderManager.java
     sagas/                         Spring, Kafka, Jackson; wiring de las 4 sagas
       persistencia/     SoporteSagaPrincipal/Secundaria1/2/3 (implementan
-                        MapeadorProceso + DescriptorSoporteOrden), AyudanteContexto
+                        MapeadorProceso + DescriptorSoporteOrden), AyudanteContexto,
+                        AdaptadorDatosNegocio
       eventos/          ConsumidorRespuestaSecundaria2 (único uso de Kafka)
+      programados/      PlanificadorPurgaAdjuntos, PlanificadorPurgaCompletadas
       ConfiguracionSagas.java
   OrderManagerApplication.java
 resources/application.yml   claves ordermanager.* (motor) y sagas.* (concretas)

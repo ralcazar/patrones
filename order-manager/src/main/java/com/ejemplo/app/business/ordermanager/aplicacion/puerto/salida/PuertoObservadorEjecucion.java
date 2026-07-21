@@ -8,10 +8,10 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 
 /**
  * Observa los momentos relevantes del bucle de ejecución del motor (ver
- * {@code ServicioContinuarOrden}) y la limpieza de datos antiguos, para que
- * una herramienta externa (log estructurado, métricas) los agregue sin que
- * la capa de aplicación dependa de ningún framework de logging: vocabulario
- * neutro del motor, ni rastro de "saga" aquí.
+ * {@code ServicioContinuarOrden}), para que una herramienta externa (log
+ * estructurado, métricas) los agregue sin que la capa de aplicación dependa
+ * de ningún framework de logging: vocabulario neutro del motor, ni rastro de
+ * "saga" aquí.
  *
  * "Ticket abierto" NO vive en este puerto: nace directamente en el adaptador
  * de salida de tickets (ya en infraestructura, ver AdaptadorTicketsLog), así
@@ -52,9 +52,6 @@ public interface PuertoObservadorEjecucion {
      * que observar.
      */
     void ordenFinalizada(OrdenId id, TipoOrden tipo);
-
-    /** Barrido de limpieza de datos antiguos: cuántas órdenes se purgaron. */
-    void datosAntiguosPurgados(long ordenesEliminadas);
 
     /** Motivo por el que un intento de reclamo no consigue el token. */
     enum MotivoReclamoPerdido {

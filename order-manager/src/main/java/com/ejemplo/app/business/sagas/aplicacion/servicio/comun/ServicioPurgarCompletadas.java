@@ -18,8 +18,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
  * órdenes de la tramitación (satélites + auditoría) -- para cada grupo
  * terminado antes del corte recibido. El corte (retención) lo calcula el
  * planificador de infraestructura -- este servicio no conoce "hoy" ni
- * cuántos días de retención hay, solo el {@link Instant} recibido (mismo
- * contrato que {@code ServicioLimpiezaDatos.purgarAnterioresA}).
+ * cuántos días de retención hay, solo el {@link Instant} recibido.
  *
  * Orden de borrado (respeta las FK reales, sin {@code ON DELETE CASCADE} --
  * ver CLAUDE.md): la satélite {@code proceso_saga_principal} (borrada por

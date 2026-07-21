@@ -64,13 +64,13 @@ public record EscenarioCarga(
 
     /**
      * Overrides de los cron de producción (ver application.yml:
-     * ordermanager.tickets.cron / ordermanager.limpieza.cron /
-     * sagas.purga-datos-negocio.cron), añadidos en la fase 2 del plan de
+     * ordermanager.tickets.cron / sagas.purga-adjuntos.cron /
+     * sagas.purga-completadas.cron), añadidos en la fase 2 del plan de
      * pruebas de carga porque una ejecución corta no dispara los cron reales
      * (cada 3h / cada noche). Los tres campos son opcionales: null = se deja
      * el valor por defecto de application.yml para ese pod.
      */
-    public record Cron(String tickets, String limpieza, String purga) {
+    public record Cron(String tickets, String purgaAdjuntos, String purgaCompletadas) {
 
         static final Cron VACIO = new Cron(null, null, null);
     }
@@ -89,7 +89,7 @@ public record EscenarioCarga(
     private static final Set<String> CLAVES_KAFKA = Set.of("retraso-ms", "tasa-perdida");
     private static final Set<String> CLAVES_MOTOR = Set.of("planificador", "lease", "cron");
     private static final Set<String> CLAVES_PLANIFICADOR = Set.of("intervalo-ms", "trabajadores", "lote");
-    private static final Set<String> CLAVES_CRON = Set.of("tickets", "limpieza", "purga");
+    private static final Set<String> CLAVES_CRON = Set.of("tickets", "purga-adjuntos", "purga-completadas");
 
     /**
      * Carga el escenario {@code <nombreEscenario>.yml} del classpath (ver
@@ -197,8 +197,8 @@ public record EscenarioCarga(
             validarClaves(cronMapa, CLAVES_CRON, "motor.cron");
             cron = new Cron(
                     opcional(cronMapa, "tickets", String.class, "motor.cron"),
-                    opcional(cronMapa, "limpieza", String.class, "motor.cron"),
-                    opcional(cronMapa, "purga", String.class, "motor.cron"));
+                    opcional(cronMapa, "purga-adjuntos", String.class, "motor.cron"),
+                    opcional(cronMapa, "purga-completadas", String.class, "motor.cron"));
         }
         return new Motor(planificador, lease, cron);
     }

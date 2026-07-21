@@ -161,8 +161,6 @@ class FronteraTransaccionalIntegrationTest {
 
         @Override public boolean hayEjecutables(Instant ahora) { return delegado.hayEjecutables(ahora); }
 
-        @Override public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
-
         @Override
         public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
             return delegado.externalIdsFinalizadosAntesDe(corte);

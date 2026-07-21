@@ -29,7 +29,6 @@ import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioCancelar
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarAdjuntos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarCompletadas;
-import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioPurgarDatosNegocioHuerfanos;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagasecundaria2.ServicioRegistrarRespuestaSecundaria2;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.comun.ServicioVistaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.servicio.sagaprincipal.ServicioSagaPrincipal;
@@ -111,14 +110,8 @@ public class ConfiguracionSagas {
         return new ServicioVistaTramitacion(consultas);
     }
 
-    @Bean
-    ServicioPurgarDatosNegocioHuerfanos servicioPurgarDatosNegocioHuerfanos(RepositorioDatosNegocio repoDatos) {
-        return new ServicioPurgarDatosNegocioHuerfanos(repoDatos);
-    }
-
     // Sin Clock: el corte (retención) lo calcula el planificador de infraestructura y se
-    // pasa como Instant (ver PlanificadorPurgaAdjuntos/Completadas), igual que
-    // PlanificadorLimpieza -> CasoUsoLimpiarDatosAntiguos.purgarAnterioresA.
+    // pasa como Instant (ver PlanificadorPurgaAdjuntos/Completadas).
     @Bean
     ServicioPurgarAdjuntos servicioPurgarAdjuntos(RepositorioOrden repo, RepositorioDatosNegocio repoDatos,
             PuertoIncidencias incidencias, @Lazy ServicioPurgarAdjuntos self) {

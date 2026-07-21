@@ -16,7 +16,7 @@ public interface DocumentoNegocioJpaRepository extends JpaRepository<DocumentoNe
     // @Transactional explícito: a diferencia de save()/deleteById() (heredados de SimpleJpaRepository,
     // ya transaccionales por defecto), una query derivada delete...By como esta NO abre transacción
     // propia si se invoca fuera de una ya activa (lanzaría TransactionRequiredException). En producción
-    // siempre corre dentro de la @Transactional de ServicioPurgarDatosNegocioHuerfanos (se une a ella,
+    // siempre corre dentro de la @Transactional de ServicioPurgarCompletadas (se une a ella,
     // REQUIRED); esto solo la hace robusta también si se invoca de forma aislada (p. ej. en tests).
     /** Borrado explícito de las hijas (sin ON DELETE CASCADE, ver CLAUDE.md), antes del datos_negocio padre. */
     @Transactional

@@ -12,8 +12,8 @@ import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 /**
  * Doble en memoria de {@link PuertoObservadorEjecucion}: acumula cada evento
  * recibido en una lista, para que los tests verifiquen qué evento (y con qué
- * datos) se emitió en cada rama del bucle de {@code ServicioContinuarOrden} o
- * de {@code ServicioLimpiezaDatos}, sin acoplarse a SLF4J.
+ * datos) se emitió en cada rama del bucle de {@code ServicioContinuarOrden},
+ * sin acoplarse a SLF4J.
  */
 public class ObservadorEjecucionEnMemoria implements PuertoObservadorEjecucion {
 
@@ -27,7 +27,6 @@ public class ObservadorEjecucionEnMemoria implements PuertoObservadorEjecucion {
         record ReintentoProgramado(OrdenId id, TipoOrden tipo, int intento, Duration espera) implements Evento {}
         record OrdenAparcada(OrdenId id, TipoOrden tipo, Duration ventana) implements Evento {}
         record OrdenFinalizada(OrdenId id, TipoOrden tipo) implements Evento {}
-        record DatosAntiguosPurgados(long ordenesEliminadas) implements Evento {}
     }
 
     private final List<Evento> eventos = new ArrayList<>();
@@ -72,10 +71,5 @@ public class ObservadorEjecucionEnMemoria implements PuertoObservadorEjecucion {
     @Override
     public void ordenFinalizada(OrdenId id, TipoOrden tipo) {
         eventos.add(new Evento.OrdenFinalizada(id, tipo));
-    }
-
-    @Override
-    public void datosAntiguosPurgados(long ordenesEliminadas) {
-        eventos.add(new Evento.DatosAntiguosPurgados(ordenesEliminadas));
     }
 }

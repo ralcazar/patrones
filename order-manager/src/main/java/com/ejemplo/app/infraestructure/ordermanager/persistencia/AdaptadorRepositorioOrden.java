@@ -105,24 +105,6 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
     }
 
     @Override
-    public long purgarFinalizadasAntesDe(Instant corte) {
-        var ids = ordenes.idsFinalizadasAntesDe(corte);
-        if (ids.isEmpty()) {
-            return 0;
-        }
-        // Sin ON DELETE CASCADE (prohibido, ver CLAUDE.md): el borrado de las hijas es
-        // explícito, en la misma transacción, hijas antes que padre: auditoría ->
-        // satélites -> orden (todas las FK son orden_id -> orden).
-        ordenes.borrarAuditoriaPorIds(ids); // proceso_auditoria es hija de orden por FK
-        // Cada mapeador borra en SU propia satélite; las filas de otros tipos no matchean.
-        for (var mapeador : mapeadores.values()) {
-            mapeador.borrarContexto(ids);
-        }
-        ordenes.borrarPorIds(ids); // el padre, ahora libre de FKs de sus hijas
-        return ids.size();
-    }
-
-    @Override
     public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
         return ordenes.externalIdsFinalizadosAntesDe(corte).stream()
                 .map(ExternalId::de)
@@ -139,8 +121,9 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         if (ordenIds.isEmpty()) {
             return 0;
         }
-        // Mismo patrón que purgarFinalizadasAntesDe: sin ON DELETE CASCADE (prohibido, ver
-        // CLAUDE.md), hijas antes que padre, en la misma transacción: auditoría -> satélites -> orden.
+        // Sin ON DELETE CASCADE (prohibido, ver CLAUDE.md): el borrado de las hijas es
+        // explícito, en la misma transacción, hijas antes que padre: auditoría ->
+        // satélites -> orden (todas las FK son orden_id -> orden).
         ordenes.borrarAuditoriaPorIds(ordenIds);
         for (var mapeador : mapeadores.values()) {
             mapeador.borrarContexto(ordenIds);

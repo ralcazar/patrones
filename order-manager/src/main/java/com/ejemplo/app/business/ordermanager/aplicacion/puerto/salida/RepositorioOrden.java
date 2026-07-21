@@ -42,9 +42,6 @@ public interface RepositorioOrden {
     /** ¿Existe alguna candidata elegible? Mismo predicado que buscarEjecutables, sin cargar filas. */
     boolean hayEjecutables(Instant ahora);
 
-    /** Limpieza de datos: borra el agregado completo de las órdenes finalizadas antes del corte. */
-    long purgarFinalizadasAntesDe(Instant corte);
-
     /**
      * Purga por tramitación: external_ids cuyas órdenes están TODAS
      * terminadas (ninguna viva) y cuya última en terminar

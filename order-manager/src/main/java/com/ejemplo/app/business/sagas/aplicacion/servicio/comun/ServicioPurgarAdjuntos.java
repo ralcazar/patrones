@@ -18,8 +18,7 @@ import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosN
  * {@code datos_negocio} SIN borrar filas (ver
  * {@link RepositorioDatosNegocio#purgarAdjuntos}). El corte (retención) lo
  * calcula el planificador de infraestructura -- este servicio no conoce
- * "hoy" ni cuántos días de retención hay, solo el {@link Instant} recibido
- * (mismo contrato que {@code ServicioLimpiezaDatos.purgarAnterioresA}).
+ * "hoy" ni cuántos días de retención hay, solo el {@link Instant} recibido.
  * Idempotente: la selección
  * ({@link RepositorioDatosNegocio#idsPorExternalIdsSinPurgar}) ya excluye lo
  * purgado en una pasada anterior, así que repetir el batch completo no

@@ -51,9 +51,9 @@ motor:                   # se aplica como propiedades a CADA pod; lo que no
                          # (por defecto cada 3h/cada noche, ver application.yml).
                          # Los tres campos son opcionales; el que no se indique
                          # deja el valor por defecto de application.yml.
-    tickets: "0 * * * * *"    # -> ordermanager.tickets.cron
-    limpieza: "0 0 * * * *"   # -> ordermanager.limpieza.cron
-    purga: "0 30 * * * *"     # -> sagas.purga-datos-negocio.cron
+    tickets: "0 * * * * *"           # -> ordermanager.tickets.cron
+    purga-adjuntos: "0 0 * * * *"    # -> sagas.purga-adjuntos.cron
+    purga-completadas: "0 30 * * * *" # -> sagas.purga-completadas.cron
 ```
 
 ## Nota sobre `pods.log` y el timestamp
@@ -112,7 +112,7 @@ evento y de campo no cambian sin actualizar esta tabla y el analizador a la
 vez.
 
 La mayoría de eventos nacen en `business.ordermanager.aplicacion.servicio`
-(`ServicioContinuarOrden`, `ServicioLimpiezaDatos`) a través del puerto
+(`ServicioContinuarOrden`) a través del puerto
 `PuertoObservadorEjecucion` (ver `order-manager/docs/17-clases-aplicacion-nucleo.puml`),
 implementado por `AdaptadorObservadorLog`
 (`infraestructure.ordermanager.eventos`, ver diagrama 24) con SLF4J. Tres
@@ -131,7 +131,6 @@ mismo formato para que el analizador no tenga que distinguir el origen.
 | `reintento_programado` | `intento`, `espera_ms` (según `PoliticaReintentos.esperaTras`) | `ServicioContinuarOrden.reclamarYEjecutar` | Tras un `paso_fallido`, el reintento se programa y persiste con éxito |
 | `orden_aparcada` | `ventana_ms` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Aparcar` (espera un evento externo) |
 | `orden_finalizada` | `resultado=ok` | `ServicioContinuarOrden.reclamarYEjecutar` | El procesador devuelve `SenalPaso.Finalizada`; en el diseño actual del motor la finalización siempre es éxito (los fallos nunca agotan la escalera de reintentos, se repiten indefinidamente cada 180 min con ticket abierto) |
-| `purga_datos_antiguos` | sin `orden`/`tipo` (evento agregado, no por orden): `ordenes_eliminadas` | `ServicioLimpiezaDatos.purgarAnterioresA` | Cada barrido de limpieza, con el recuento de órdenes purgadas |
 | `ticket_abierto` | `external_id`, `intentos`, `error_tipo`, `error_mensaje` (`sin-registrar` si no hay error) | `AdaptadorTicketsLog.abrir` (infraestructura; no pasa por `PuertoObservadorEjecucion`) | Una línea por orden del barrido de tickets (`ServicioTicketsSoporte`), tras escribir el ticket |
 | `tramitacion_creada` | `external_id` (`tipo` siempre `PRINCIPAL`) | `ControladorTramitaciones.iniciar` (infraestructura) | `POST /tramitaciones` crea el agregado inicial con éxito |
 | `respuesta_secundaria2_registrada` | `exito` (boolean, siempre `true`: el evento real no tiene caso de error), `mensaje_id` (`tipo` siempre `SECUNDARIA2`) | `ConsumidorRespuestaSecundaria2.onRespuesta` (infraestructura) | Tras delegar en `CasoUsoRegistrarRespuestaSecundaria2.respuestaOk` |

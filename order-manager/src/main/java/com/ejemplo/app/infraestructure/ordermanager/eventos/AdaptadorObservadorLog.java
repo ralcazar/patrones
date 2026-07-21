@@ -75,9 +75,4 @@ public class AdaptadorObservadorLog implements PuertoObservadorEjecucion {
     public void ordenFinalizada(OrdenId id, TipoOrden tipo) {
         log.info("evento=orden_finalizada orden={} tipo={} resultado=ok pod={}", id.valor(), tipo.valor(), pod);
     }
-
-    @Override
-    public void datosAntiguosPurgados(long ordenesEliminadas) {
-        log.info("evento=purga_datos_antiguos ordenes_eliminadas={} pod={}", ordenesEliminadas, pod);
-    }
 }
