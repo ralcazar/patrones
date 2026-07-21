@@ -51,7 +51,7 @@ class ControladorTramitacionesIntegrationTest {
     }
 
     @Test
-    void iniciar_conFalloDelServicioExternoDeDatosDeNegocioDevuelve502BadGatewaySinNadaPersistido() throws Exception {
+    void iniciar_conFalloDelServicioExternoDeDatosDeNegocioDevuelve502BadGateway() throws Exception {
         when(casoUso.iniciar(any())).thenThrow(new ExcepcionServicioExterno(MotivoFallo.timeout(), null));
         var externalId = UUID.randomUUID();
 

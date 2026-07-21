@@ -79,8 +79,13 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
 
     @Override
     public long purgarFinalizadasAntesDe(Instant corte) {
+        // Espejo del predicado de la query real (OrdenJpaRepository.idsFinalizadasAntesDe:
+        // completada_en IS NOT NULL AND actualizada_en < :corte): solo finalizadas y ya
+        // anteriores al corte. Para una orden finalizada, completadaEn es su última
+        // escritura, así que hace de proxy de actualizada_en a nivel de dominio.
         var ids = almacen.values().stream()
                 .filter(o -> !o.estaViva())
+                .filter(o -> o.completadaEn().isBefore(corte))
                 .map(OrdenRoot::id)
                 .toList();
         ids.forEach(almacen::remove);

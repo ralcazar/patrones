@@ -17,9 +17,11 @@ import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 
 /**
- * Saga secundaria 2: INICIAL -&gt; ESPERANDO_RESPUESTA -&gt; TERMINADA, con la
- * posibilidad de volver a INICIAL si la conciliación detecta un fallo
- * registrado en destino.
+ * Saga secundaria 2: INICIAL -&gt; ESPERANDO_RESPUESTA -&gt; TERMINADA. No hay
+ * transición de vuelta a INICIAL: la respuesta diferida llega por Kafka
+ * (respuestaRecibida) o vía aplicarYAvanzar y termina la saga; un fallo
+ * detectado en la conciliación lo gestiona el servicio de aplicación
+ * (relanza para reintento), no el value object.
  *
  * {@code SagaSecundaria2} es un value object inmutable: cada transición
  * devuelve una instancia nueva, así que los tests reasignan la variable
