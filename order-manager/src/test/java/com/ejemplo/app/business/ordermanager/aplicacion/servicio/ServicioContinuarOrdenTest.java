@@ -519,6 +519,14 @@ class ServicioContinuarOrdenTest {
 
         @Override
         public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+
+        @Override
+        public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+            return delegado.externalIdsFinalizadosAntesDe(corte);
+        }
+
+        @Override
+        public long purgarPorExternalIds(List<ExternalId> ids) { return delegado.purgarPorExternalIds(ids); }
     }
 
     /**
@@ -568,6 +576,14 @@ class ServicioContinuarOrdenTest {
 
         @Override
         public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+
+        @Override
+        public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+            return delegado.externalIdsFinalizadosAntesDe(corte);
+        }
+
+        @Override
+        public long purgarPorExternalIds(List<ExternalId> ids) { return delegado.purgarPorExternalIds(ids); }
     }
 
     /**
@@ -612,6 +628,14 @@ class ServicioContinuarOrdenTest {
 
         @Override
         public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+
+        @Override
+        public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+            return delegado.externalIdsFinalizadosAntesDe(corte);
+        }
+
+        @Override
+        public long purgarPorExternalIds(List<ExternalId> ids) { return delegado.purgarPorExternalIds(ids); }
     }
 
     /**
@@ -655,5 +679,13 @@ class ServicioContinuarOrdenTest {
 
         @Override
         public long purgarFinalizadasAntesDe(Instant corte) { return delegado.purgarFinalizadasAntesDe(corte); }
+
+        @Override
+        public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+            return delegado.externalIdsFinalizadosAntesDe(corte);
+        }
+
+        @Override
+        public long purgarPorExternalIds(List<ExternalId> ids) { return delegado.purgarPorExternalIds(ids); }
     }
 }

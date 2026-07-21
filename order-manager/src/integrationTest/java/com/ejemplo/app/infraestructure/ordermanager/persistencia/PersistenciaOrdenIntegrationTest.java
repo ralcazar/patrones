@@ -386,6 +386,121 @@ class PersistenciaOrdenIntegrationTest {
         assertThat(auditoriaRestante).as("la auditoría queda borrada de forma explícita en la purga").isZero();
     }
 
+    @Test
+    @Transactional
+    void externalIdsFinalizadosAntesDe_grupoConUnaOrdenVivaQuedaExcluido() {
+        var ahora = Instant.now();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var idPrincipal = OrdenId.nuevo();
+        var principal = SagaPrincipal.crear(idPrincipal, externalId, DatosNegocioId.nuevo());
+        repo.crear(OrdenRoot.rehidratar(principal, 0, ahora, null, null, null,
+                ahora.minusSeconds(7200), null, 0L)); // terminada, antigua
+        var idSecundaria = OrdenId.nuevo();
+        var ctx = new ContextoArranque.ArranqueSecundaria1(externalId, new RefPaso1("ref1"));
+        repo.crear(OrdenRoot.nueva(SagaSecundaria1.crear(idSecundaria, ctx), ahora)); // viva
+        ordenJpaRepository.flush();
+
+        var resultado = repo.externalIdsFinalizadosAntesDe(ahora.plusSeconds(3600));
+
+        assertThat(resultado).doesNotContain(externalId);
+    }
+
+    @Test
+    @Transactional
+    void externalIdsFinalizadosAntesDe_grupoTodoTerminadoYAnteriorAlCorteQuedaIncluido() {
+        var ahora = Instant.now();
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var idPrincipal = OrdenId.nuevo();
+        var principal = SagaPrincipal.crear(idPrincipal, externalId, DatosNegocioId.nuevo());
+        repo.crear(OrdenRoot.rehidratar(principal, 0, ahora, null, null, null,
+                ahora.minusSeconds(7200), null, 0L));
+        var idSecundaria = OrdenId.nuevo();
+        var ctx = new ContextoArranque.ArranqueSecundaria1(externalId, new RefPaso1("ref1"));
+        var secundaria = SagaSecundaria1.crear(idSecundaria, ctx);
+        repo.crear(OrdenRoot.rehidratar(secundaria, 0, ahora, null, null, null,
+                ahora.minusSeconds(3600), null, 0L)); // la última en terminar del grupo
+        ordenJpaRepository.flush();
+
+        var resultado = repo.externalIdsFinalizadosAntesDe(ahora);
+
+        assertThat(resultado).contains(externalId);
+    }
+
+    @Test
+    @Transactional
+    void externalIdsFinalizadosAntesDe_fronteraExactaDelCorteExcluyeYUnSegundoAntesIncluye() {
+        var ahora = Instant.now();
+        var externalIdEnLaFrontera = ExternalId.de(UUID.randomUUID().toString());
+        var corte = ahora;
+        repo.crear(OrdenRoot.rehidratar(
+                SagaPrincipal.crear(OrdenId.nuevo(), externalIdEnLaFrontera, DatosNegocioId.nuevo()),
+                0, ahora, null, null, null, corte, null, 0L)); // completadaEn == corte: NO es "< corte"
+        var externalIdAntesDelCorte = ExternalId.de(UUID.randomUUID().toString());
+        repo.crear(OrdenRoot.rehidratar(
+                SagaPrincipal.crear(OrdenId.nuevo(), externalIdAntesDelCorte, DatosNegocioId.nuevo()),
+                0, ahora, null, null, null, corte.minusSeconds(1), null, 0L));
+        ordenJpaRepository.flush();
+
+        var resultado = repo.externalIdsFinalizadosAntesDe(corte);
+
+        assertThat(resultado).doesNotContain(externalIdEnLaFrontera);
+        assertThat(resultado).contains(externalIdAntesDelCorte);
+    }
+
+    @Test
+    @Transactional
+    void purgarPorExternalIds_conListaVaciaDevuelveCero() {
+        assertThat(repo.purgarPorExternalIds(List.of())).isZero();
+    }
+
+    @Test
+    @Transactional
+    void purgarPorExternalIds_conExternalIdSinOrdenesEnBdDevuelveCero() {
+        // Lista no vacía, pero sin ninguna orden real en BD para ese external_id: ejercita
+        // el camino en que idsPorExternalIds() (a diferencia de la propia lista de entrada)
+        // devuelve vacío.
+        var externalIdInexistente = ExternalId.de(UUID.randomUUID().toString());
+
+        assertThat(repo.purgarPorExternalIds(List.of(externalIdInexistente))).isZero();
+    }
+
+    @Test
+    @Transactional
+    void purgarPorExternalIds_borraHijasAntesQuePadreYNoTocaOtrosExternalIds() {
+        var ahora = Instant.now();
+        var externalIdABorrar = ExternalId.de(UUID.randomUUID().toString());
+        var idPrincipal = OrdenId.nuevo();
+        var principal = SagaPrincipal.crear(idPrincipal, externalIdABorrar, DatosNegocioId.nuevo())
+                .cancelar(new UsuarioSoporte("ana"), "motivo"); // deja una fila real en proceso_auditoria
+        repo.crear(OrdenRoot.rehidratar(principal, 0, ahora, null, null, null, ahora, null, 0L));
+        var idSecundaria = OrdenId.nuevo();
+        var ctx = new ContextoArranque.ArranqueSecundaria1(externalIdABorrar, new RefPaso1("ref1"));
+        repo.crear(OrdenRoot.rehidratar(SagaSecundaria1.crear(idSecundaria, ctx), 0, ahora,
+                null, null, null, ahora, null, 0L));
+        var externalIdAConservar = ExternalId.de(UUID.randomUUID().toString());
+        var idConservada = OrdenId.nuevo();
+        repo.crear(OrdenRoot.nueva(
+                SagaPrincipal.crear(idConservada, externalIdAConservar, DatosNegocioId.nuevo()), ahora));
+        ordenJpaRepository.flush();
+        assertThat(procesoSagaPrincipalJpaRepository.findById(idPrincipal.valor()))
+                .as("la satélite existe antes de purgar").isPresent();
+
+        var borradas = repo.purgarPorExternalIds(List.of(externalIdABorrar));
+
+        assertThat(borradas).isEqualTo(2); // principal + secundaria1 de la misma tramitación
+        assertThatThrownBy(() -> repo.cargar(idPrincipal)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> repo.cargar(idSecundaria)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(procesoSagaPrincipalJpaRepository.findById(idPrincipal.valor()))
+                .as("la satélite queda borrada de forma explícita en la purga").isEmpty();
+        var auditoriaRestante = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM proceso_auditoria WHERE orden_id = :id")
+                .setParameter("id", idPrincipal.valor().toString())
+                .getSingleResult()).longValue();
+        assertThat(auditoriaRestante).as("la auditoría queda borrada de forma explícita en la purga").isZero();
+        assertThat(repo.cargar(idConservada))
+                .as("otro external_id no se toca").isNotNull();
+    }
+
     // ------------------------------------------------------------------
     // AdaptadorConsultaOrdenesSoporte
     // ------------------------------------------------------------------

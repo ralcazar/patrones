@@ -122,6 +122,33 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         return ids.size();
     }
 
+    @Override
+    public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+        return ordenes.externalIdsFinalizadosAntesDe(corte).stream()
+                .map(ExternalId::de)
+                .toList();
+    }
+
+    @Override
+    public long purgarPorExternalIds(List<ExternalId> ids) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        var externalIdValores = ids.stream().map(id -> id.valor().toString()).toList();
+        var ordenIds = ordenes.idsPorExternalIds(externalIdValores);
+        if (ordenIds.isEmpty()) {
+            return 0;
+        }
+        // Mismo patrón que purgarFinalizadasAntesDe: sin ON DELETE CASCADE (prohibido, ver
+        // CLAUDE.md), hijas antes que padre, en la misma transacción: auditoría -> satélites -> orden.
+        ordenes.borrarAuditoriaPorIds(ordenIds);
+        for (var mapeador : mapeadores.values()) {
+            mapeador.borrarContexto(ordenIds);
+        }
+        ordenes.borrarPorIds(ordenIds);
+        return ordenIds.size();
+    }
+
     // ------------------------------------------------------------------
     // OrdenEntity <-> OrdenRoot (despacho por tipo a través de MapeadorProceso)
     // ------------------------------------------------------------------

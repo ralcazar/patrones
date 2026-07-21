@@ -59,6 +59,24 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             """, nativeQuery = true)
     List<UUID> idsFinalizadasAntesDe(@Param("corte") Instant corte);
 
+    /**
+     * Purga por tramitación (grupo de órdenes que comparten external_id):
+     * solo grupos SIN ninguna orden viva (el COUNT del CASE cuenta las
+     * completada_en IS NULL del grupo; HAVING = 0 exige que no haya ninguna)
+     * y cuya última en terminar sea anterior al corte.
+     */
+    @Query(value = """
+            SELECT external_id FROM orden
+            GROUP BY external_id
+            HAVING COUNT(CASE WHEN completada_en IS NULL THEN 1 END) = 0
+               AND MAX(completada_en) < :corte
+            """, nativeQuery = true)
+    List<String> externalIdsFinalizadosAntesDe(@Param("corte") Instant corte);
+
+    /** Ids de todas las órdenes (de cualquier tipo) de los external_ids indicados. */
+    @Query(value = "SELECT orden_id FROM orden WHERE external_id IN :externalIds", nativeQuery = true)
+    List<UUID> idsPorExternalIds(@Param("externalIds") List<String> externalIds);
+
     // clearAutomatically: sin esto, una entidad ya cargada en el contexto de persistencia
     // (p. ej. por un merge/save previo en la misma transacción) seguiría "viva" en el
     // cache de 1er nivel tras el DELETE nativo, y un find() posterior la devolvería

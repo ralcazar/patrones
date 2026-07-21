@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.jmolecules.ddd.annotation.Repository;
 
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -43,6 +44,22 @@ public interface RepositorioOrden {
 
     /** Limpieza de datos: borra el agregado completo de las órdenes finalizadas antes del corte. */
     long purgarFinalizadasAntesDe(Instant corte);
+
+    /**
+     * Purga por tramitación: external_ids cuyas órdenes están TODAS
+     * terminadas (ninguna viva) y cuya última en terminar
+     * ({@code MAX(completada_en)} del grupo) lo hizo antes de {@code corte}.
+     * Usado por las purgas de adjuntos/completadas de sagas (criterio por
+     * tramitación, no por orden individual).
+     */
+    List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte);
+
+    /**
+     * Borra el agregado completo (auditoría -> satélites -> orden) de todas
+     * las órdenes de los external_ids indicados. Devuelve el nº de órdenes
+     * eliminadas.
+     */
+    long purgarPorExternalIds(List<ExternalId> ids);
 
     record CandidataOrden(OrdenId ordenId, TipoOrden tipo) {}
 }

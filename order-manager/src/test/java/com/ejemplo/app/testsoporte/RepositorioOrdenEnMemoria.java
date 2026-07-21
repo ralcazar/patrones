@@ -2,12 +2,15 @@ package com.ejemplo.app.testsoporte;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaException;
+import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
@@ -90,6 +93,35 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
                 .toList();
         ids.forEach(almacen::remove);
         return ids.size();
+    }
+
+    @Override
+    public List<ExternalId> externalIdsFinalizadosAntesDe(Instant corte) {
+        // Espejo de la query nativa OrdenJpaRepository.externalIdsFinalizadosAntesDe:
+        // agrupa por external_id, exige que NINGUNA orden del grupo esté viva, y que la
+        // última en terminar (MAX completadaEn) sea anterior al corte.
+        var porExternalId = almacen.values().stream()
+                .collect(Collectors.groupingBy(o -> o.proceso().externalId()));
+        return porExternalId.entrySet().stream()
+                .filter(e -> e.getValue().stream().noneMatch(OrdenRoot::estaViva))
+                .filter(e -> e.getValue().stream()
+                        .map(OrdenRoot::completadaEn)
+                        .max(Instant::compareTo)
+                        .filter(maxCompletadaEn -> maxCompletadaEn.isBefore(corte))
+                        .isPresent())
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    @Override
+    public long purgarPorExternalIds(List<ExternalId> ids) {
+        var idsBuscados = new HashSet<>(ids);
+        var ordenIds = almacen.values().stream()
+                .filter(o -> idsBuscados.contains(o.proceso().externalId()))
+                .map(OrdenRoot::id)
+                .toList();
+        ordenIds.forEach(almacen::remove);
+        return ordenIds.size();
     }
 
     /** Solo para inspección desde el test: estado actual sin pasar por un caso de uso. */
