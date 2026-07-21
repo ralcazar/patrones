@@ -1,0 +1,94 @@
+@startuml 10-purga-completadas
+title Purga de completadas: borrar datos_negocio + documentos y las 4 órdenes de tramitaciones terminadas hace >= 180 días
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "PlanificadorPurgaCompletadas\n(@Scheduled cron 0 30 23 * * *)" as PLAN
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioPurgarCompletadas" as SERV
+  participant "ReintentoOperativo" as REINT
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "AdaptadorRepositorioOrden\n(motor)" as MOTOR
+  participant "AdaptadorDatosNegocio\n(sagas)" as DATOS
+  participant "AdaptadorIncidenciasLog" as INC
+end box
+
+note over PLAN, SERV
+  Mismo criterio por TRAMITACIÓN que la purga de adjuntos (ver 09),
+  con corte más lejano (180 días) y borrado real en vez de solo
+  anular contenido: se ejecuta a las 23:30, después de la purga de
+  adjuntos (23:00).
+end note
+
+[o-> PLAN : dispara el cron (cada noche a las 23:30)
+activate PLAN
+PLAN -> PLAN : corte = Instant.now().minus(retencion)\n(sagas.purga-completadas.retencion-dias, por defecto 180)
+PLAN -> SERV ++ : purgarCompletadas(corte)
+SERV -> REINT ++ : ReintentoOperativo.ejecutar(\n"purga-completadas", incidencias, () -> self.ejecutar(corte), 0L)
+
+loop hasta 5 intentos (MAX_REINTENTOS): cada intento repite la EJECUCIÓN COMPLETA;\nse detiene en el primero que no lanza
+  REINT -> SERV ++ : self.ejecutar(corte) -- vía proxy\n(@Lazy, ver ConfiguracionSagas)
+  group Transacción única (@Transactional)
+    SERV -> MOTOR ++ : externalIdsFinalizadosAntesDe(corte)
+    return [ExternalId, ...]
+    alt externalIds.isEmpty()
+      SERV -> SERV : return 0L
+    else hay externalIds
+      SERV -> MOTOR ++ : purgarPorExternalIds(externalIds)
+      MOTOR -> MOTOR : ordenIds = idsPorExternalIds(externalIds)
+      note right of MOTOR
+        Sin ON DELETE CASCADE (prohibido, ver CLAUDE.md): las 4
+        órdenes de la tramitación (con sus satélites y auditoría)
+        se borran PRIMERO, porque proceso_saga_principal tiene FK
+        a datos_negocio; si se borrara datos_negocio antes, esa FK
+        quedaría violada mientras la satélite aún lo referencia.
+      end note
+      MOTOR -> MOTOR : borrarAuditoriaPorIds(ordenIds)
+      loop por cada MapeadorProceso registrado (uno por tipo)
+        MOTOR -> MOTOR : mapeador.borrarContexto(ordenIds)\n-- borra SOLO su propia satélite (proceso_saga_principal\n/ _secundaria1 / _secundaria2 / _secundaria3, ver 23);\nlas filas de otros tipos no matchean
+      end
+      MOTOR -> MOTOR : borrarPorIds(ordenIds)
+      return ordenIds.size()
+      loop por cada externalId
+        SERV -> DATOS ++ : buscarPorExternalId(externalId)
+        return Optional<DatosNegocio>
+        alt presente
+          SERV -> DATOS ++ : borrar(datos.id())
+          DATOS -> DATOS : documentos.deleteByDatosnegocioId(id)\n-- hija primero, sin ON DELETE CASCADE
+          DATOS -> DATOS : datosNegocio.deleteById(id)
+          return
+          SERV -> SERV : tramitacionesPurgadas++
+        end
+      end
+      SERV -> SERV : return tramitacionesPurgadas
+    end
+  end
+  alt intento sin excepción
+    SERV --> REINT : nº tramitaciones purgadas
+  else intento lanza RuntimeException
+    SERV --> REINT : lanza RuntimeException(e)\n(ultima = e; se prueba el siguiente intento)
+  end
+  deactivate SERV
+end
+
+alt algún intento tuvo éxito
+  note over REINT : ReintentoOperativo.ejecutar ya retornó\ndentro del bucle, en el primer intento sin excepción
+else se agotaron los 5 intentos (todos lanzaron)
+  REINT -> INC ++ : abrir("purga-completadas", causaDe(ultima), 5)
+  INC -> INC : log.error("evento=incidencia_abierta\ntarea=purga-completadas causa={} intentos=5 pod={}")
+  return
+end
+REINT --> SERV : tramitacionesPurgadas (o 0L si se agotaron\nlos reintentos: la última tx falló y se deshizo)
+deactivate REINT
+return tramitacionesPurgadas
+PLAN -> PLAN : log.info("Purga de completadas (corte {}): {}\ntramitaciones purgadas", corte, tramitacionesPurgadas)
+deactivate PLAN
+
+note over SERV, DATOS
+  Idempotente: borrar una orden o un datos_negocio ya borrado es un
+  no-op (buscarPorExternalId ya no lo encuentra), por eso
+  ReintentoOperativo puede reintentar la EJECUCIÓN COMPLETA sin
+  riesgo de doble efecto.
+end note
+@enduml

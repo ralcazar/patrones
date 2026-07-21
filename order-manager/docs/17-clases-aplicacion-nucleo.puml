@@ -113,7 +113,8 @@ package "puerto.salida (transversales)" {
     +guardar(OrdenRoot)  «lanza ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
     +hayEjecutables(ahora) : boolean
-    +purgarFinalizadasAntesDe(corte) : long
+    +externalIdsFinalizadosAntesDe(corte) : List<ExternalId>
+    +purgarPorExternalIds(ids) : long
     record CandidataOrden(ordenId, tipo)
   }
   note right of RepositorioOrden
@@ -124,6 +125,12 @@ package "puerto.salida (transversales)" {
     — el segundo OR reclama tokens de pods muertos al vencer el lease.
     hayEjecutables: MISMO predicado, sin cargar filas (EXISTS
     barato para que el planificador decida si despierta workers).
+    externalIdsFinalizadosAntesDe/purgarPorExternalIds: purga POR
+    TRAMITACIÓN (grupo de órdenes que comparten external_id, no una
+    orden suelta) que usan ServicioPurgarAdjuntos/Completadas de
+    business.sagas (ver 09-10 y 22); el motor solo expone la
+    selección/el borrado genéricos, sin conocer "adjuntos" ni
+    "datos_negocio".
   end note
 
   interface PuertoObservadorEjecucion {
@@ -135,7 +142,6 @@ package "puerto.salida (transversales)" {
     +reintentoProgramado(id, tipo, intento : int, espera : Duration)
     +ordenAparcada(id, tipo, ventana : Duration)
     +ordenFinalizada(id, tipo)
-    +datosAntiguosPurgados(ordenesEliminadas, mensajesEliminados : long)
   }
   enum MotivoReclamoPerdido {
     TOKEN_VIGENTE
@@ -146,18 +152,32 @@ package "puerto.salida (transversales)" {
   PuertoObservadorEjecucion ..> MotivoReclamoPerdido
   note right of PuertoObservadorEjecucion
     Fase 0 del plan de pruebas de carga: observa los momentos
-    relevantes del bucle (ver nota de ServicioContinuarOrden) y de
-    ServicioLimpiezaDatos (ver 22) para un log estructurado, sin que
-    la capa de aplicación dependa de SLF4J. Implementado por
-    AdaptadorObservadorLog (infraestructure.ordermanager.eventos, ver
-    24), una línea por evento. "Ticket abierto" NO pasa por este
-    puerto: nace ya en AdaptadorTicketsLog (ver 22/24). Vocabulario
-    neutro del motor: ningún método ni tipo nombra "saga".
-    reintentoProgramado tiene un segundo emisor fuera de este bucle:
+    relevantes del bucle (ver nota de ServicioContinuarOrden) para
+    un log estructurado, sin que la capa de aplicación dependa de
+    SLF4J. Implementado por AdaptadorObservadorLog
+    (infraestructure.ordermanager.eventos, ver 24), una línea por
+    evento. "Ticket abierto" NO pasa por este puerto: nace ya en
+    AdaptadorTicketsLog (ver 22/24); las purgas por tramitación
+    (ver 09-10) tampoco: sus incidencias pasan por PuertoIncidencias,
+    no por este observador. Vocabulario neutro del motor: ningún
+    método ni tipo nombra "saga". reintentoProgramado tiene un
+    segundo emisor fuera de este bucle:
     business.sagas.aplicacion.servicio.comun.
     ServicioRegistrarRespuestaSecundaria2 (ver 20) lo llama al
     reprogramar tras una respuesta Kafka con exito=false, un fallo de
     negocio que nunca pasa por ejecutarPaso.
+  end note
+
+  interface PuertoIncidencias {
+    +abrir(tarea : String, causa : String, intentos : int)
+  }
+  note right of PuertoIncidencias
+    Puerto genérico de incidencias operativas (vocabulario neutro:
+    no nombra "purga" ni "saga"): lo llama ReintentoOperativo (ver
+    22) cuando una tarea de fondo agota sus reintentos, con la
+    causa del último fallo. Implementado por AdaptadorIncidenciasLog
+    (infraestructure.ordermanager.eventos, ver 24): un log.error con
+    evento=incidencia_abierta, mismo estilo que AdaptadorTicketsLog.
   end note
 }
 

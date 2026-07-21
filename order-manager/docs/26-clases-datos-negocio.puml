@@ -85,15 +85,19 @@ package "business.sagas.aplicacion.puerto.salida" {
     +cargar(DatosNegocioId) : DatosNegocio  «SOLO escalares,\nJAMÁS carga los blobs»
     +documentosDe(DatosNegocioId) : List<DocumentoNegocio>  «ÚNICA\nquery que toca el BLOB»
     +buscarPorExternalId(ExternalId) : Optional<DatosNegocio>
-    +idsHuerfanos() : List<DatosNegocioId>  «sin ninguna orden que\ncomparta ya su externalId»
     +borrar(DatosNegocioId)  «documentos primero (sin cascade),\nluego el registro»
+    +idsPorExternalIdsSinPurgar(List<ExternalId>) : List<DatosNegocioId>\n«los que TODAVÍA no tienen purgado_en sellado;\nUNA query por lote, evita N+1»
+    +purgarAdjuntos(DatosNegocioId)  «contenido de TODOS sus\ndocumentos a NULL + sella purgado_en; sin\nborrar filas; NULL sobre NULL si se repite»
   }
   note bottom of RepositorioDatosNegocio
     Lo usa ServicioSagaPrincipal (repoDatos.cargar/documentosDe,
     fuera de tx, PASO1/2/7 — ver 02 y 18), ServicioIniciarTramitacion
-    (crear, dentro de tx — ver 01 y 22) y
-    ServicioPurgarDatosNegocioHuerfanos (idsHuerfanos/borrar, dentro
-    de tx — ver 22).
+    (crear, dentro de tx — ver 01 y 22),
+    ServicioPurgarAdjuntos (idsPorExternalIdsSinPurgar/purgarAdjuntos,
+    ver 09 y 22) y ServicioPurgarCompletadas (buscarPorExternalId/
+    borrar, ver 10 y 22) -- las dos últimas con el criterio POR
+    TRAMITACIÓN de RepositorioOrden.externalIdsFinalizadosAntesDe
+    (motor, ver 17), sin ninguna query propia de selección aquí.
   end note
 }
 
@@ -110,17 +114,20 @@ package "infraestructure.sagas.datosnegocio.persistencia" {
     +cargar(id) : DatosNegocio
     +documentosDe(id) : List<DocumentoNegocio>
     +buscarPorExternalId(externalId) : Optional<DatosNegocio>
-    +idsHuerfanos() : List<DatosNegocioId>
     +borrar(id)  «documentos.deleteByDatosnegocioId(id);\ndatosNegocio.deleteById(id) -- hija antes\nque padre, sin ON DELETE CASCADE»
+    +idsPorExternalIdsSinPurgar(externalIds) : List<DatosNegocioId>
+    +purgarAdjuntos(id)  «documentos.purgarContenidoDe(id);\ndatosNegocio.sellarPurgadoEn(id, Instant.now())»
   }
 
   interface DatosNegocioJpaRepository <<JpaRepository>> {
     +findByExternalId(externalId) : Optional<DatosNegocioEntity>
-    +idsHuerfanos() : List<String>  «nativeQuery: NOT EXISTS\n(SELECT 1 FROM orden o WHERE\no.external_id = d.external_id)»
+    +idsPorExternalIdsSinPurgar(externalIds) : List<String>  «nativeQuery:\nexternal_id IN :ids AND purgado_en IS NULL»
+    +sellarPurgadoEn(id, purgadoEn)  «@Modifying nativeQuery:\nUPDATE datos_negocio SET purgado_en = :purgadoEn»
   }
   interface DocumentoNegocioJpaRepository <<JpaRepository>> {
     +findByDatosnegocioIdOrderBySecuenciaAsc(id) : List<DocumentoNegocioEntity>
     +deleteByDatosnegocioId(id)  «@Transactional explícito: query\nderivada delete...By, no abre tx propia»
+    +purgarContenidoDe(id)  «@Modifying nativeQuery: UPDATE\ndatos_negocio_documento SET contenido = NULL»
   }
 
   class DatosNegocioEntity <<@Entity datos_negocio>> {
@@ -129,13 +136,14 @@ package "infraestructure.sagas.datosnegocio.persistencia" {
     datoNegocio1 : Integer
     datoNegocio2 : LocalDate
     datoNegocio3 : String
+    purgadoEn : Instant  «nullable; NULL hasta que la purga\nde adjuntos sella la fecha (ver 09)»
   }
   class DocumentoNegocioEntity <<@Entity datos_negocio_documento,\n@IdClass>> {
     @Id datosnegocioId : UUID
     @Id secuencia : Integer
     nombre : String
     mimeType : String
-    @Lob contenido : byte[]
+    @Lob contenido : byte[]  «nullable; la purga de adjuntos\nlo anula sin borrar la fila»
   }
   class DocumentoNegocioEntityId <<@IdClass>> {
     datosnegocioId : UUID
@@ -146,12 +154,13 @@ package "infraestructure.sagas.datosnegocio.persistencia" {
     Tablas Oracle: DDL manual en order-manager/db/ (datos_negocio.sql,
     datos_negocio_documento.sql — mismo régimen que el resto, ver 23).
     datos_negocio (datosnegocio_id PK, external_id UNIQUE, dato_negocio1
-    NUMBER, dato_negocio2 DATE, dato_negocio3 VARCHAR2) + datos_negocio_
-    documento (datosnegocio_id + secuencia PK compuesta, FK a
-    datos_negocio, nombre, mime_type, contenido BLOB). Sin ON DELETE
-    CASCADE (prohibido, ver CLAUDE.md): AdaptadorDatosNegocio.borrar()
-    borra la hija explícitamente antes que el padre. Referenciada
-    también por proceso_saga_principal.datosnegocio_id (FK, ver 23).
+    NUMBER, dato_negocio2 DATE, dato_negocio3 VARCHAR2, purgado_en
+    TIMESTAMP NULL) + datos_negocio_documento (datosnegocio_id +
+    secuencia PK compuesta, FK a datos_negocio, nombre, mime_type,
+    contenido BLOB NULL). Sin ON DELETE CASCADE (prohibido, ver
+    CLAUDE.md): AdaptadorDatosNegocio.borrar() borra la hija
+    explícitamente antes que el padre. Referenciada también por
+    proceso_saga_principal.datosnegocio_id (FK, ver 23).
   end note
 }
 

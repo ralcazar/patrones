@@ -92,8 +92,25 @@ state "completadaEn (OrdenRoot) — estado OPERATIVO final, no de negocio" as MR
 
   [*] --> VIVA : OrdenRoot.nueva(saga, ahora)
   VIVA --> COMPLETADA : finalizar(ahora)\n[saga.terminada() con FSM normal,\no SagaPrincipal en CANCELADA]
-  COMPLETADA --> [*] : ServicioLimpiezaDatos.purgarAnterioresA(corte)
+  COMPLETADA --> [*] : ServicioPurgarCompletadas.ejecutar(corte)\n(motor.purgarPorExternalIds(externalIds), ver 10;\nsolo si las 4 sagas de la tramitación llevan\n>=180 días completadas)
 }
+
+state "purgado_en (DatosNegocio) — sentinela OPERATIVO de la purga\nde adjuntos, ajeno a OrdenRoot" as MPurgado {
+  state SINPURGAR as "null (adjuntos intactos)"
+  state PURGADO as "Instant (adjuntos anulados)"
+
+  [*] --> SINPURGAR : AdaptadorDatosNegocio.crear(...)\n(purgadoEn siempre NULL al crear, ver 26)
+  SINPURGAR --> PURGADO : ServicioPurgarAdjuntos.ejecutar(corte)\n(repoDatos.purgarAdjuntos(id), ver 09;\n>=30 días completada, sin borrar filas)
+  PURGADO --> [*] : ServicioPurgarCompletadas.ejecutar(corte)\n(repoDatos.borrar(id), ver 10;\ncon o sin adjuntos ya anulados)
+}
+
+note bottom of MPurgado
+  purgado_en vive en datos_negocio (business.sagas), NO en orden:
+  es independiente de completadaEn de las 4 órdenes de la
+  tramitación. Ambos sentinelas los sella/borra el criterio POR
+  TRAMITACIÓN (grupo de las 4 sagas que comparten external_id, ver
+  09-10), no una limpieza por orden individual.
+end note
 
 note bottom of MResultado
   intentos, proximoReintentoEn, tokenTrabajador/tokenExpiraEn (lease)

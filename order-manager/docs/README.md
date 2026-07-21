@@ -51,7 +51,7 @@ Cada diagrama separa las capas en bloques (`box`), de izquierda a derecha:
 
 | Bloque | Color | Contenido |
 |---|---|---|
-| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorLimpieza`/`PlanificadorPurgaDatosNegocio` (`@Scheduled`), `TrabajadorContinuacion` (worker pull `@Async`), consumer Kafka, `ControladorTramitaciones` (REST `POST /tramitaciones`) |
+| Adaptadores de entrada | azul `#EFF5FB` | `PlanificadorContinuacion`/`PlanificadorTicketsSoporte`/`PlanificadorPurgaAdjuntos`/`PlanificadorPurgaCompletadas` (`@Scheduled`), `TrabajadorContinuacion` (worker pull `@Async`), consumer Kafka, `ControladorTramitaciones` (REST `POST /tramitaciones`) |
 | Aplicación | verde `#F5FBEF` | casos de uso, `ServicioContinuarOrden` y los `ProcesadorOrden` de cada saga (`ServicioSagaPrincipal`/`Secundaria1/2/3`) |
 | Dominio | naranja `#FBF5EF` | el agregado (`OrdenRoot` ⊃ `Proceso`: `SagaPrincipal`/`SagaSecundariaN`) |
 | Adaptadores de salida | violeta `#F3EFFB` | `AdaptadorRepositorioOrden` (persistencia del agregado), puertos REST/Kafka de cada paso |
@@ -81,13 +81,18 @@ un parámetro `@Lazy` en `ConfiguracionOrderManager` o `ConfiguracionSagas`
 según a qué módulo pertenezcan) e invocan su parte `@Transactional` a través
 de él (`self.aplicarX(...)`), porque una auto-invocación normal saltaría el
 proxy. Los servicios donde toda la operación pública es una única
-transacción sin REST intercalado (`ServicioLimpiezaDatos`,
-`ServicioSoporteOrdenes`, `ServicioCancelarTramitacion`,
-`ServicioRegistrarRespuestaSecundaria2`) anotan el método público
-directamente, sin necesidad de `self`. `ServicioIniciarTramitacion` sí lo
-necesita aunque no sea un `ProcesadorOrden`: pide los datos de negocio por
-REST antes de crear los agregados, así que su método público también
-intercala I/O externo con la parte `@Transactional`.
+transacción sin REST intercalado (`ServicioSoporteOrdenes`,
+`ServicioCancelarTramitacion`, `ServicioRegistrarRespuestaSecundaria2`)
+anotan el método público directamente, sin necesidad de `self`.
+`ServicioIniciarTramitacion` sí lo necesita aunque no sea un
+`ProcesadorOrden`: pide los datos de negocio por REST antes de crear los
+agregados, así que su método público también intercala I/O externo con la
+parte `@Transactional`. Las dos purgas por tramitación
+(`ServicioPurgarAdjuntos`/`ServicioPurgarCompletadas`, ver 09-10 y 22)
+también usan `self` pese a no tener REST intercalado: su método público no
+es `@Transactional` (el reintento operativo necesita repetir la ejecución
+completa intento a intento), así que invoca `self.ejecutar(corte)` para que
+esa parte sí pase por el proxy.
 Las flechas fluyen de izquierda a derecha y se muestran las líneas de
 activación.
 
@@ -103,7 +108,8 @@ activación.
 | [06-saga-secundaria3](06-saga-secundaria3.png) | Saga secundaria 3: una única llamada REST y `orden.finalizar(ahora)` directo |
 | [07-error-ticket-soporte](07-error-ticket-soporte.png) | Fallo de un paso: `programarReintento` con backoff 1..180 min indefinido guardando `DetalleError` (clase+mensaje de la excepción, sin stacktrace) en `OrdenRoot.ultimoError`, y el barrido `@Scheduled` que abre UN ticket cuando `intentos>=8 AND ticketAbiertoEn IS NULL`, incluyendo ese detalle en el log del ticket |
 | [08-operaciones-soporte](08-operaciones-soporte.png) | `ServicioSoporteOrdenes` (motor): consultas (CQRS), reintentar/marcarPasoOk; `ServicioCancelarTramitacion` (sagas): cancelar con compensación asíncrona (la ejecuta el mismo bucle de continuación, no el request de cancelación) |
-| [09-limpieza-datos](09-limpieza-datos.png) | Purga periódica de órdenes finalizadas (`completadaEn` no nula) y antiguas (`RepositorioOrden.purgarFinalizadasAntesDe`, sin `ON DELETE CASCADE`: borrado explícito hijas→padre) |
+| [09-purga-adjuntos](09-purga-adjuntos.png) | `PlanificadorPurgaAdjuntos` (23:00, retención 30 días) → `ServicioPurgarAdjuntos`: criterio POR TRAMITACIÓN (`RepositorioOrden.externalIdsFinalizadosAntesDe`) + `RepositorioDatosNegocio.idsPorExternalIdsSinPurgar`/`purgarAdjuntos` (anula el contenido de los documentos, sin borrar filas, sella `purgado_en`); reintento operativo (`ReintentoOperativo`, hasta 5 intentos vía `self`) y, si se agotan, `PuertoIncidencias.abrir` |
+| [10-purga-completadas](10-purga-completadas.png) | `PlanificadorPurgaCompletadas` (23:30, retención 180 días) → `ServicioPurgarCompletadas`: mismo criterio por tramitación, pero BORRA `RepositorioOrden.purgarPorExternalIds` (las 4 órdenes, sin `ON DELETE CASCADE`: hijas→padre) y `RepositorioDatosNegocio.borrar` de cada `datos_negocio` — las órdenes se borran antes por la FK de `proceso_saga_principal` a `datos_negocio`; mismo reintento operativo + incidencia que 09 |
 
 ## Diagramas de estado y de clases
 
@@ -114,20 +120,20 @@ infraestructura.
 
 | Diagrama | Qué muestra |
 |---|---|
-| [13-maquinas-de-estado](13-maquinas-de-estado.png) | Las 4 FSM de negocio `EstadoSagaPrincipal`/`Secundaria1`/`Secundaria2`/`Secundaria3` + el estado operativo de finalización `completadaEn`; nota de que intentos/lease/ticket son atributos operativos de `OrdenRoot`, no una FSM (ya no hay `EstadoTicket` ni `EstadoPaso`) |
+| [13-maquinas-de-estado](13-maquinas-de-estado.png) | Las 4 FSM de negocio `EstadoSagaPrincipal`/`Secundaria1`/`Secundaria2`/`Secundaria3` + el estado operativo de finalización `completadaEn` y el sentinela operativo `purgado_en` de `DatosNegocio` (ajeno a `OrdenRoot`); nota de que intentos/lease/ticket son atributos operativos de `OrdenRoot`, no una FSM (ya no hay `EstadoTicket` ni `EstadoPaso`) |
 | [14-clases-dominio-ordermanager](14-clases-dominio-ordermanager.png) | Dominio del motor genérico (`business.ordermanager.dominio`): el agregado único `OrdenRoot` ⊃ `Proceso<E>` (`@ValueObject` inmutable interno: cada transición devuelve una instancia nueva, `OrdenRoot.reemplazarProceso(nuevo)` la sustituye; una sola `version` la controla el agregado), `TipoOrden` (VO abierto), `PoliticaReintentos`, `DetalleError` (clase+mensaje del último fallo, para soporte), excepciones y VOs del motor — sin ninguna clase de sagas |
 | [15-clases-dominio-saga-principal](15-clases-dominio-saga-principal.png) | Dominio de la saga principal (`business.sagas.dominio.sagaprincipal`): `SagaPrincipal` (`@ValueObject` inmutable, extiende `Proceso<EstadoSagaPrincipal>`; sus transiciones — `aplicarYAvanzar`, `cancelar`, `compensacionCompletada`, `marcarPasoActualOkManual` — devuelven instancia nueva), su constante `TIPO`, comandos/resultados por paso, `ContextoTramitacion` (referencia `DatosNegocioId` — ver 26 — en vez de contener datos de negocio), `PuntoNoRetornoSuperadoException` |
 | [16-clases-dominio-sagas-secundarias](16-clases-dominio-sagas-secundarias.png) | Dominio de las 3 sagas secundarias (`business.sagas.dominio.sagasecundariaN`): `@ValueObject` inmutables (extienden `Proceso<E>`), cada transición (`aplicarYAvanzar`, y en la secundaria2 `solicitudEnviada`/`respuestaRecibida`) devuelve instancia nueva, su constante `TIPO`, comandos/resultados, sin `version` propia |
-| [17-clases-aplicacion-nucleo](17-clases-aplicacion-nucleo.png) | Aplicación, núcleo del motor (`business.ordermanager.aplicacion`): `CasoUsoContinuarOrden`/`ServicioContinuarOrden`/`ProcesadorOrden`/`SenalPaso`/`RepositorioOrden` y el lease del token (reclamo, renovación por paso, reclamo de token caducado); frontera transaccional `@Transactional` con proxy auto-inyectado; `PuertoObservadorEjecucion` (SPI de observabilidad, fase 0 del plan de pruebas de carga: reclamo ganado/perdido, colisión optimista, paso completado/fallido, reintento programado, orden aparcada/finalizada) |
+| [17-clases-aplicacion-nucleo](17-clases-aplicacion-nucleo.png) | Aplicación, núcleo del motor (`business.ordermanager.aplicacion`): `CasoUsoContinuarOrden`/`ServicioContinuarOrden`/`ProcesadorOrden`/`SenalPaso`/`RepositorioOrden` (incluye `externalIdsFinalizadosAntesDe`/`purgarPorExternalIds`, la purga por tramitación que usan las sagas — ver 09-10 y 22) y el lease del token (reclamo, renovación por paso, reclamo de token caducado); frontera transaccional `@Transactional` con proxy auto-inyectado; `PuertoObservadorEjecucion` (SPI de observabilidad, fase 0 del plan de pruebas de carga: reclamo ganado/perdido, colisión optimista, paso completado/fallido, reintento programado, orden aparcada/finalizada); `PuertoIncidencias` (SPI genérica de incidencias operativas, la usa `ReintentoOperativo` al agotar reintentos — ver 22) |
 | [18-clases-aplicacion-saga-principal](18-clases-aplicacion-saga-principal.png) | Aplicación de la saga principal (`business.sagas.aplicacion.servicio.sagaprincipal`): `ServicioSagaPrincipal` (`ProcesadorOrden`, normal + compensación), `RepositorioOrden`, `RepositorioDatosNegocio` (carga `DatosNegocio`/documentos fuera de tx para PASO1/2/7) y `PuertoPaso1..8` |
 | [19-clases-aplicacion-saga-secundaria1](19-clases-aplicacion-saga-secundaria1.png) | Aplicación de la saga secundaria 1: `ServicioSagaSecundaria1` y el puerto REST (dos métodos) |
 | [20-clases-aplicacion-saga-secundaria2](20-clases-aplicacion-saga-secundaria2.png) | Aplicación de la saga secundaria 2: aparcado de 3 h, `PuertoConciliacionSecundaria2` y `ServicioRegistrarRespuestaSecundaria2` (entrada del consumer Kafka; `respuestaOk` es el único método — el evento real no tiene caso de error — con guard de idempotencia ante duplicados tardíos) |
 | [21-clases-aplicacion-saga-secundaria3](21-clases-aplicacion-saga-secundaria3.png) | Aplicación de la saga secundaria 3: `ServicioSagaSecundaria3` y el puerto REST |
-| [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteOrdenes`/`ServicioTicketsSoporte`/`ServicioLimpiezaDatos` (motor, sin cancelación; `ServicioLimpiezaDatos` emite `datosAntiguosPurgados` por `PuertoObservadorEjecucion`, ver 17) + `ServicioCancelarTramitacion`/`ServicioVistaTramitacion`/`ServicioIniciarTramitacion`/`ServicioPurgarDatosNegocioHuerfanos` (sagas, `business.sagas.aplicacion.servicio.comun`) |
-| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, UNA sola tabla Oracle `orden` — negocio + ejecución fusionados desde la fase 2, sin CLOB de contexto) y sus 2 SPI (`MapeadorProceso` — 4 métodos: `tipo`/`estado`/`guardarContexto`/`rearmar`/`borrarContexto`, una tabla satélite por tipo —, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
-| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura, el resto: `infraestructure.ordermanager` (`eventos` — `AdaptadorTicketsLog` y `AdaptadorObservadorLog` (implementa `PuertoObservadorEjecucion`, ver 17; log estructurado, catálogo en `src/pruebaCarga/resources/escenarios/README.md`) —, `programados`/`persistencia`/`ConfiguracionOrderManager`) + `infraestructure.sagas` (`ConsumidorRespuestaSecundaria2`, `ControladorTramitaciones` (REST `POST /tramitaciones`; ambos loguean su propio evento en infraestructura, sin pasar por el puerto), `SoporteSagaPrincipal`/`Secundaria1/2/3` implementando las 2 SPI de 23 con su propio repo JPA satélite, `AdaptadorBusquedaTramitacion`, `PlanificadorPurgaDatosNegocio`, `ConfiguracionSagas`) |
+| [22-clases-aplicacion-soporte](22-clases-aplicacion-soporte.png) | Aplicación de soporte: `ServicioSoporteOrdenes`/`ServicioTicketsSoporte` (motor, sin cancelación ni purga: el motor solo expone la purga por tramitación genérica en `RepositorioOrden`, ver 17) + `ServicioCancelarTramitacion`/`ServicioVistaTramitacion`/`ServicioIniciarTramitacion`/`ServicioPurgarAdjuntos`/`ServicioPurgarCompletadas` (sagas, `business.sagas.aplicacion.servicio.comun`; las dos purgas con reintento operativo — `ReintentoOperativo`, distinto de `ReintentoOptimista` — y apertura de incidencia vía `PuertoIncidencias` al agotarlo) |
+| [23-clases-infraestructura-persistencia](23-clases-infraestructura-persistencia.png) | Infraestructura, paquete `persistencia`: persistencia del agregado (`OrdenEntity`/`AdaptadorRepositorioOrden`/`CandidataFila`, UNA sola tabla Oracle `orden` — negocio + ejecución fusionados desde la fase 2, sin CLOB de contexto; incluye `externalIdsFinalizadosAntesDe`/`purgarPorExternalIds`, la purga por tramitación) y sus 2 SPI (`MapeadorProceso` — 4 métodos: `tipo`/`estado`/`guardarContexto`/`rearmar`/`borrarContexto`, una tabla satélite por tipo —, `DescriptorSoporteOrden`); paquete `programados`, `PlanificadorContinuacion` (despierta workers si hay trabajo) |
+| [24-clases-infraestructura-saga](24-clases-infraestructura-saga.png) | Infraestructura, el resto: `infraestructure.ordermanager` (`eventos` — `AdaptadorTicketsLog`, `AdaptadorObservadorLog` (implementa `PuertoObservadorEjecucion`, ver 17; log estructurado, catálogo en `src/pruebaCarga/resources/escenarios/README.md`) y `AdaptadorIncidenciasLog` (implementa `PuertoIncidencias`, ver 17) —, `programados`/`persistencia`/`ConfiguracionOrderManager`) + `infraestructure.sagas` (`ConsumidorRespuestaSecundaria2`, `ControladorTramitaciones` (REST `POST /tramitaciones`; ambos loguean su propio evento en infraestructura, sin pasar por el puerto), `SoporteSagaPrincipal`/`Secundaria1/2/3` implementando las 2 SPI de 23 con su propio repo JPA satélite, `AdaptadorBusquedaTramitacion`, `PlanificadorPurgaAdjuntos`/`PlanificadorPurgaCompletadas`, `ConfiguracionSagas`) |
 | [25-clases-dominio-comun-sagas](25-clases-dominio-comun-sagas.png) | Shared kernel de las sagas (`business.sagas.dominio.comun`): `ContextoArranque` y `RefPaso1`/`RefPaso5`/`RefPaso7` — los produce la principal y los consumen las secundarias; no puede depender de él ninguna clase de `ordermanager` |
-| [26-clases-datos-negocio](26-clases-datos-negocio.png) | El agregado `DatosNegocio` (`business.sagas.dominio.datosnegocio`), autocontenido: dominio (`DatosNegocio`, `DatoNegocio1/2/3`, `DocumentoNegocio`, `ExternalIdDuplicadoException`), puertos (`PuertoDatosNegocio` — REST externo, sin adaptador real — y `RepositorioDatosNegocio`), adaptador (`AdaptadorDatosNegocio`, `DatosNegocioEntity`/`DocumentoNegocioEntity`, tablas `datos_negocio`/`datos_negocio_documento`) |
+| [26-clases-datos-negocio](26-clases-datos-negocio.png) | El agregado `DatosNegocio` (`business.sagas.dominio.datosnegocio`), autocontenido: dominio (`DatosNegocio`, `DatoNegocio1/2/3`, `DocumentoNegocio`, `ExternalIdDuplicadoException`), puertos (`PuertoDatosNegocio` — REST externo, sin adaptador real — y `RepositorioDatosNegocio`, con `idsPorExternalIdsSinPurgar`/`purgarAdjuntos` para la purga de adjuntos), adaptador (`AdaptadorDatosNegocio`, `DatosNegocioEntity` — con `purgadoEn` — /`DocumentoNegocioEntity` — `contenido` anulable —, tablas `datos_negocio`/`datos_negocio_documento`) |
 
 ## Esquema de base de datos
 
@@ -160,8 +166,12 @@ Tablas del agregado `DatosNegocio` (`business.sagas`, ver 26), autocontenido
 y sin relación de FK con `orden`, correlacionado solo por `external_id`:
 
 - `datos_negocio` — escalares (`external_id` con índice único, para la
-  idempotencia de `POST /tramitaciones`).
+  idempotencia de `POST /tramitaciones`) + `purgado_en TIMESTAMP NULL`: sello
+  de la purga de adjuntos (ver 09), NULL hasta que se anula el contenido de
+  sus documentos.
 - `datos_negocio_documento` — documentos (BLOB), hija de `datos_negocio`.
+  `contenido` admite NULL: la purga de adjuntos lo anula sin borrar la fila
+  (conserva `nombre`/`mime_type`).
 
 Tablas satélite por tipo de orden (una por saga, 1:1 con `orden` por
 `orden_id`, el contexto propio que antes vivía en el CLOB — ver

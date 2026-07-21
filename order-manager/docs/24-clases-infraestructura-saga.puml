@@ -21,7 +21,7 @@ package "infraestructure.ordermanager.eventos" {
 
   class AdaptadorObservadorLog <<@Component>> {
     -pod : String  «ordermanager.pod, "local"»
-    +reclamoGanado/reclamoPerdido/colisionOptimista/\npasoCompletado/pasoFallido/reintentoProgramado/\nordenAparcada/ordenFinalizada/datosAntiguosPurgados
+    +reclamoGanado/reclamoPerdido/colisionOptimista/\npasoCompletado/pasoFallido/reintentoProgramado/\nordenAparcada/ordenFinalizada
   }
   note right of AdaptadorObservadorLog
     Implementa PuertoObservadorEjecucion (ver 17) con SLF4J: una
@@ -31,9 +31,23 @@ package "infraestructure.ordermanager.eventos" {
     src/pruebaCarga/resources/escenarios/README.md (contrato para el
     analizador de la fase 3 del plan de pruebas de carga). @Component
     auto-detectado (igual que AdaptadorTicketsLog): ConfiguracionOrderManager
-    solo enhebra el puerto como parámetro de los @Bean que lo
-    necesitan (ServicioContinuarOrden, ServicioLimpiezaDatos), no lo
-    declara con un @Bean propio.
+    solo enhebra el puerto como parámetro del único @Bean que lo
+    necesita (ServicioContinuarOrden), no lo declara con un @Bean
+    propio.
+  end note
+
+  class AdaptadorIncidenciasLog <<@Component>> {
+    -pod : String  «ordermanager.pod, "local"»
+    +abrir(tarea, causa, intentos)  «log.error("evento=incidencia_abierta\ntarea={} causa={} intentos={} pod={}")»
+  }
+  note right of AdaptadorIncidenciasLog
+    Implementa PuertoIncidencias (ver 17), mismo estilo que
+    AdaptadorTicketsLog: "abrir una incidencia" es escribir un texto
+    en el log que una herramienta externa recoge. Lo usa
+    ReintentoOperativo (ver 22) desde ServicioPurgarAdjuntos/
+    Completadas al agotar sus reintentos (ver 09-10). @Component
+    auto-detectado: ConfiguracionSagas solo lo enhebra como
+    parámetro de esos dos @Bean.
   end note
 }
 
@@ -100,11 +114,6 @@ package "infraestructure.ordermanager.programados" {
     el @Async solo aplica invocado desde otro bean.
   end note
 
-  class PlanificadorLimpieza <<@Component>> {
-    -limpieza : CasoUsoLimpiarDatosAntiguos
-    -retencion : Duration  «ordermanager.limpieza.retencion-dias, 30»
-    +ejecutar()  «@Scheduled cron ordermanager.limpieza.cron\n(0 0 3 * * *)»
-  }
   class PlanificadorTicketsSoporte <<@Component>> {
     -tickets : CasoUsoAbrirTicketsPendientes
     +ejecutar()  «@Scheduled cron ordermanager.tickets.cron\n(0 0 8-17/3 * * *)»
@@ -116,10 +125,12 @@ package "infraestructure.ordermanager.programados" {
     +ejecutorContinuacion(trabajadores) : ThreadPoolTaskExecutor\n«@Bean("ejecutorContinuacion"),\nordermanager.planificador.trabajadores, 2»
   }
   note bottom of ConfiguracionEjecucionAsincrona
-    Dos pools: (1) el scheduler de los 3 @Scheduled del módulo
-    (PlanificadorContinuacion, PlanificadorTicketsSoporte,
-    PlanificadorLimpieza) — una pasada lenta de uno no bloquea a
-    los demás; (2) "ejecutorContinuacion", el pool de workers de
+    Dos pools: (1) el scheduler de los @Scheduled del módulo
+    (PlanificadorContinuacion, PlanificadorTicketsSoporte; las dos
+    purgas por tramitación de infraestructure.sagas.datosnegocio.
+    programados, ver más abajo, comparten este mismo scheduler) —
+    una pasada lenta de uno no bloquea a los demás; (2)
+    "ejecutorContinuacion", el pool de workers de
     continuación: corePool = maxPool = trabajadores, queueCapacity
     = 0 y DiscardPolicy — tope estructural de N workers, los envíos
     sobrantes del tick se descartan gratis en memoria (el cuerpo
@@ -129,32 +140,41 @@ package "infraestructure.ordermanager.programados" {
 }
 
 package "infraestructure.sagas.datosnegocio.programados" {
-  ' --- adaptador de ENTRADA (invoca la capa de aplicación) ---
-  class PlanificadorPurgaDatosNegocio <<@Component>> {
-    -purga : CasoUsoPurgarDatosNegocioHuerfanos
-    +ejecutar()  «@Scheduled cron sagas.purga-datos-negocio.cron\n(0 30 3 * * *)»
+  ' --- adaptadores de ENTRADA (invocan la capa de aplicación) ---
+  class PlanificadorPurgaAdjuntos <<@Component>> {
+    -purga : CasoUsoPurgarAdjuntos
+    -retencion : Duration  «sagas.purga-adjuntos.retencion-dias, 30»
+    +ejecutar()  «@Scheduled cron sagas.purga-adjuntos.cron\n(0 0 23 * * *)»
   }
-  note right of PlanificadorPurgaDatosNegocio
-    Mismo patrón que PlanificadorLimpieza: el QUÉ se borra vive en
-    la aplicación (ServicioPurgarDatosNegocioHuerfanos — ver 22), aquí
-    solo el CUÁNDO. Corre después de la limpieza del motor (03:00),
-    que es la que deja huérfanos al purgar tramitaciones completas.
+  class PlanificadorPurgaCompletadas <<@Component>> {
+    -purga : CasoUsoPurgarCompletadas
+    -retencion : Duration  «sagas.purga-completadas.retencion-dias, 180»
+    +ejecutar()  «@Scheduled cron sagas.purga-completadas.cron\n(0 30 23 * * *)»
+  }
+  note right of PlanificadorPurgaCompletadas
+    El QUÉ se purga vive en la aplicación (ServicioPurgarAdjuntos/
+    Completadas, con reintento e incidencia — ver 22 y 09-10), aquí
+    solo el CUÁNDO y la retención. PlanificadorPurgaCompletadas corre
+    después de PlanificadorPurgaAdjuntos (23:30, tras 23:00): mismo
+    corte por tramitación, ventana más lejana (180 días) y borrado
+    real en vez de solo anular contenido.
   end note
 }
 
 ' --- capa de aplicación (ver 17-22) ---
 interface CasoUsoContinuarOrden
 interface CasoUsoRegistrarRespuestaSecundaria2
-interface CasoUsoLimpiarDatosAntiguos
 interface CasoUsoAbrirTicketsPendientes
 interface CasoUsoIniciarTramitacion
-interface CasoUsoPurgarDatosNegocioHuerfanos
+interface CasoUsoPurgarAdjuntos
+interface CasoUsoPurgarCompletadas
 interface PuertoConsultaOrdenesSoporte
 interface PuertoOrdenesTicketPendiente
 interface PuertoTicketsSoporte
 interface "PuertoBusquedaTramitacion (ver 22)" as PuertoBusquedaTramitacion
 interface "MapeadorProceso,\nDescriptorSoporteOrden (ver 23)" as SPIs
 interface "PuertoObservadorEjecucion (ver 17)" as PuertoObservadorEjecucion
+interface "PuertoIncidencias (ver 17)" as PuertoIncidencias
 
 package "infraestructure.ordermanager.persistencia" {
   ' --- adaptadores de SALIDA (implementan puertos de salida, lectura CQRS) ---
@@ -193,7 +213,7 @@ package "infraestructure.ordermanager.persistencia" {
 package "infraestructure.ordermanager (config)" {
   ' --- configuración ---
   class ConfiguracionOrderManager <<@Configuration>> {
-    +@Bean de PoliticaReintentos, servicioContinuarOrden(List<ProcesadorOrden>, ...),\nservicioSoporteOrdenes, servicioTicketsSoporte, servicioLimpiezaDatos
+    +@Bean de PoliticaReintentos, servicioContinuarOrden(List<ProcesadorOrden>, ...),\nservicioSoporteOrdenes, servicioTicketsSoporte
     «POJOs sin anotaciones Spring: la capa business\nno depende de ningún framework»
   }
   note bottom of ConfiguracionOrderManager
@@ -204,11 +224,13 @@ package "infraestructure.ordermanager (config)" {
     toUnmodifiableMap (tipo duplicado -> falla el arranque). Mismo
     patrón @Lazy self que antes (ver 17), ahora repartido en dos
     @Configuration: aquí para ServicioContinuarOrden y
-    ServicioTicketsSoporte. servicioContinuarOrden y
-    servicioLimpiezaDatos reciben además PuertoObservadorEjecucion
-    como parámetro (ver 17): Spring lo resuelve solo con
-    AdaptadorObservadorLog, un @Component más (no hay un @Bean propio
-    para él aquí, igual que AdaptadorTicketsLog).
+    ServicioTicketsSoporte. servicioContinuarOrden recibe además
+    PuertoObservadorEjecucion como parámetro (ver 17): Spring lo
+    resuelve solo con AdaptadorObservadorLog, un @Component más (no
+    hay un @Bean propio para él aquí, igual que AdaptadorTicketsLog).
+    El motor ya no tiene ningún caso de uso de purga propio: las
+    purgas por tramitación (adjuntos/completadas) son específicas de
+    sagas y se conectan en ConfiguracionSagas, más abajo.
   end note
 }
 
@@ -249,36 +271,39 @@ package "infraestructure.sagas.{sagaprincipal,sagasecundaria1,sagasecundaria2,sa
 
 package "infraestructure.sagas.comun (config)" {
   class ConfiguracionSagas <<@Configuration>> {
-    +@Bean de los 4 ServicioSaga* (ProcesadorOrden),\nservicioIniciarTramitacion, servicioRegistrarRespuestaSecundaria2,\nservicioCancelarTramitacion, servicioVistaTramitacion
+    +@Bean de los 4 ServicioSaga* (ProcesadorOrden),\nservicioIniciarTramitacion, servicioRegistrarRespuestaSecundaria2,\nservicioCancelarTramitacion, servicioVistaTramitacion,\nservicioPurgarAdjuntos, servicioPurgarCompletadas
   }
   note bottom of ConfiguracionSagas
-    Wiring de las 4 sagas concretas: se apoya en los puertos y
-    servicios genéricos del motor (RepositorioOrden,
-    PoliticaReintentos, ...) definidos en infraestructure.ordermanager,
-    pero el motor NUNCA depende de esta clase ni de las sagas (regla
-    de frontera ArchUnit, ver 14). Mismo patrón @Lazy self que
-    ConfiguracionOrderManager, aquí para los 4 ServicioSaga*.
-    servicioRegistrarRespuestaSecundaria2 recibe además
-    PuertoObservadorEjecucion (ver 17/20): mismo mecanismo que
-    servicioContinuarOrden/servicioLimpiezaDatos en
-    ConfiguracionOrderManager, Spring lo resuelve solo con
-    AdaptadorObservadorLog.
+    Wiring de las 4 sagas concretas (+ las 2 purgas por tramitación):
+    se apoya en los puertos y servicios genéricos del motor
+    (RepositorioOrden, PuertoIncidencias, PoliticaReintentos, ...)
+    definidos en infraestructure.ordermanager, pero el motor NUNCA
+    depende de esta clase ni de las sagas (regla de frontera ArchUnit,
+    ver 14). Mismo patrón @Lazy self que ConfiguracionOrderManager,
+    aquí para los 4 ServicioSaga*, ServicioIniciarTramitacion y los
+    dos ServicioPurgar* (ver 22). servicioRegistrarRespuestaSecundaria2
+    recibe además PuertoObservadorEjecucion (ver 17/20): mismo
+    mecanismo que servicioContinuarOrden en ConfiguracionOrderManager,
+    Spring lo resuelve solo con AdaptadorObservadorLog.
+    servicioPurgarAdjuntos/Completadas reciben PuertoIncidencias:
+    Spring lo resuelve solo con AdaptadorIncidenciasLog, igual patrón.
   end note
 }
 
 ' Entrada -> aplicación
 ConsumidorRespuestaSecundaria2 --> CasoUsoRegistrarRespuestaSecundaria2
 TrabajadorContinuacion --> CasoUsoContinuarOrden : continuarSiguiente()\n(bucle pull)
-PlanificadorLimpieza --> CasoUsoLimpiarDatosAntiguos
 PlanificadorTicketsSoporte --> CasoUsoAbrirTicketsPendientes
 ControladorTramitaciones --> CasoUsoIniciarTramitacion : iniciar(cmd)
-PlanificadorPurgaDatosNegocio --> CasoUsoPurgarDatosNegocioHuerfanos
+PlanificadorPurgaAdjuntos --> CasoUsoPurgarAdjuntos
+PlanificadorPurgaCompletadas --> CasoUsoPurgarCompletadas
 
 ' Puertos de salida <- adaptadores
 PuertoConsultaOrdenesSoporte <|.. AdaptadorConsultaOrdenesSoporte
 PuertoOrdenesTicketPendiente <|.. AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte <|.. AdaptadorTicketsLog
 PuertoObservadorEjecucion <|.. AdaptadorObservadorLog
+PuertoIncidencias <|.. AdaptadorIncidenciasLog
 SPIs <|.. SoporteSaga
 PuertoBusquedaTramitacion <|.. AdaptadorBusquedaTramitacion
 
@@ -288,8 +313,9 @@ note as NRegla
   ControladorTramitaciones y los tres planificadores) solo invocan
   casos de uso de la capa de aplicación; los adaptadores de SALIDA
   (AdaptadorConsultaOrdenesSoporte, AdaptadorOrdenesTicketPendiente,
-  AdaptadorTicketsLog, SoporteSaga*, AdaptadorBusquedaTramitacion)
-  implementan puertos de salida / SPI. Dentro de infraestructure.sagas
+  AdaptadorTicketsLog, AdaptadorIncidenciasLog, SoporteSaga*,
+  AdaptadorBusquedaTramitacion) implementan puertos de salida / SPI.
+  Dentro de infraestructure.sagas
   los paquetes se dividen PRIMERO por saga (comun/datosnegocio/
   sagaprincipal/sagasecundaria1/2/3, mismo reparto que la capa de
   dominio — ver 20) y DENTRO de cada una por TIPO de adaptador
@@ -305,14 +331,15 @@ note as NRegla
 end note
 
 ' orden de izquierda a derecha: ordermanager (eventos/rest/programados/persistencia/config) -> sagas
-AdaptadorTicketsLog -[hidden]right- ConsumidorRespuestaSecundaria2
+AdaptadorTicketsLog -[hidden]right- AdaptadorIncidenciasLog
+AdaptadorIncidenciasLog -[hidden]right- ConsumidorRespuestaSecundaria2
 ConsumidorRespuestaSecundaria2 -[hidden]right- ControladorTramitaciones
 ControladorTramitaciones -[hidden]right- TrabajadorContinuacion
-TrabajadorContinuacion -[hidden]right- PlanificadorLimpieza
-PlanificadorLimpieza -[hidden]right- PlanificadorTicketsSoporte
+TrabajadorContinuacion -[hidden]right- PlanificadorTicketsSoporte
 PlanificadorTicketsSoporte -[hidden]right- ConfiguracionEjecucionAsincrona
-ConfiguracionEjecucionAsincrona -[hidden]right- PlanificadorPurgaDatosNegocio
-PlanificadorPurgaDatosNegocio -[hidden]right- AdaptadorConsultaOrdenesSoporte
+ConfiguracionEjecucionAsincrona -[hidden]right- PlanificadorPurgaAdjuntos
+PlanificadorPurgaAdjuntos -[hidden]right- PlanificadorPurgaCompletadas
+PlanificadorPurgaCompletadas -[hidden]right- AdaptadorConsultaOrdenesSoporte
 AdaptadorConsultaOrdenesSoporte -[hidden]right- AdaptadorOrdenesTicketPendiente
 AdaptadorOrdenesTicketPendiente -[hidden]right- ConfiguracionOrderManager
 ConfiguracionOrderManager -[hidden]right- SoporteSaga
@@ -320,10 +347,10 @@ SoporteSaga -[hidden]right- AdaptadorBusquedaTramitacion
 AdaptadorBusquedaTramitacion -[hidden]right- ConfiguracionSagas
 
 CasoUsoRegistrarRespuestaSecundaria2 -[hidden]right- CasoUsoContinuarOrden
-CasoUsoContinuarOrden -[hidden]right- CasoUsoLimpiarDatosAntiguos
-CasoUsoLimpiarDatosAntiguos -[hidden]right- CasoUsoAbrirTicketsPendientes
+CasoUsoContinuarOrden -[hidden]right- CasoUsoAbrirTicketsPendientes
 CasoUsoAbrirTicketsPendientes -[hidden]right- CasoUsoIniciarTramitacion
-CasoUsoIniciarTramitacion -[hidden]right- CasoUsoPurgarDatosNegocioHuerfanos
+CasoUsoIniciarTramitacion -[hidden]right- CasoUsoPurgarAdjuntos
+CasoUsoPurgarAdjuntos -[hidden]right- CasoUsoPurgarCompletadas
 PuertoConsultaOrdenesSoporte -[hidden]down- AdaptadorConsultaOrdenesSoporte
 PuertoOrdenesTicketPendiente -[hidden]down- AdaptadorOrdenesTicketPendiente
 PuertoTicketsSoporte -[hidden]down- AdaptadorTicketsLog

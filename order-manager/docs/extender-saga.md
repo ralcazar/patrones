@@ -240,8 +240,8 @@ está permitido.
 - Usar Spring, JPA, Jackson o Kafka en `business/**` (dominio o aplicación):
   toda esa infraestructura vive en `infraestructure/**`.
 - `ON DELETE CASCADE` en tu tabla satélite ni en ninguna FK nueva: el
-  borrado de huérfanos lo hace explícito, en la misma transacción,
+  borrado de hijas lo hace explícito, en la misma transacción,
   `MapeadorProceso.borrarContexto` (invocado por
-  `AdaptadorRepositorioOrden.purgarFinalizadasAntesDe`).
+  `AdaptadorRepositorioOrden.purgarPorExternalIds`).
 - Que un adaptador de entrada nuevo llame directamente a `RepositorioOrden`
   o a cualquier puerto de salida sin pasar por un caso de uso de aplicación.

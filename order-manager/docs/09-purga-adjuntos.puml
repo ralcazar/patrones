@@ -1,0 +1,80 @@
+@startuml 09-purga-adjuntos
+title Purga de adjuntos: anular el contenido de documentos de tramitaciones terminadas hace >= 30 días
+
+box "Adaptadores de entrada" #EFF5FB
+  participant "PlanificadorPurgaAdjuntos\n(@Scheduled cron 0 0 23 * * *)" as PLAN
+end box
+box "Aplicación" #F5FBEF
+  participant "ServicioPurgarAdjuntos" as SERV
+  participant "ReintentoOperativo" as REINT
+end box
+box "Adaptadores de salida" #F3EFFB
+  participant "AdaptadorRepositorioOrden\n(motor)" as MOTOR
+  participant "AdaptadorDatosNegocio\n(sagas)" as DATOS
+  participant "AdaptadorIncidenciasLog" as INC
+end box
+
+note over PLAN, SERV
+  Criterio por TRAMITACIÓN (grupo de las 4 sagas que comparten
+  external_id), no por orden individual: solo se toca un
+  datos_negocio cuando las 4 están terminadas y la última en
+  terminar lo hizo antes del corte. No borra filas: solo anula el
+  contenido de los documentos y sella datos_negocio.purgado_en.
+end note
+
+[o-> PLAN : dispara el cron (cada noche a las 23:00)
+activate PLAN
+PLAN -> PLAN : corte = Instant.now().minus(retencion)\n(sagas.purga-adjuntos.retencion-dias, por defecto 30)
+PLAN -> SERV ++ : purgarAdjuntos(corte)
+SERV -> REINT ++ : ReintentoOperativo.ejecutar(\n"purga-adjuntos", incidencias, () -> self.ejecutar(corte), 0L)
+
+loop hasta 5 intentos (MAX_REINTENTOS): cada intento repite la EJECUCIÓN COMPLETA;\nse detiene en el primero que no lanza
+  REINT -> SERV ++ : self.ejecutar(corte) -- vía proxy\n(@Lazy, ver ConfiguracionSagas)
+  group Transacción (@Transactional)
+    SERV -> MOTOR ++ : externalIdsFinalizadosAntesDe(corte)
+    MOTOR -> MOTOR : GROUP BY external_id HAVING\nCOUNT(CASE completada_en IS NULL)=0\nAND MAX(completada_en) < corte
+    return [ExternalId, ...]
+    alt externalIds.isEmpty()
+      SERV -> SERV : return 0L
+    else hay externalIds
+      SERV -> DATOS ++ : idsPorExternalIdsSinPurgar(externalIds)
+      DATOS -> DATOS : SELECT datosnegocio_id FROM datos_negocio\nWHERE external_id IN :ids AND purgado_en IS NULL
+      return [DatosNegocioId, ...]
+      loop por cada id sin purgar
+        SERV -> DATOS ++ : purgarAdjuntos(id)
+        DATOS -> DATOS : documentos.purgarContenidoDe(id)\n(UPDATE datos_negocio_documento SET contenido = NULL\nWHERE datosnegocio_id = id)
+        DATOS -> DATOS : datosNegocio.sellarPurgadoEn(id, Instant.now())\n(UPDATE datos_negocio SET purgado_en = ...)
+        return
+      end
+      SERV -> SERV : return idsSinPurgar.size()
+    end
+  end
+  alt intento sin excepción
+    SERV --> REINT : nº tramitaciones purgadas
+  else intento lanza RuntimeException
+    SERV --> REINT : lanza RuntimeException(e)\n(ultima = e; se prueba el siguiente intento)
+  end
+  deactivate SERV
+end
+
+alt algún intento tuvo éxito
+  note over REINT : ReintentoOperativo.ejecutar ya retornó\ndentro del bucle, en el primer intento sin excepción
+else se agotaron los 5 intentos (todos lanzaron)
+  REINT -> INC ++ : abrir("purga-adjuntos", causaDe(ultima), 5)
+  INC -> INC : log.error("evento=incidencia_abierta\ntarea=purga-adjuntos causa={} intentos=5 pod={}")
+  return
+end
+REINT --> SERV : tramitacionesPurgadas (o 0L si se agotaron\nlos reintentos: la última tx falló y se deshizo)
+deactivate REINT
+return tramitacionesPurgadas
+PLAN -> PLAN : log.info("Purga de adjuntos (corte {}): {}\ntramitaciones purgadas", corte, tramitacionesPurgadas)
+deactivate PLAN
+
+note over SERV, DATOS
+  Idempotente: idsPorExternalIdsSinPurgar ya excluye lo purgado en
+  una pasada anterior, y purgarAdjuntos(id) sería NULL sobre NULL
+  si se repitiera -- por eso ReintentoOperativo puede reintentar la
+  EJECUCIÓN COMPLETA (no solo el id que falló) sin riesgo de doble
+  efecto.
+end note
+@enduml

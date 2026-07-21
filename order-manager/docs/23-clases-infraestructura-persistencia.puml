@@ -33,7 +33,8 @@ package "persistencia" {
     +guardar(OrdenRoot)  «ordenes.save + mapeadorDe(tipo).guardarContexto(proceso)\n(upsert satélite) + ordenes.flush();\nOptimisticLockingFailureException -> ConcurrenciaOptimistaException»
     +buscarEjecutables(ahora, limite) : List<CandidataOrden>
     +hayEjecutables(ahora) : boolean  «existeCandidata(ahora) > 0»
-    +purgarFinalizadasAntesDe(corte) : long  «sin ON DELETE CASCADE: borrado\nexplícito hijas->padre, ver nota abajo»
+    +externalIdsFinalizadosAntesDe(corte) : List<ExternalId>
+    +purgarPorExternalIds(ids) : long  «sin ON DELETE CASCADE: borrado\nexplícito hijas->padre, ver nota abajo»
     -mapeadorDe(tipo) : MapeadorProceso  «IllegalStateException si no hay\nninguno registrado para el tipo»
   }
   note right of AdaptadorRepositorioOrden
@@ -50,12 +51,18 @@ package "persistencia" {
     un CLOB contexto común ni ContextoCodec (cada tipo tiene su tabla,
     ver 24 y 26). ordenes.flush() fuerza el chequeo de version aquí, no
     en el commit de fuera.
-    purgarFinalizadasAntesDe: sin ON DELETE CASCADE en NINGUNA tabla
-    (prohibido, ver CLAUDE.md): ids = ordenes.idsFinalizadasAntesDe(corte);
-    ordenes.borrarAuditoriaPorIds(ids); CADA mapeador.borrarContexto(ids)
-    (todas las satélites, las de otros tipos simplemente no matchean);
-    ordenes.borrarPorIds(ids) al final, el padre ya libre de FKs de sus
-    hijas (auditoría y satélites, FK orden_id -> orden).
+    purgarPorExternalIds: sin ON DELETE CASCADE en NINGUNA tabla
+    (prohibido, ver CLAUDE.md): ordenIds = ordenes.idsPorExternalIds(ids);
+    ordenes.borrarAuditoriaPorIds(ordenIds); CADA mapeador.borrarContexto
+    (ordenIds) (todas las satélites, las de otros tipos simplemente no
+    matchean); ordenes.borrarPorIds(ordenIds) al final, el padre ya libre
+    de FKs de sus hijas (auditoría y satélites, FK orden_id -> orden).
+    externalIdsFinalizadosAntesDe/purgarPorExternalIds purgan POR
+    TRAMITACIÓN (grupo de órdenes que comparten external_id), no una
+    orden suelta: los usan ServicioPurgarAdjuntos/Completadas de
+    business.sagas (ver 09-10 y 22), el motor solo expone la
+    selección/el borrado genéricos sin conocer "adjuntos" ni
+    "datos_negocio".
   end note
 
   interface MapeadorProceso <<SPI>> {
@@ -100,9 +107,10 @@ package "persistencia" {
     +findByExternalIdAndTipo(externalId, tipo) : Optional<OrdenEntity>\n«idempotencia de POST /tramitaciones, ver 01»
     +buscarCandidatas(ahora, limite) : List<CandidataFila>  «nativeQuery»
     +existeCandidata(ahora) : int  «nativeQuery, ROWNUM = 1»
-    +idsFinalizadasAntesDe(corte) : List<UUID>
+    +externalIdsFinalizadosAntesDe(corte) : List<String>
+    +idsPorExternalIds(externalIds) : List<UUID>
     +borrarPorIds(ids)
-    +borrarAuditoriaPorIds(ids)  «hija proceso_auditoria, antes que\nel padre en purgarFinalizadasAntesDe»
+    +borrarAuditoriaPorIds(ids)  «hija proceso_auditoria, antes que\nel padre en purgarPorExternalIds»
     +buscarTicketsPendientes() : List<TicketPendienteFila>
     +ordenesBloqueadas() / ordenesEnEjecucion(ahora)
     +ordenesConTicketPendiente() / buscar(...) / porExternalId(...)
@@ -167,8 +175,11 @@ package "persistencia" {
     (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
     sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
     ticket_abierto_en IS NULL AND completada_en IS NULL.
-    idsFinalizadasAntesDe: completada_en IS NOT NULL AND
-    actualizada_en < :corte (para la limpieza, ver 09 y 22).
+    externalIdsFinalizadosAntesDe (GROUP BY external_id): HAVING
+    COUNT(CASE WHEN completada_en IS NULL THEN 1 END) = 0 AND
+    MAX(completada_en) < :corte — ninguna orden viva del grupo Y la
+    última en terminar es anterior al corte (para las purgas por
+    tramitación, ver 09-10 y 22).
   end note
 }
 

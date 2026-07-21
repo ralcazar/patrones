@@ -1,5 +1,5 @@
 @startuml 22-clases-aplicacion-soporte
-title Aplicación — soporte, tickets y limpieza (business.ordermanager) + cancelación/vista de tramitación (business.sagas)
+title Aplicación — soporte y tickets (business.ordermanager) + cancelación/vista de tramitación/purgas por tramitación (business.sagas)
 !pragma layout smetana
 hide empty members
 skinparam classAttributeIconSize 0
@@ -41,10 +41,6 @@ package "business.ordermanager.aplicacion.puerto.entrada" {
   interface CasoUsoAbrirTicketsPendientes {
     +abrirTicketsPendientes() : int
   }
-  interface CasoUsoLimpiarDatosAntiguos {
-    +purgarAnterioresA(corte) : ResultadoLimpieza
-    record ResultadoLimpieza(ordenes)
-  }
 }
 
 package "business.ordermanager.aplicacion.servicio" {
@@ -82,22 +78,6 @@ package "business.ordermanager.aplicacion.servicio" {
     aviso).
   end note
 
-  class ServicioLimpiezaDatos <<@Service>> {
-    -repo : RepositorioOrden
-    -observador : PuertoObservadorEjecucion  «ver 17»
-    +purgarAnterioresA(corte) : ResultadoLimpieza  «@Transactional»
-  }
-  note bottom of ServicioLimpiezaDatos
-    @Transactional directo en el método (cross-bean, sin self):
-    repo.purgarFinalizadasAntesDe(corte), y
-    observador.datosAntiguosPurgados(ordenesEliminadas) -- único
-    evento de este servicio que pasa por el puerto (ver 17); "ticket
-    abierto" NO pasa por él, ver
-    ServicioTicketsSoporte/AdaptadorTicketsLog más arriba/24. Solo
-    borra completadaEn != null y antigua; cualquier orden viva
-    sobrevive.
-  }
-
   class "ReintentoOptimista" as Reintento <<package-private>> {
     {static} ejecutar(Supplier<T>) : T
     MAX_REINTENTOS = 5
@@ -124,13 +104,12 @@ package "business.ordermanager.aplicacion.puerto.salida" {
     +abrir(List<OrdenTicketPendiente>)
     «UN ticket para todas: texto en el log, sin id»
   }
-  interface "RepositorioOrden,\nPuertoObservadorEjecucion (ver 17)" as PuertosNucleo
+  interface "RepositorioOrden,\nPuertoObservadorEjecucion,\nPuertoIncidencias (ver 17)" as PuertosNucleo
 }
 
 CasoUsoIntervenirOrden <|.. ServicioSoporteOrdenes
 CasoUsoConsultarOrdenesSoporte <|.. ServicioSoporteOrdenes
 CasoUsoAbrirTicketsPendientes <|.. ServicioTicketsSoporte
-CasoUsoLimpiarDatosAntiguos <|.. ServicioLimpiezaDatos
 
 ServicioSoporteOrdenes --> PuertoConsultaOrdenesSoporte
 ServicioSoporteOrdenes --> PuertosNucleo
@@ -138,7 +117,6 @@ ServicioTicketsSoporte --> PuertoOrdenesTicketPendiente
 ServicioTicketsSoporte --> PuertoTicketsSoporte
 ServicioTicketsSoporte --> PuertosNucleo
 ServicioTicketsSoporte ..> Reintento
-ServicioLimpiezaDatos --> PuertosNucleo
 
 package "business.sagas.aplicacion" {
   interface CasoUsoCancelarTramitacion {
@@ -152,8 +130,11 @@ package "business.sagas.aplicacion" {
     +iniciar(ComandoIniciarTramitacion) : OrdenId
     record ComandoIniciarTramitacion(externalId)
   }
-  interface CasoUsoPurgarDatosNegocioHuerfanos {
-    +purgarHuerfanos() : long
+  interface CasoUsoPurgarAdjuntos {
+    +purgarAdjuntos(corte : Instant) : long
+  }
+  interface CasoUsoPurgarCompletadas {
+    +purgarCompletadas(corte : Instant) : long
   }
   class ServicioCancelarTramitacion <<@Service>> {
     -repo : RepositorioOrden
@@ -172,21 +153,51 @@ package "business.sagas.aplicacion" {
     +iniciar(cmd) : OrdenId
     +crearAgregados(externalId, respuesta) : OrdenId  «@Transactional»
   }
-  class ServicioPurgarDatosNegocioHuerfanos <<@Service>> {
+  class ServicioPurgarAdjuntos <<@Service>> {
+    -motor : RepositorioOrden
     -repoDatos : RepositorioDatosNegocio
-    +purgarHuerfanos() : long  «@Transactional»
+    -incidencias : PuertoIncidencias
+    -self : ServicioPurgarAdjuntos  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+    +purgarAdjuntos(corte) : long  «NO @Transactional: ReintentoOperativo.ejecutar(\n"purga-adjuntos", incidencias, () -> self.ejecutar(corte), 0L)»
+    +ejecutar(corte) : long  «@Transactional»
   }
+  class ServicioPurgarCompletadas <<@Service>> {
+    -motor : RepositorioOrden
+    -repoDatos : RepositorioDatosNegocio
+    -incidencias : PuertoIncidencias
+    -self : ServicioPurgarCompletadas  «proxy auto-inyectado, @Lazy\n(ver ConfiguracionSagas); establecerSelf(self)»
+    +purgarCompletadas(corte) : long  «NO @Transactional: ReintentoOperativo.ejecutar(\n"purga-completadas", incidencias, () -> self.ejecutar(corte), 0L)»
+    +ejecutar(corte) : long  «@Transactional»
+  }
+  class "ReintentoOperativo" as ReintentoOp <<package-private>> {
+    {static} ejecutar(tarea, incidencias, Supplier<T>, valorSiFalla) : T
+    MAX_REINTENTOS = 5
+  }
+  note bottom of ReintentoOp
+    DISTINTO de ReintentoOptimista (motor, ver arriba): reintenta
+    ante CUALQUIER RuntimeException (no solo conflicto de versión) y,
+    al agotar los MAX_REINTENTOS, abre la incidencia con la causa del
+    último fallo (PuertoIncidencias.abrir) en vez de relanzarlo, y
+    devuelve valorSiFalla — un fallo de purga no debe tumbar al
+    planificador que la invoca. Ver 09-10 para el flujo completo.
+  end note
   CasoUsoCancelarTramitacion <|.. ServicioCancelarTramitacion
   CasoUsoVistaTramitacion <|.. ServicioVistaTramitacion
   CasoUsoIniciarTramitacion <|.. ServicioIniciarTramitacion
-  CasoUsoPurgarDatosNegocioHuerfanos <|.. ServicioPurgarDatosNegocioHuerfanos
+  CasoUsoPurgarAdjuntos <|.. ServicioPurgarAdjuntos
+  CasoUsoPurgarCompletadas <|.. ServicioPurgarCompletadas
   ServicioCancelarTramitacion --> PuertosNucleo
   ServicioVistaTramitacion --> PuertoConsultaOrdenesSoporte
   ServicioIniciarTramitacion --> PuertosNucleo
+  ServicioPurgarAdjuntos --> PuertosNucleo
+  ServicioPurgarCompletadas --> PuertosNucleo
+  ServicioPurgarAdjuntos ..> ReintentoOp
+  ServicioPurgarCompletadas ..> ReintentoOp
 }
 interface "PuertoDatosNegocio,\nRepositorioDatosNegocio,\nPuertoBusquedaTramitacion\n(ver 26)" as PuertosDatosNegocio
 ServicioIniciarTramitacion --> PuertosDatosNegocio
-ServicioPurgarDatosNegocioHuerfanos --> PuertosDatosNegocio
+ServicioPurgarAdjuntos --> PuertosDatosNegocio
+ServicioPurgarCompletadas --> PuertosDatosNegocio
 note bottom of ServicioCancelarTramitacion
   Extraídos de lo que antes era ServicioSoporteSagas.cancelarPrincipal
   (cast a SagaPrincipal) y AdaptadorConsultaSagasSoporte.vistaTramitacion
@@ -205,12 +216,26 @@ note bottom of ServicioIniciarTramitacion
   rechaza la creación (carrera de 2 POST), captura
   ExternalIdDuplicadoException y relee al ganador — ver 01 y 26.
 end note
-note bottom of ServicioPurgarDatosNegocioHuerfanos
-  @Transactional directo (cross-bean, sin self): recorre
-  repoDatos.idsHuerfanos() y repoDatos.borrar(id) por cada uno.
-  Solo hay huérfanos tras purgarFinalizadasAntesDe (motor) borrar
-  las 4 sagas de una tramitación completa — ver 26. Lo dispara
-  PlanificadorPurgaDatosNegocio (ver 24).
+note bottom of ServicioPurgarAdjuntos
+  Criterio POR TRAMITACIÓN (grupo de las 4 sagas que comparten
+  external_id), no por orden individual: 1. motor.
+  externalIdsFinalizadosAntesDe(corte) (ver 17); 2. repoDatos.
+  idsPorExternalIdsSinPurgar(externalIds) filtra los datos_negocio
+  aún sin purgado_en sellado; 3. repoDatos.purgarAdjuntos(id) por
+  cada uno — anula el contenido de los documentos, SIN borrar filas.
+  Idempotente: una segunda pasada no reprocesa lo ya purgado. Lo
+  dispara PlanificadorPurgaAdjuntos (ver 24 y 09).
+end note
+note bottom of ServicioPurgarCompletadas
+  Mismo criterio por tramitación, corte más lejano (180 días) y
+  BORRA en vez de anular: 1. motor.externalIdsFinalizadosAntesDe
+  (corte); 2. motor.purgarPorExternalIds(externalIds) — las 4
+  órdenes de cada tramitación, con sus satélites y auditoría; 3.
+  repoDatos.borrar(id) de cada datos_negocio. Las órdenes se borran
+  ANTES que datos_negocio: proceso_saga_principal tiene FK a
+  datos_negocio (ver 26), así que borrar en el orden contrario la
+  violaría. Idempotente. Lo dispara PlanificadorPurgaCompletadas
+  (ver 24 y 10).
 end note
 
 note as NRuteo
