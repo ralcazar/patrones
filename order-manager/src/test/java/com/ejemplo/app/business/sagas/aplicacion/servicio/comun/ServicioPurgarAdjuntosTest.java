@@ -12,16 +12,22 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoIncidencias;
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio1;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio2;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatoNegocio3;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
 import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 
 /**
@@ -49,6 +55,11 @@ class ServicioPurgarAdjuntosTest {
         when(motor.externalIdsFinalizadosAntesDe(any())).thenReturn(List.of());
     }
 
+    private static DatosNegocio datosNegocioSinPurgar(DatosNegocioId id, ExternalId externalId) {
+        return DatosNegocio.crear(id, externalId, new DatoNegocio1(1),
+                new DatoNegocio2(LocalDate.of(2026, 1, 1)), new DatoNegocio3("dato"));
+    }
+
     @Test
     void ejecutar_consultaConElCorteRecibidoSinCalcularlo() {
         servicio.ejecutar(CORTE);
@@ -73,12 +84,35 @@ class ServicioPurgarAdjuntosTest {
         var idSinPurgar2 = DatosNegocioId.nuevo();
         when(repoDatos.idsPorExternalIdsSinPurgar(List.of(externalId1, externalId2)))
                 .thenReturn(List.of(idSinPurgar1, idSinPurgar2));
+        when(repoDatos.cargar(idSinPurgar1)).thenReturn(datosNegocioSinPurgar(idSinPurgar1, externalId1));
+        when(repoDatos.cargar(idSinPurgar2)).thenReturn(datosNegocioSinPurgar(idSinPurgar2, externalId2));
+        var antes = Instant.now();
 
         var tocadas = servicio.ejecutar(CORTE);
 
-        verify(repoDatos).purgarAdjuntos(idSinPurgar1);
-        verify(repoDatos).purgarAdjuntos(idSinPurgar2);
+        var despues = Instant.now();
+        var captor1 = ArgumentCaptor.forClass(Instant.class);
+        var captor2 = ArgumentCaptor.forClass(Instant.class);
+        verify(repoDatos).purgarAdjuntos(eq(idSinPurgar1), captor1.capture());
+        verify(repoDatos).purgarAdjuntos(eq(idSinPurgar2), captor2.capture());
+        assertThat(captor1.getValue()).isBetween(antes, despues);
+        assertThat(captor2.getValue()).isEqualTo(captor1.getValue()); // mismo ahora hoisteado para el lote
         assertThat(tocadas).isEqualTo(2L);
+    }
+
+    @Test
+    void ejecutar_sellaElDominioAntesDeTransportarloAlAdaptador() {
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        when(motor.externalIdsFinalizadosAntesDe(CORTE)).thenReturn(List.of(externalId));
+        var idSinPurgar = DatosNegocioId.nuevo();
+        when(repoDatos.idsPorExternalIdsSinPurgar(List.of(externalId))).thenReturn(List.of(idSinPurgar));
+        var datosNegocio = datosNegocioSinPurgar(idSinPurgar, externalId);
+        when(repoDatos.cargar(idSinPurgar)).thenReturn(datosNegocio);
+
+        servicio.ejecutar(CORTE);
+
+        assertThat(datosNegocio.estaPurgada()).isTrue();
+        verify(repoDatos).purgarAdjuntos(idSinPurgar, datosNegocio.purgadoEn());
     }
 
     @Test
@@ -89,7 +123,8 @@ class ServicioPurgarAdjuntosTest {
 
         var tocadas = servicio.ejecutar(CORTE);
 
-        verify(repoDatos, never()).purgarAdjuntos(any());
+        verify(repoDatos, never()).cargar(any());
+        verify(repoDatos, never()).purgarAdjuntos(any(), any());
         assertThat(tocadas).isZero();
     }
 

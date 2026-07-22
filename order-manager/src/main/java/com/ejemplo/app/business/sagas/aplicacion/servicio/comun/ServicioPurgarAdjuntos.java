@@ -10,16 +10,21 @@ import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.PuertoInci
 import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoPurgarAdjuntos;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.RepositorioDatosNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio;
+import com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocioId;
 
 /**
  * Purga de adjuntos (criterio por tramitación): para cada grupo de las 4
  * sagas que comparten {@code external_id} y están todas terminadas antes del
  * corte recibido, anula el contenido de los documentos de su
- * {@code datos_negocio} SIN borrar filas (ver
- * {@link RepositorioDatosNegocio#purgarAdjuntos}). El corte (retención) lo
- * calcula el planificador de infraestructura -- este servicio no conoce
+ * {@code datos_negocio} SIN borrar filas y sella el agregado como purgado
+ * (ver {@link RepositorioDatosNegocio#purgarAdjuntos}). El corte (retención)
+ * lo calcula el planificador de infraestructura -- este servicio no conoce
  * "hoy" ni cuántos días de retención hay, solo el {@link Instant} recibido.
- * Idempotente: la selección
+ * El sello de {@code purgadoEn} lo pone el propio dominio
+ * ({@link DatosNegocio#purgar}, reloj determinista): este servicio carga el
+ * agregado, lo muta y pasa el valor ya sellado al puerto de salida, que solo
+ * lo transporta a columna. Idempotente: la selección
  * ({@link RepositorioDatosNegocio#idsPorExternalIdsSinPurgar}) ya excluye lo
  * purgado en una pasada anterior, así que repetir el batch completo no
  * reprocesa nada.
@@ -67,7 +72,15 @@ public class ServicioPurgarAdjuntos implements CasoUsoPurgarAdjuntos {
             return 0L;
         }
         var idsSinPurgar = repoDatos.idsPorExternalIdsSinPurgar(externalIds);
-        idsSinPurgar.forEach(repoDatos::purgarAdjuntos);
+        var ahora = Instant.now();
+        idsSinPurgar.forEach(id -> sellarPurga(id, ahora));
         return idsSinPurgar.size();
+    }
+
+    /** El sello de purgadoEn lo pone el dominio ({@link DatosNegocio#purgar}); el adaptador solo lo transporta. */
+    private void sellarPurga(DatosNegocioId id, Instant ahora) {
+        var datosNegocio = repoDatos.cargar(id);
+        datosNegocio.purgar(ahora);
+        repoDatos.purgarAdjuntos(id, datosNegocio.purgadoEn());
     }
 }

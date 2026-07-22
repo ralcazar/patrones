@@ -1,5 +1,6 @@
 package com.ejemplo.app.business.sagas.aplicacion.puerto.salida;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,9 +41,13 @@ public interface RepositorioDatosNegocio {
     /**
      * Purga de adjuntos (sin borrar filas): pone a NULL el {@code contenido}
      * de todos los documentos del datos_negocio y sella
-     * {@code datos_negocio.purgado_en} con el instante de la purga. Seguro
-     * de repetir sobre un id ya purgado (NULL sobre NULL); en la práctica no
-     * se reinvoca porque {@link #idsPorExternalIdsSinPurgar} ya lo excluye.
+     * {@code datos_negocio.purgado_en} con {@code purgadoEn} (el instante que
+     * ya selló el dominio, ver
+     * {@link com.ejemplo.app.business.sagas.dominio.datosnegocio.DatosNegocio#purgar}
+     * ). El adaptador solo transporta ese valor a columna, no lo calcula.
+     * Seguro de repetir sobre un id ya purgado (NULL sobre NULL); en la
+     * práctica no se reinvoca porque {@link #idsPorExternalIdsSinPurgar} ya
+     * lo excluye.
      */
-    void purgarAdjuntos(DatosNegocioId id);
+    void purgarAdjuntos(DatosNegocioId id, Instant purgadoEn);
 }

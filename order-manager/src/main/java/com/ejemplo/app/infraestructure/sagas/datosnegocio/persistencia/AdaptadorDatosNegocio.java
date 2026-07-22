@@ -85,9 +85,9 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     }
 
     @Override
-    public void purgarAdjuntos(DatosNegocioId id) {
+    public void purgarAdjuntos(DatosNegocioId id, Instant purgadoEn) {
         documentos.purgarContenidoDe(id.valor()); // contenido de los documentos primero, luego el sello del padre
-        datosNegocio.sellarPurgadoEn(id.valor(), Instant.now());
+        datosNegocio.sellarPurgadoEn(id.valor(), purgadoEn);
     }
 
     // ------------------------------------------------------------------
@@ -95,15 +95,15 @@ public class AdaptadorDatosNegocio implements RepositorioDatosNegocio {
     // ------------------------------------------------------------------
 
     private static DatosNegocioEntity entidadDatosNegocioDe(DatosNegocio d) {
-        // purgadoEn siempre NULL al crear: el sello lo pone la purga de adjuntos (fase aparte).
         return new DatosNegocioEntity(d.id().valor(), d.externalId().valor().toString(),
-                d.datoNegocio1().valor(), d.datoNegocio2().valor(), d.datoNegocio3().valor(), null);
+                d.datoNegocio1().valor(), d.datoNegocio2().valor(), d.datoNegocio3().valor(), d.purgadoEn());
     }
 
     private static DatosNegocio datosNegocioDesde(DatosNegocioEntity entity) {
-        return DatosNegocio.crear(new DatosNegocioId(entity.getDatosnegocioId()),
+        return DatosNegocio.rehidratar(new DatosNegocioId(entity.getDatosnegocioId()),
                 ExternalId.de(entity.getExternalId()), new DatoNegocio1(entity.getDatoNegocio1()),
-                new DatoNegocio2(entity.getDatoNegocio2()), new DatoNegocio3(entity.getDatoNegocio3()));
+                new DatoNegocio2(entity.getDatoNegocio2()), new DatoNegocio3(entity.getDatoNegocio3()),
+                entity.getPurgadoEn());
     }
 
     // ------------------------------------------------------------------

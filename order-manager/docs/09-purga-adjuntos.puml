@@ -8,6 +8,9 @@ box "Aplicación" #F5FBEF
   participant "ServicioPurgarAdjuntos" as SERV
   participant "ReintentoOperativo" as REINT
 end box
+box "Dominio" #FBF5EF
+  participant "DatosNegocio\n(agregado)" as DOM
+end box
 box "Adaptadores de salida" #F3EFFB
   participant "AdaptadorRepositorioOrden\n(motor)" as MOTOR
   participant "AdaptadorDatosNegocio\n(sagas)" as DATOS
@@ -40,10 +43,16 @@ loop hasta 5 intentos (MAX_REINTENTOS): cada intento repite la EJECUCIÓN COMPLE
       SERV -> DATOS ++ : idsPorExternalIdsSinPurgar(externalIds)
       DATOS -> DATOS : SELECT datosnegocio_id FROM datos_negocio\nWHERE external_id IN :ids AND purgado_en IS NULL
       return [DatosNegocioId, ...]
+      SERV -> SERV : ahora = Instant.now()\n(un único ahora para todo el lote)
       loop por cada id sin purgar
-        SERV -> DATOS ++ : purgarAdjuntos(id)
+        SERV -> DATOS ++ : cargar(id)
+        return DatosNegocio (solo escalares)
+        SERV -> DOM ++ : purgar(ahora)
+        DOM -> DOM : this.purgadoEn = ahora\n(reloj determinista: el agregado\nnunca llama a Instant.now())
+        return
+        SERV -> DATOS ++ : purgarAdjuntos(id, datosNegocio.purgadoEn())
         DATOS -> DATOS : documentos.purgarContenidoDe(id)\n(UPDATE datos_negocio_documento SET contenido = NULL\nWHERE datosnegocio_id = id)
-        DATOS -> DATOS : datosNegocio.sellarPurgadoEn(id, Instant.now())\n(UPDATE datos_negocio SET purgado_en = ...)
+        DATOS -> DATOS : datosNegocio.sellarPurgadoEn(id, purgadoEn)\n(UPDATE datos_negocio SET purgado_en = ...\n-- el valor lo aporta el dominio, el adaptador solo lo transporta)
         return
       end
       SERV -> SERV : return idsSinPurgar.size()
@@ -72,9 +81,9 @@ deactivate PLAN
 
 note over SERV, DATOS
   Idempotente: idsPorExternalIdsSinPurgar ya excluye lo purgado en
-  una pasada anterior, y purgarAdjuntos(id) sería NULL sobre NULL
-  si se repitiera -- por eso ReintentoOperativo puede reintentar la
-  EJECUCIÓN COMPLETA (no solo el id que falló) sin riesgo de doble
-  efecto.
+  una pasada anterior, y purgarAdjuntos(id, purgadoEn) sería NULL
+  sobre NULL si se repitiera -- por eso ReintentoOperativo puede
+  reintentar la EJECUCIÓN COMPLETA (no solo el id que falló) sin
+  riesgo de doble efecto.
 end note
 @enduml

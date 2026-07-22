@@ -169,22 +169,23 @@ class AdaptadorDatosNegocioIntegrationTest {
         var externalId = ExternalId.de(UUID.randomUUID().toString());
         var datosNegocio = nuevoDatosNegocio(id, externalId);
         repo.crear(datosNegocio, List.of(new DocumentoNegocio("factura.pdf", "application/pdf", new byte[] {1, 2, 3})));
-        var antes = Instant.now();
+        var purgadoEn = Instant.parse("2026-06-21T10:00:00Z");
 
-        repo.purgarAdjuntos(id);
+        repo.purgarAdjuntos(id, purgadoEn);
 
-        var despues = Instant.now();
         var documentos = repo.documentosDe(id);
         assertThat(documentos).hasSize(1);
         assertThat(documentos.get(0).contenido()).as("contenido anulado").isNull();
         assertThat(documentos.get(0).nombre()).as("metadatos conservados").isEqualTo("factura.pdf");
         assertThat(documentos.get(0).mimeType()).isEqualTo("application/pdf");
         var entity = datosNegocioJpaRepository.findById(id.valor()).orElseThrow();
-        assertThat(entity.getPurgadoEn()).isBetween(antes, despues);
+        assertThat(entity.getPurgadoEn()).isEqualTo(purgadoEn);
         var recargado = repo.cargar(id);
         assertThat(recargado.datoNegocio1()).isEqualTo(datosNegocio.datoNegocio1());
         assertThat(recargado.datoNegocio2()).isEqualTo(datosNegocio.datoNegocio2());
         assertThat(recargado.datoNegocio3()).isEqualTo(datosNegocio.datoNegocio3());
+        assertThat(recargado.purgadoEn()).isEqualTo(purgadoEn);
+        assertThat(recargado.estaPurgada()).isTrue();
     }
 
     @Test
@@ -201,7 +202,7 @@ class AdaptadorDatosNegocioIntegrationTest {
         var externalIdYaPurgado = ExternalId.de(UUID.randomUUID().toString());
         var idYaPurgado = DatosNegocioId.nuevo();
         repo.crear(nuevoDatosNegocio(idYaPurgado, externalIdYaPurgado), List.of());
-        repo.purgarAdjuntos(idYaPurgado);
+        repo.purgarAdjuntos(idYaPurgado, Instant.now());
 
         var externalIdFueraDelLote = ExternalId.de(UUID.randomUUID().toString());
         repo.crear(nuevoDatosNegocio(DatosNegocioId.nuevo(), externalIdFueraDelLote), List.of());

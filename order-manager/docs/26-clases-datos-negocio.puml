@@ -11,15 +11,22 @@ package "business.sagas.dominio.datosnegocio" {
     -datoNegocio1 : DatoNegocio1
     -datoNegocio2 : DatoNegocio2
     -datoNegocio3 : DatoNegocio3
-    +{static} crear(id, externalId, datoNegocio1,\ndatoNegocio2, datoNegocio3) : DatosNegocio
-    +id() / +externalId() / +datoNegocio1() / +datoNegocio2() / +datoNegocio3()
+    -purgadoEn : Instant
+    +{static} crear(id, externalId, datoNegocio1,\ndatoNegocio2, datoNegocio3) : DatosNegocio  «purgadoEn = null»
+    +{static} rehidratar(..., purgadoEn) : DatosNegocio
+    +purgar(ahora)  «reloj determinista: sella\nthis.purgadoEn = ahora»
+    +estaPurgada() : boolean
+    +id() / +externalId() / +datoNegocio1() / +datoNegocio2() / +datoNegocio3() / +purgadoEn()
   }
   note right of DatosNegocio
     Correlacionado con la saga principal por ExternalId (misma
     correlación externa que el resto de sagas, ver 15). Deliberadamente
     SIN lista de documentos en memoria: son blobs y se piden aparte al
     repositorio (documentosDe), para no cargarlos accidentalmente cada
-    vez que se carga el agregado.
+    vez que se carga el agregado. purgadoEn: NULL mientras los
+    documentos conservan su contenido; lo sella purgar(ahora), que
+    invoca ServicioPurgarAdjuntos tras cargar el agregado (ver 09) --
+    mismo patrón que creadaEn/actualizadaEn en OrdenRoot (ver 14).
   end note
 
   class DatosNegocioId <<@ValueObject, record>> {
@@ -99,13 +106,14 @@ package "business.sagas.aplicacion.puerto.salida" {
     +buscarPorExternalId(ExternalId) : Optional<DatosNegocio>
     +borrar(DatosNegocioId)  «documentos primero (sin cascade),\nluego el registro»
     +idsPorExternalIdsSinPurgar(List<ExternalId>) : List<DatosNegocioId>\n«los que TODAVÍA no tienen purgado_en sellado;\nUNA query por lote, evita N+1»
-    +purgarAdjuntos(DatosNegocioId)  «contenido de TODOS sus\ndocumentos a NULL + sella purgado_en; sin\nborrar filas; NULL sobre NULL si se repite»
+    +purgarAdjuntos(DatosNegocioId, Instant purgadoEn)  «contenido de TODOS sus\ndocumentos a NULL + transporta purgadoEn (ya sellado\npor el dominio) a columna; sin borrar filas; NULL\nsobre NULL si se repite»
   }
   note bottom of RepositorioDatosNegocio
     Lo usa ServicioSagaPrincipal (repoDatos.cargar/documentosDe,
     fuera de tx, PASO1/2/7 — ver 02 y 18), ServicioIniciarTramitacion
     (crear, dentro de tx — ver 01 y 22),
-    ServicioPurgarAdjuntos (idsPorExternalIdsSinPurgar/purgarAdjuntos,
+    ServicioPurgarAdjuntos (idsPorExternalIdsSinPurgar, cargar +
+    DatosNegocio.purgar(ahora) + purgarAdjuntos(id, purgadoEn),
     ver 09 y 22) y ServicioPurgarCompletadas (buscarPorExternalId/
     borrar, ver 10 y 22) -- las dos últimas con el criterio POR
     TRAMITACIÓN de RepositorioOrden.externalIdsFinalizadosAntesDe
@@ -128,7 +136,7 @@ package "infraestructure.sagas.datosnegocio.persistencia" {
     +buscarPorExternalId(externalId) : Optional<DatosNegocio>
     +borrar(id)  «documentos.deleteByDatosnegocioId(id);\ndatosNegocio.deleteById(id) -- hija antes\nque padre, sin ON DELETE CASCADE»
     +idsPorExternalIdsSinPurgar(externalIds) : List<DatosNegocioId>
-    +purgarAdjuntos(id)  «documentos.purgarContenidoDe(id);\ndatosNegocio.sellarPurgadoEn(id, Instant.now())»
+    +purgarAdjuntos(id, purgadoEn)  «documentos.purgarContenidoDe(id);\ndatosNegocio.sellarPurgadoEn(id, purgadoEn)\n-- purgadoEn ya sellado por el dominio, solo lo transporta»
   }
 
   interface DatosNegocioJpaRepository <<JpaRepository>> {
