@@ -16,6 +16,7 @@ import com.ejemplo.app.business.ordermanager.dominio.ConcurrenciaOptimistaExcept
 import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.ordermanager.dominio.Proceso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
@@ -72,7 +73,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         // aquí y el candado optimista de JPA lo detectará al hacer flush.
         var ordenEntity = ordenes.findById(ordenId)
                 .orElseThrow(() -> new IllegalArgumentException("No existe la orden " + ordenId));
-        return OrdenRoot.rehidratar(procesoDesde(ordenEntity), ordenEntity.getIntentos(),
+        return OrdenRoot.rehidratar(procesoDesde(ordenEntity), new Prioridad(ordenEntity.getPrioridad()),
+                ordenEntity.getIntentos(),
                 ordenEntity.getProximoReintentoEn(), uuidONull(ordenEntity.getTokenTrabajador()),
                 ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
                 ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
@@ -84,7 +86,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
             var ordenEntity = ordenes.save(entidadOrdenDe(orden));
             mapeadorDe(orden.proceso().tipo()).guardarContexto(orden.proceso());
             ordenes.flush(); // fuerza el chequeo de version aquí, no en el commit de fuera; ya deja la version real en ordenEntity
-            return OrdenRoot.rehidratar(orden.proceso(), ordenEntity.getIntentos(), ordenEntity.getProximoReintentoEn(),
+            return OrdenRoot.rehidratar(orden.proceso(), orden.prioridad(), ordenEntity.getIntentos(),
+                    ordenEntity.getProximoReintentoEn(),
                     orden.tokenTrabajador(), ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
                     ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
         } catch (OptimisticLockingFailureException e) {
@@ -145,7 +148,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
         var externalId = proceso.externalId().valor().toString();
         var estado = mapeadorDe(proceso.tipo()).estado(proceso);
         var error = orden.ultimoError();
-        return new OrdenEntity(orden.id().valor(), proceso.tipo().valor(), externalId, estado, auditoria,
+        return new OrdenEntity(orden.id().valor(), proceso.tipo().valor(), externalId, estado,
+                orden.prioridad().peso(), auditoria,
                 orden.intentos(), orden.proximoReintentoEn(),
                 orden.tokenTrabajador() == null ? null : orden.tokenTrabajador().toString(),
                 orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),

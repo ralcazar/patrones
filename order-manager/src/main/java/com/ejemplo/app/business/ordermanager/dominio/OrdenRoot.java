@@ -25,6 +25,7 @@ public final class OrdenRoot {
     @Identity
     private final OrdenId id;
     private Proceso<?> proceso;
+    private final Prioridad prioridad;
     private int intentos;
     private Instant proximoReintentoEn;
     private UUID tokenTrabajador;
@@ -34,11 +35,12 @@ public final class OrdenRoot {
     private DetalleError ultimoError;
     private final long version;
 
-    private OrdenRoot(OrdenId id, Proceso<?> proceso, int intentos, Instant proximoReintentoEn,
+    private OrdenRoot(OrdenId id, Proceso<?> proceso, Prioridad prioridad, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
             Instant completadaEn, DetalleError ultimoError, long version) {
         this.id = id;
         this.proceso = proceso;
+        this.prioridad = prioridad;
         this.intentos = intentos;
         this.proximoReintentoEn = proximoReintentoEn;
         this.tokenTrabajador = tokenTrabajador;
@@ -49,15 +51,29 @@ public final class OrdenRoot {
         this.version = version;
     }
 
+    /** Alta con prioridad explícita (la fija quien crea la orden, p. ej. una saga). */
+    public static OrdenRoot nueva(Proceso<?> proceso, Prioridad prioridad, Instant ahora) {
+        return new OrdenRoot(proceso.id(), proceso, prioridad, 0, ahora, null, null, null, null, null, 0L);
+    }
+
+    /** Alta con prioridad {@link Prioridad#normal()} (conveniencia para quien no distingue prioridad). */
     public static OrdenRoot nueva(Proceso<?> proceso, Instant ahora) {
-        return new OrdenRoot(proceso.id(), proceso, 0, ahora, null, null, null, null, null, 0L);
+        return nueva(proceso, Prioridad.normal(), ahora);
     }
 
     /** Para el adaptador de persistencia. */
+    public static OrdenRoot rehidratar(Proceso<?> proceso, Prioridad prioridad, int intentos, Instant proximoReintentoEn,
+            UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
+            Instant completadaEn, DetalleError ultimoError, long version) {
+        return new OrdenRoot(proceso.id(), proceso, prioridad, intentos, proximoReintentoEn, tokenTrabajador,
+                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
+    }
+
+    /** Sobrecarga de conveniencia con {@link Prioridad#normal()} (evita romper llamantes que no distinguen prioridad). */
     public static OrdenRoot rehidratar(Proceso<?> proceso, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
             Instant completadaEn, DetalleError ultimoError, long version) {
-        return new OrdenRoot(proceso.id(), proceso, intentos, proximoReintentoEn, tokenTrabajador,
+        return rehidratar(proceso, Prioridad.normal(), intentos, proximoReintentoEn, tokenTrabajador,
                 tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
     }
 
@@ -168,6 +184,7 @@ public final class OrdenRoot {
 
     public Proceso<?> proceso() { return proceso; }
     public TipoOrden tipo() { return proceso.tipo(); }
+    public Prioridad prioridad() { return prioridad; }
 
     public OrdenId id() { return id; }
     public int intentos() { return intentos; }

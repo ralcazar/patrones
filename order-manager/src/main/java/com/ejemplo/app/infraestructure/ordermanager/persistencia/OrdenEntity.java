@@ -73,6 +73,9 @@ public class OrdenEntity implements Persistable<UUID> {
     @Column(nullable = false, length = 40)
     private String estado;
 
+    @Column(name = "prioridad", nullable = false)
+    private int prioridad;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "proceso_auditoria", joinColumns = @JoinColumn(name = "orden_id"))
     @OrderColumn(name = "secuencia")
@@ -116,7 +119,8 @@ public class OrdenEntity implements Persistable<UUID> {
         // requerido por JPA
     }
 
-    public OrdenEntity(UUID ordenId, String tipo, String externalId, String estado, List<AuditoriaEntity> auditoria,
+    public OrdenEntity(UUID ordenId, String tipo, String externalId, String estado, int prioridad,
+            List<AuditoriaEntity> auditoria,
             int intentos, Instant proximoReintentoEn, String tokenTrabajador, Instant tokenExpiraEn,
             Instant ticketAbiertoEn, Instant completadaEn, String ultimoErrorTipo, String ultimoErrorMensaje,
             long version) {
@@ -124,6 +128,7 @@ public class OrdenEntity implements Persistable<UUID> {
         this.tipo = tipo;
         this.externalId = externalId;
         this.estado = estado;
+        this.prioridad = prioridad;
         this.auditoria = auditoria;
         this.intentos = intentos;
         this.proximoReintentoEn = proximoReintentoEn;
@@ -165,6 +170,7 @@ public class OrdenEntity implements Persistable<UUID> {
     public String getTipo() { return tipo; }
     public String getExternalId() { return externalId; }
     public String getEstado() { return estado; }
+    public int getPrioridad() { return prioridad; }
     public List<AuditoriaEntity> getAuditoria() { return auditoria; }
     public int getIntentos() { return intentos; }
     public Instant getProximoReintentoEn() { return proximoReintentoEn; }

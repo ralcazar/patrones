@@ -30,6 +30,7 @@ import com.ejemplo.app.testsoporte.ObservadorEjecucionEnMemoria;
 import com.ejemplo.app.testsoporte.RepositorioOrdenEnMemoria;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso1;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso5;
 import com.ejemplo.app.business.sagas.dominio.comun.RefPaso7;
@@ -108,9 +109,13 @@ class ServicioSagaPrincipalTest {
     }
 
     private OrdenId crearOrdenPrincipal() {
+        return crearOrdenPrincipal(Prioridad.normal());
+    }
+
+    private OrdenId crearOrdenPrincipal(Prioridad prioridad) {
         var id = OrdenId.nuevo();
         var saga = SagaPrincipal.crear(id, ExternalId.de(UUID.randomUUID().toString()), DatosNegocioId.nuevo());
-        repo.crear(OrdenRoot.nueva(saga, Instant.now()));
+        repo.crear(OrdenRoot.nueva(saga, prioridad, Instant.now()));
         return id;
     }
 
@@ -130,6 +135,18 @@ class ServicioSagaPrincipalTest {
         assertThat(hijas).extracting(OrdenRoot::tipo)
                 .containsExactlyInAnyOrder(SagaSecundaria1.TIPO, SagaSecundaria2.TIPO, SagaSecundaria3.TIPO);
         assertThat(hijas).allSatisfy(h -> assertThat(h.estaViva()).isTrue());
+    }
+
+    @Test
+    void flujoFeliz_lasHijasHeredanLaPrioridadDeLaPrincipalSinReconsultarDatosNegocio() {
+        var prioridadPrincipal = new Prioridad(30);
+        var id = crearOrdenPrincipal(prioridadPrincipal);
+
+        servicioContinuar.continuarSiguiente();
+
+        var hijas = repo.todas().stream().filter(o -> !SagaPrincipal.TIPO.equals(o.tipo())).toList();
+        assertThat(hijas).hasSize(3);
+        assertThat(hijas).allSatisfy(h -> assertThat(h.prioridad()).isEqualTo(prioridadPrincipal));
     }
 
     @Test

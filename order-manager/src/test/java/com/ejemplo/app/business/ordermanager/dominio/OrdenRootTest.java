@@ -37,6 +37,33 @@ class OrdenRootTest {
         assertThat(orden.ultimoError()).isNull();
         assertThat(orden.estaViva()).isTrue();
         assertThat(orden.version()).isZero();
+        assertThat(orden.prioridad()).isEqualTo(Prioridad.normal());
+    }
+
+    @Test
+    void nueva_conPrioridadExplicita_laConservaEnElAgregado() {
+        var prioridad = new Prioridad(30);
+
+        var orden = OrdenRoot.nueva(procesoCualquiera(), prioridad, T0);
+
+        assertThat(orden.prioridad()).isEqualTo(prioridad);
+    }
+
+    @Test
+    void rehidratar_conPrioridadExplicita_laConservaEnElAgregado() {
+        var prioridad = new Prioridad(20);
+        var proceso = procesoCualquiera();
+
+        var orden = OrdenRoot.rehidratar(proceso, prioridad, 0, T0, null, null, null, null, null, 0L);
+
+        assertThat(orden.prioridad()).isEqualTo(prioridad);
+    }
+
+    @Test
+    void rehidratar_sinPrioridadExplicita_usaPrioridadNormal() {
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, null, null, null, null, null, 0L);
+
+        assertThat(orden.prioridad()).isEqualTo(Prioridad.normal());
     }
 
     @Test

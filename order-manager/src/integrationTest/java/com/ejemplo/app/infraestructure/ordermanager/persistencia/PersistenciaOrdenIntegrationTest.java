@@ -37,6 +37,7 @@ import com.ejemplo.app.business.ordermanager.dominio.DetalleError;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.ordermanager.dominio.UsuarioSoporte;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
@@ -314,6 +315,43 @@ class PersistenciaOrdenIntegrationTest {
 
         assertThat(candidatas).extracting(CandidataOrden::ordenId).containsExactly(idCandidata);
         assertThat(candidatas).extracting(CandidataOrden::tipo).containsExactly(SagaPrincipal.TIPO);
+    }
+
+    @Test
+    void buscarEjecutables_ordenaPorPrioridadDescLuegoCreadaEnAscLuegoProximoReintentoEnAsc() {
+        var ahora = Instant.now();
+        var idAltaPrioridad = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idAltaPrioridad), new Prioridad(30), 0,
+                ahora.minusSeconds(5), null, null, null, null, null, 0L));
+        var idMismaPrioridadMasAntigua = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idMismaPrioridadMasAntigua), new Prioridad(10), 0,
+                ahora.minusSeconds(5), null, null, null, null, null, 0L));
+        var idMismaPrioridadMasReciente = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idMismaPrioridadMasReciente), new Prioridad(10), 0,
+                ahora.minusSeconds(5), null, null, null, null, null, 0L));
+
+        // creada_en se autoasigna por @PrePersist a Instant.now() y es updatable=false a nivel
+        // JPA: para un test determinista del desempate por creada_en, se fija con SQL nativo
+        // (UPDATE) tras persistir, dentro de su propia transacción para que quede comiteado
+        // antes de la lectura de buscarEjecutables (que usa su propia @Query nativa).
+        var tx = new TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(estado -> {
+            fijarCreadaEn(idMismaPrioridadMasAntigua, ahora.minusSeconds(7200));
+            fijarCreadaEn(idMismaPrioridadMasReciente, ahora.minusSeconds(3600));
+            fijarCreadaEn(idAltaPrioridad, ahora); // creada_en irrelevante: gana por prioridad
+        });
+
+        var candidatas = repo.buscarEjecutables(ahora, 16);
+
+        assertThat(candidatas).extracting(CandidataOrden::ordenId)
+                .containsExactly(idAltaPrioridad, idMismaPrioridadMasAntigua, idMismaPrioridadMasReciente);
+    }
+
+    private void fijarCreadaEn(OrdenId id, Instant creadaEn) {
+        entityManager.createNativeQuery("UPDATE orden SET creada_en = :ts WHERE orden_id = :id")
+                .setParameter("ts", creadaEn)
+                .setParameter("id", id.valor().toString())
+                .executeUpdate();
     }
 
     @Test

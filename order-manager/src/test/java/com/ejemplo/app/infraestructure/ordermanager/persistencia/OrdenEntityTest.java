@@ -26,7 +26,7 @@ class OrdenEntityTest {
         var ticketAbiertoEn = proximoReintentoEn.minusSeconds(60);
         var completadaEn = proximoReintentoEn.plusSeconds(120);
         var auditoria = List.of(new AuditoriaEntity(proximoReintentoEn, "ana", "CANCELAR", "motivo"));
-        var entity = new OrdenEntity(ordenId, "PRINCIPAL", "ext-1", "INICIAL", auditoria, 3, proximoReintentoEn,
+        var entity = new OrdenEntity(ordenId, "PRINCIPAL", "ext-1", "INICIAL", 0, auditoria, 3, proximoReintentoEn,
                 "token-1", tokenExpiraEn, ticketAbiertoEn, completadaEn, "java.lang.RuntimeException", "boom", 5L);
 
         assertThat(entity.getOrdenId()).isEqualTo(ordenId);
@@ -47,7 +47,7 @@ class OrdenEntityTest {
 
     @Test
     void alCrear_fijaCreadaEnSoloLaPrimeraVez() {
-        var entity = new OrdenEntity(UUID.randomUUID(), "PRINCIPAL", "ext-1", "INICIAL", List.of(),
+        var entity = new OrdenEntity(UUID.randomUUID(), "PRINCIPAL", "ext-1", "INICIAL", 0, List.of(),
                 0, Instant.now(), null, null, null, null, null, null, 0L);
 
         entity.alCrear();
@@ -61,7 +61,7 @@ class OrdenEntityTest {
 
     @Test
     void alActualizar_refrescaActualizadaEn() {
-        var entity = new OrdenEntity(UUID.randomUUID(), "PRINCIPAL", "ext-1", "INICIAL", List.of(),
+        var entity = new OrdenEntity(UUID.randomUUID(), "PRINCIPAL", "ext-1", "INICIAL", 0, List.of(),
                 0, Instant.now(), null, null, null, null, null, null, 0L);
         entity.alCrear();
         var actualizadaEnTrasCrear = entity.getActualizadaEn();
@@ -75,7 +75,7 @@ class OrdenEntityTest {
     @Test
     void persistable_getIdDevuelveElOrdenIdYMarcarComoNuevaActivaIsNew() {
         var ordenId = UUID.randomUUID();
-        var entity = new OrdenEntity(ordenId, "PRINCIPAL", "ext-1", "INICIAL", List.of(),
+        var entity = new OrdenEntity(ordenId, "PRINCIPAL", "ext-1", "INICIAL", 0, List.of(),
                 0, Instant.now(), null, null, null, null, null, null, 0L);
 
         assertThat(entity.getId()).as("Persistable.getId() delega en el mismo ordenId").isEqualTo(ordenId);

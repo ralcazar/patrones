@@ -7,6 +7,7 @@ skinparam classAttributeIconSize 0
 class OrdenRoot <<@AggregateRoot>> {
   -id : OrdenId  «@Identity»
   -proceso : Proceso<?>
+  -prioridad : Prioridad  «inmutable, fijada al crear»
   -intentos : int
   -proximoReintentoEn : Instant
   -tokenTrabajador : UUID
@@ -15,8 +16,10 @@ class OrdenRoot <<@AggregateRoot>> {
   -completadaEn : Instant
   -ultimoError : DetalleError
   -version : long  «ÚNICA del agregado»
-  +{static} nueva(proceso, ahora) : OrdenRoot
-  +{static} rehidratar(proceso, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn,\nultimoError, version)
+  +{static} nueva(proceso, prioridad, ahora) : OrdenRoot
+  +{static} nueva(proceso, ahora) : OrdenRoot  «sobrecarga, prioridad=Prioridad.normal()»
+  +{static} rehidratar(proceso, prioridad, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn,\nultimoError, version)
+  +{static} rehidratar(proceso, intentos, ...)  «sobrecarga, prioridad=Prioridad.normal()»
   +asignarToken(token, lease, ahora)
   +renovarLease(lease, ahora)
   +tieneTokenVigente(ahora) : boolean
@@ -33,6 +36,7 @@ class OrdenRoot <<@AggregateRoot>> {
   +reemplazarProceso(Proceso<?> nuevo)  «ÚNICO punto de sustitución\ndel campo proceso»
   +id() : OrdenId
   +tipo() : TipoOrden  «delega en proceso.tipo()»
+  +prioridad() : Prioridad
 }
 note right of OrdenRoot
   Reloj determinista: nunca Instant.now(); todo método que
@@ -97,6 +101,19 @@ note bottom of TipoOrden
   paquete. Antes era el enum cerrado TipoSaga.
 end note
 
+class Prioridad <<@ValueObject, record>> {
+  peso : int
+  +{static} normal() : Prioridad  «peso=0»
+}
+note bottom of Prioridad
+  Peso de planificación NEUTRO: a mayor peso, antes la coge el
+  planificador (buscarCandidatas/buscarEjecutables, ver 17/23
+  ordenan prioridad DESC). El motor solo ordena por él, no sabe
+  qué lo determina -- lo fija quien crea la orden. En las sagas,
+  DatoNegocio3.prioridad() traduce el origen a este peso (ver 26);
+  el motor no conoce ese mapeo.
+end note
+
 interface ComandoPaso <<marcadora>>
 interface ResultadoPaso <<marcadora>>
 
@@ -135,6 +152,7 @@ end note
 class "OrdenId, ExternalId,\nUsuarioSoporte, AuditoriaIntervencion" as VOs <<@ValueObject>>
 
 OrdenRoot "1" *-- "1" Proceso : proceso
+OrdenRoot "1" *-- "1" Prioridad : prioridad
 OrdenRoot ..> PoliticaReintentos : programarReintento(politica, error, ahora)
 OrdenRoot ..> DetalleError : ultimoError
 OrdenRoot ..> ConcurrenciaOptimistaException : el adaptador la lanza\nsi la version no coincide

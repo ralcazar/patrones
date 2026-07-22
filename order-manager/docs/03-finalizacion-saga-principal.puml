@@ -37,11 +37,11 @@ group Transacción: checkpoint del paso (crea agregados hijos + finaliza el prop
   ORQ -> SAGA ++ : nuevaSaga.contextosArranque()
   return [ArranqueSecundaria1(externalId, refPaso1),\nArranqueSecundaria2(externalId, refPaso5),\nArranqueSecundaria3(externalId, refPaso7)]
 
-  loop por cada ContextoArranque (x3), en crearHijas(contextos, ahora)
+  loop por cada ContextoArranque (x3), en crearHijas(contextos, orden.prioridad(), ahora)
     ORQ -> HIJAS ++ : SagaSecundariaN.crear(OrdenId.nuevo(), contexto)
     return sagaHija (estado INICIAL)
-    ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, ahora)
-    return ordenHija (intentos=0, proximoReintentoEn=ahora, version=0)
+    ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, orden.prioridad(), ahora)
+    return ordenHija (intentos=0, proximoReintentoEn=ahora,\nprioridad=orden.prioridad(), version=0)
     ORQ -> REPO ++ : crear(ordenHija)
     REPO -> REPO : procesos.save(entidadProcesoDe(sagaHija))
     REPO -> REPO : ordenes.save(entidadOrdenDe(ordenHija))
@@ -61,8 +61,10 @@ deactivate ORQ
 note over ORQ, REPO
   Un único commit: la principal queda completada (completadaEn = ahora) y las 3 hijas
   quedan creadas con proximoReintentoEn = ahora (candidatas
-  inmediatas). Es la excepción aceptada a "un agregado por
-  transacción": aquí se MODIFICA la principal y se CREAN las 3
+  inmediatas), HEREDANDO la prioridad de la principal
+  (orden.prioridad(), sin releer datos_negocio). Es la excepción
+  aceptada a "un agregado por transacción": aquí se MODIFICA la
+  principal y se CREAN las 3
   hijas, cada una agregado propio. No se publica ningún evento.
 end note
 

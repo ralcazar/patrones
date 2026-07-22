@@ -35,7 +35,9 @@ public interface RepositorioOrden {
     /**
      * Candidatas para el planificador: {@code proximo_reintento_en <= ahora AND
      * resultado IS NULL AND (token_trabajador IS NULL OR token_expira_en <= ahora)},
-     * hasta {@code limite} filas.
+     * hasta {@code limite} filas. Ordenadas por prioridad DESC, luego
+     * creada_en ASC (bookkeeping de infraestructura, no modelado en el
+     * dominio), luego proximo_reintento_en ASC.
      */
     List<CandidataOrden> buscarEjecutables(Instant ahora, int limite);
 

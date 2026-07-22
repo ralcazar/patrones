@@ -13,6 +13,7 @@ CREATE TABLE orden (
     tipo                 VARCHAR2(20)   NOT NULL,
     external_id          VARCHAR2(36)   NOT NULL,
     estado               VARCHAR2(40)   NOT NULL,
+    prioridad            NUMBER(10)     NOT NULL,
     intentos             NUMBER(10)     NOT NULL,
     proximo_reintento_en TIMESTAMP(6)   NOT NULL,
     token_trabajador     VARCHAR2(36),
@@ -33,11 +34,16 @@ CREATE TABLE orden (
 CREATE INDEX idx_orden_external_id ON orden (external_id);
 
 -- Candidatas del planificador: proximo_reintento_en <= :ahora AND completada_en
--- IS NULL AND (token_trabajador IS NULL OR token_expira_en <= :ahora).
+-- IS NULL AND (token_trabajador IS NULL OR token_expira_en <= :ahora), ordenadas
+-- por prioridad DESC, creada_en ASC, proximo_reintento_en ASC.
 -- Oracle no tiene índices parciales; el índice funcional deja NULL las filas
 -- ya finalizadas (completada_en NOT NULL), que así no ocupan sitio en el índice.
 CREATE INDEX idx_orden_candidatas
-    ON orden (CASE WHEN completada_en IS NULL THEN proximo_reintento_en END);
+    ON orden (
+        CASE WHEN completada_en IS NULL THEN prioridad END DESC,
+        CASE WHEN completada_en IS NULL THEN creada_en END,
+        CASE WHEN completada_en IS NULL THEN proximo_reintento_en END
+    );
 
 -- Bandeja de trabajo / tickets pendientes: intentos >= 8.
 CREATE INDEX idx_orden_intentos ON orden (intentos);

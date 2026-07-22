@@ -35,7 +35,7 @@ public interface OrdenJpaRepository extends JpaRepository<OrdenEntity, UUID> {
             WHERE o.proximo_reintento_en <= :ahora
               AND o.completada_en IS NULL
               AND (o.token_trabajador IS NULL OR o.token_expira_en <= :ahora)
-            ORDER BY o.proximo_reintento_en
+            ORDER BY o.prioridad DESC, o.creada_en, o.proximo_reintento_en
             FETCH FIRST :limite ROWS ONLY
             """, nativeQuery = true)
     List<CandidataFila> buscarCandidatas(@Param("ahora") Instant ahora, @Param("limite") int limite);

@@ -61,8 +61,9 @@ else no existe todavía
       INICIAR -> INICIAR : sagaId = OrdenId.nuevo()
       INICIAR -> SAGA ++ : SagaPrincipal.crear(sagaId, externalId, datosNegocioId)
       return saga (estado = INICIAL)
-      INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, Instant.now())
-      return orden (intentos=0, proximoReintentoEn=ahora,\ntoken=null, completadaEn=null, version=0)
+      INICIAR -> INICIAR : prioridad = respuesta.datoNegocio3().prioridad()\n-- ORIGEN2(30) > ORIGEN1(20) > ORIGEN3(10) > resto: Prioridad.normal()
+      INICIAR -> ORDEN ++ : OrdenRoot.nueva(saga, prioridad, Instant.now())
+      return orden (intentos=0, proximoReintentoEn=ahora,\nprioridad=prioridad, token=null, completadaEn=null, version=0)
       INICIAR -> REPO ++ : crear(orden)
       REPO -> REPO : ordenes.save(entidadOrdenDe(orden))\n-- orden (negocio+ejecución fusionados, fase 2) ya\nexiste antes de insertar la satélite (FK)
       REPO -> REPO : mapeadorDe(PRINCIPAL).guardarContexto(saga)\n-- upsert en proceso_saga_principal, ver 23
@@ -113,7 +114,7 @@ end
 loop bucle pull: mientras continuarSiguiente() devuelva true
   TRAB -> CONT ++ : continuarSiguiente()
   CONT -> REPO ++ : buscarEjecutables(Instant.now(), lote)
-  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND completada_en IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nFETCH FIRST :lote ROWS ONLY
+  REPO -> REPO : SELECT ... WHERE proximo_reintento_en <= :ahora\nAND completada_en IS NULL AND (token_trabajador IS NULL\nOR token_expira_en <= :ahora)\nORDER BY prioridad DESC, creada_en, proximo_reintento_en\nFETCH FIRST :lote ROWS ONLY
   return [CandidataOrden(ordenId, TipoOrden("PRINCIPAL")), ...]
   CONT -> CONT : reclamarYEjecutar(candidata.ordenId(), candidata.tipo())
   return true (una procesada; false cuando no queda trabajo\ny el worker muere)

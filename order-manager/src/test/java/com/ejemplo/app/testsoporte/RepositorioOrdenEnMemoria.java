@@ -62,11 +62,16 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
 
     @Override
     public List<CandidataOrden> buscarEjecutables(Instant ahora, int limite) {
+        // El desempate por creada_en es de INFRAESTRUCTURA (bookkeeping, no modelado en el
+        // dominio OrdenRoot): este doble solo puede reflejar prioridad + proximoReintentoEn;
+        // el orden real por creada_en (3er criterio) se verifica en integrationTest contra H2.
         return almacen.values().stream()
                 .filter(OrdenRoot::estaViva)
                 .filter(o -> !o.proximoReintentoEn().isAfter(ahora))
                 .filter(o -> !o.tieneTokenVigente(ahora))
-                .sorted((a, b) -> a.proximoReintentoEn().compareTo(b.proximoReintentoEn()))
+                .sorted(java.util.Comparator
+                        .comparingInt((OrdenRoot o) -> o.prioridad().peso()).reversed()
+                        .thenComparing(OrdenRoot::proximoReintentoEn))
                 .limit(limite)
                 .map(o -> new CandidataOrden(o.id(), o.tipo()))
                 .toList();
@@ -120,13 +125,18 @@ public final class RepositorioOrdenEnMemoria implements RepositorioOrden {
     }
 
     private static OrdenRoot incrementarVersion(OrdenRoot orden) {
-        return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.intentos(), orden.proximoReintentoEn(),
+        // rehidratar de 10 args PRESERVANDO la prioridad (orden.prioridad()): usar la
+        // sobrecarga corta la resetearía a Prioridad.normal() en cada guardar, rompiendo el orden.
+        return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.prioridad(), orden.intentos(),
+                orden.proximoReintentoEn(),
                 orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
                 orden.ultimoError(), orden.version() + 1);
     }
 
     private static OrdenRoot copiar(OrdenRoot orden) {
-        return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.intentos(), orden.proximoReintentoEn(),
+        // Igual que incrementarVersion: PRESERVA la prioridad al copiar (2º argumento).
+        return OrdenRoot.rehidratar(copiarProceso(orden.proceso()), orden.prioridad(), orden.intentos(),
+                orden.proximoReintentoEn(),
                 orden.tokenTrabajador(), orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
                 orden.ultimoError(), orden.version());
     }

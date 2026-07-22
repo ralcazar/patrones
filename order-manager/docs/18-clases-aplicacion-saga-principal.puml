@@ -19,7 +19,7 @@ class ServicioSagaPrincipal <<@Service>> {
   +aplicarPasoNormal(orden, saga, resultado) : SenalPaso  «@Transactional»
   +aplicarCancelacion(orden, saga) : SenalPaso  «@Transactional»
   +aplicarCompensacion(orden, saga) : SenalPaso  «@Transactional»
-  -crearHijas(contextos, ahora)  «OrdenRoot.nueva(SagaSecundariaN.crear(...))\n+ repo.crear(hija), una vez por ContextoArranque»
+  -crearHijas(contextos, prioridad, ahora)  «OrdenRoot.nueva(SagaSecundariaN.crear(...),\nprioridad) + repo.crear(hija), una vez por ContextoArranque;\nprioridad = orden.prioridad() de la principal, heredada sin\nreleer datos_negocio»
   ~ejecutarComando(ComandoPaso) : ResultadoPasoPrincipal  «switch: rutea al PuertoPasoN;\nPASO1/2/7 cargan antes DatosNegocio (y PASO2 sus\ndocumentos) vía repoDatos, fuera de tx; CompensarPaso1/2\n-> IllegalStateException (van por ejecutarCompensacion)»
 }
 note right of ServicioSagaPrincipal

@@ -30,6 +30,7 @@ import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.MotivoFallo;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.PoliticaReintentos;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.ordermanager.dominio.ProcesoFalso;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 
@@ -59,6 +60,13 @@ class ServicioContinuarOrdenTest {
         var id = OrdenId.nuevo();
         var proceso = ProcesoFalso.crear(id, ExternalId.de(UUID.randomUUID().toString()));
         repo.crear(OrdenRoot.nueva(proceso, Instant.now()));
+        return id;
+    }
+
+    private OrdenId crearOrdenFalsaConPrioridad(Prioridad prioridad) {
+        var id = OrdenId.nuevo();
+        var proceso = ProcesoFalso.crear(id, ExternalId.de(UUID.randomUUID().toString()));
+        repo.crear(OrdenRoot.nueva(proceso, prioridad, Instant.now()));
         return id;
     }
 
@@ -217,6 +225,22 @@ class ServicioContinuarOrdenTest {
 
         assertThat(servicio(procesador, repoConCarrera).continuarSiguiente()).isFalse();
         assertThat(invocaciones.get()).isZero();
+    }
+
+    @Test
+    void continuarSiguiente_conVariasCandidatas_cogePrimeroLaDeMayorPrioridad() {
+        var idNormal = crearOrdenFalsa();
+        var idAlta = crearOrdenFalsaConPrioridad(new Prioridad(30));
+        var procesadas = new ArrayList<OrdenId>();
+        var procesador = new ProcesadorOrdenFalso(ProcesoFalso.TIPO, orden -> {
+            procesadas.add(orden.id());
+            return new SenalPaso.Finalizada();
+        });
+
+        assertThat(servicio(procesador).continuarSiguiente()).isTrue();
+
+        assertThat(procesadas).containsExactly(idAlta);
+        assertThat(idNormal).isNotIn(procesadas); // sigue pendiente: se cogerá en la siguiente pasada
     }
 
     @Test

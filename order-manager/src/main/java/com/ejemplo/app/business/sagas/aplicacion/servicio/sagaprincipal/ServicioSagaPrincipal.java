@@ -24,6 +24,7 @@ import com.ejemplo.app.business.ordermanager.dominio.ComandoPaso;
 import com.ejemplo.app.business.sagas.dominio.comun.ContextoArranque;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.ordermanager.dominio.TipoOrden;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.ComandoPasoPrincipal;
 import com.ejemplo.app.business.sagas.dominio.sagaprincipal.EstadoSagaPrincipal;
@@ -121,7 +122,7 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
         orden.reemplazarProceso(nuevaSaga);
         if (nuevaSaga.terminada()) {
             var ahora = Instant.now();
-            crearHijas(nuevaSaga.contextosArranque(), ahora);
+            crearHijas(nuevaSaga.contextosArranque(), orden.prioridad(), ahora);
             orden.finalizar(ahora);
             repo.guardar(orden);
             return new SenalPaso.Finalizada();
@@ -159,15 +160,15 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
         return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }
 
-    private void crearHijas(List<ContextoArranque> contextos, Instant ahora) {
+    private void crearHijas(List<ContextoArranque> contextos, Prioridad prioridad, Instant ahora) {
         for (var contexto : contextos) {
             OrdenRoot hija = switch (contexto) {
                 case ContextoArranque.ArranqueSecundaria1 c ->
-                        OrdenRoot.nueva(SagaSecundaria1.crear(OrdenId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria1.crear(OrdenId.nuevo(), c), prioridad, ahora);
                 case ContextoArranque.ArranqueSecundaria2 c ->
-                        OrdenRoot.nueva(SagaSecundaria2.crear(OrdenId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria2.crear(OrdenId.nuevo(), c), prioridad, ahora);
                 case ContextoArranque.ArranqueSecundaria3 c ->
-                        OrdenRoot.nueva(SagaSecundaria3.crear(OrdenId.nuevo(), c), ahora);
+                        OrdenRoot.nueva(SagaSecundaria3.crear(OrdenId.nuevo(), c), prioridad, ahora);
             };
             repo.crear(hija);
         }

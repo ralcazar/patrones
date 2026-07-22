@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.entrada.CasoUsoIniciarTramitacion.ComandoIniciarTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoBusquedaTramitacion;
 import com.ejemplo.app.business.sagas.aplicacion.puerto.salida.PuertoDatosNegocio;
@@ -61,8 +62,12 @@ class ServicioIniciarTramitacionTest {
     }
 
     private static RespuestaDatosNegocio respuesta() {
+        return respuesta(new DatoNegocio3("dato"));
+    }
+
+    private static RespuestaDatosNegocio respuesta(DatoNegocio3 datoNegocio3) {
         return new RespuestaDatosNegocio(new DatoNegocio1(1), new DatoNegocio2(LocalDate.of(2026, 1, 1)),
-                new DatoNegocio3("dato"), List.of(new DocumentoNegocio("f.pdf", "application/pdf", new byte[] {1})));
+                datoNegocio3, List.of(new DocumentoNegocio("f.pdf", "application/pdf", new byte[] {1})));
     }
 
     @Test
@@ -81,6 +86,19 @@ class ServicioIniciarTramitacionTest {
         assertThat(orden).isNotNull();
         assertThat(((SagaPrincipal) orden.proceso()).estado()).isEqualTo(EstadoSagaPrincipal.INICIAL);
         assertThat(orden.proximoReintentoEn()).isBetween(antes, despues);
+    }
+
+    @Test
+    void iniciar_conDatoNegocio3Origen2_laOrdenPrincipalCreadaLlevaLaPrioridadDerivada() {
+        var externalId = ExternalId.de(UUID.randomUUID().toString());
+        var cmd = new ComandoIniciarTramitacion(externalId);
+        var respuesta = respuesta(new DatoNegocio3("ORIGEN2"));
+        when(puertoDatosNegocio.obtener(externalId)).thenReturn(respuesta);
+
+        var sagaId = servicio.iniciar(cmd);
+
+        var orden = repo.estadoActual(sagaId);
+        assertThat(orden.prioridad()).isEqualTo(new Prioridad(30));
     }
 
     @Test

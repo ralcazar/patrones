@@ -123,6 +123,10 @@ package "puerto.salida (transversales)" {
     buscarEjecutables: proximo_reintento_en<=ahora AND resultado
     IS NULL AND (token_trabajador IS NULL OR token_expira_en<=ahora)
     — el segundo OR reclama tokens de pods muertos al vencer el lease.
+    Ordenadas por prioridad DESC (VO neutro OrdenRoot.prioridad, ver
+    14: el motor ordena por él sin saber quién lo fija), luego
+    creada_en ASC (bookkeeping de infraestructura, no en el
+    dominio), luego proximo_reintento_en ASC.
     hayEjecutables: MISMO predicado, sin cargar filas (EXISTS
     barato para que el planificador decida si despierta workers).
     externalIdsFinalizadosAntesDe/purgarPorExternalIds: purga POR

@@ -33,7 +33,7 @@ class AdaptadorBusquedaTramitacionTest {
         var externalId = ExternalId.de(UUID.randomUUID().toString());
         var ordenId = OrdenId.nuevo();
         var ahora = Instant.now();
-        var entity = new OrdenEntity(ordenId.valor(), "PRINCIPAL", externalId.valor().toString(), "INICIAL",
+        var entity = new OrdenEntity(ordenId.valor(), "PRINCIPAL", externalId.valor().toString(), "INICIAL", 0,
                 List.of(), 0, ahora, null, null, null, null, null, null, 0L);
         when(repo.findByExternalIdAndTipo(externalId.valor().toString(), SagaPrincipal.TIPO.valor()))
                 .thenReturn(Optional.of(entity));

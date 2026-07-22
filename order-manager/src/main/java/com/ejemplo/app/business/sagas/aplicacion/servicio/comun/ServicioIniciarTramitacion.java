@@ -91,7 +91,8 @@ public class ServicioIniciarTramitacion implements CasoUsoIniciarTramitacion {
         repoDatos.crear(datosNegocio, respuesta.documentos());
         var sagaId = OrdenId.nuevo();
         var saga = SagaPrincipal.crear(sagaId, externalId, datosNegocioId);
-        repo.crear(OrdenRoot.nueva(saga, Instant.now()));
+        var prioridad = respuesta.datoNegocio3().prioridad();
+        repo.crear(OrdenRoot.nueva(saga, prioridad, Instant.now()));
         return sagaId;
     }
 }

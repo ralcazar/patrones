@@ -132,6 +132,7 @@ package "persistencia" {
   class OrdenEntity <<@Entity orden>> {
     @Id ordenId : UUID  «@JdbcTypeCode(SqlTypes.CHAR)\nsobre VARCHAR2(36), sin tocar el DDL»
     tipo / externalId / estado : String  «negocio (FSM), fusionado\ndesde proceso en la fase 2»
+    prioridad : int  «espejo de OrdenRoot.prioridad().peso(),\nver 14; ordena buscarCandidatas»
     auditoria : List<AuditoriaEntity>  «@ElementCollection\ntabla proceso_auditoria»
     intentos : int
     proximoReintentoEn : Instant
@@ -151,7 +152,8 @@ package "persistencia" {
     Tablas Oracle: DDL manual en order-manager/db/ (orden.sql,
     proceso_auditoria.sql — un DBA lo aplica a mano, sin Flyway ni
     ddl-auto: none). orden (orden_id PK; negocio: tipo, external_id,
-    estado; ejecución: intentos, proximo_reintento_en,
+    estado; prioridad NUMBER(10) NOT NULL — metadato de planificación,
+    ver 14; ejecución: intentos, proximo_reintento_en,
     token_trabajador, token_expira_en, ticket_abierto_en,
     completada_en, ultimo_error_tipo, ultimo_error_mensaje, version,
     creada_en, actualizada_en) — FUSIÓN de fase 2 de lo que antes eran
@@ -160,7 +162,9 @@ package "persistencia" {
     solo en uno bajo READ_COMMITTED. El contexto propio de cada tipo
     sigue en su tabla satélite, p. ej. proceso_saga_principal (ver 24
     y 26), ahora FK a orden. Sin índices parciales en Oracle:
-    idx_orden_candidatas es funcional sobre CASE WHEN completada_en
+    idx_orden_candidatas es funcional COMPUESTO sobre CASE WHEN
+    completada_en IS NULL THEN prioridad END DESC, CASE WHEN
+    completada_en IS NULL THEN creada_en END, CASE WHEN completada_en
     IS NULL THEN proximo_reintento_en END; idx_orden_intentos indexa
     la bandeja de trabajo/tickets; idx_orden_external_id (antes
     idx_proceso_external_id) sirve la idempotencia de
@@ -170,10 +174,12 @@ package "persistencia" {
   note right of OrdenJpa
     buscarCandidatas (SQL nativo): proximo_reintento_en <= :ahora
     AND completada_en IS NULL AND (token_trabajador IS NULL OR
-    token_expira_en <= :ahora) ORDER BY proximo_reintento_en
-    FETCH FIRST :limite ROWS ONLY. existeCandidata: MISMO predicado
-    (comparten el índice funcional), COUNT(*) con ROWNUM = 1 (0 o 1),
-    sin traer filas. buscarTicketsPendientes: intentos >= 8 AND
+    token_expira_en <= :ahora) ORDER BY prioridad DESC, creada_en,
+    proximo_reintento_en FETCH FIRST :limite ROWS ONLY (usa
+    idx_orden_candidatas, ver nota de OrdenEntity). existeCandidata:
+    MISMO predicado WHERE (comparten el índice funcional), COUNT(*)
+    con ROWNUM = 1 (0 o 1), sin traer filas ni ORDER BY.
+    buscarTicketsPendientes: intentos >= 8 AND
     ticket_abierto_en IS NULL AND completada_en IS NULL.
     externalIdsFinalizadosAntesDe (GROUP BY external_id): HAVING
     COUNT(CASE WHEN completada_en IS NULL THEN 1 END) = 0 AND

@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import com.ejemplo.app.business.ordermanager.dominio.ExternalId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenId;
 import com.ejemplo.app.business.ordermanager.dominio.OrdenRoot;
+import com.ejemplo.app.business.ordermanager.aplicacion.puerto.salida.RepositorioOrden.CandidataOrden;
+import com.ejemplo.app.business.ordermanager.dominio.Prioridad;
 import com.ejemplo.app.business.ordermanager.dominio.ProcesoFalso;
 
 /**
@@ -91,6 +93,26 @@ class RepositorioOrdenEnMemoriaTest {
 
         assertThat(borradas).isEqualTo(2);
         assertThat(repo.todas()).extracting(OrdenRoot::id).containsExactly(idConservada);
+    }
+
+    @Test
+    void buscarEjecutables_ordenaPorPrioridadDescYLuegoPorProximoReintentoEnAsc() {
+        var ahora = Instant.now();
+        var idBajaPrioridadTemprana = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(ProcesoFalso.crear(idBajaPrioridadTemprana, ExternalId.de(UUID.randomUUID().toString())),
+                Prioridad.normal(), 0, ahora.minusSeconds(10), null, null, null, null, null, 0L));
+        var idAltaPrioridadTardia = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(ProcesoFalso.crear(idAltaPrioridadTardia, ExternalId.de(UUID.randomUUID().toString())),
+                new Prioridad(30), 0, ahora.minusSeconds(1), null, null, null, null, null, 0L));
+        var idMismaAltaPrioridadMasTemprana = OrdenId.nuevo();
+        repo.crear(OrdenRoot.rehidratar(
+                ProcesoFalso.crear(idMismaAltaPrioridadMasTemprana, ExternalId.de(UUID.randomUUID().toString())),
+                new Prioridad(30), 0, ahora.minusSeconds(5), null, null, null, null, null, 0L));
+
+        var candidatas = repo.buscarEjecutables(ahora, 10);
+
+        assertThat(candidatas).extracting(CandidataOrden::ordenId)
+                .containsExactly(idMismaAltaPrioridadMasTemprana, idAltaPrioridadTardia, idBajaPrioridadTemprana);
     }
 
     @Test

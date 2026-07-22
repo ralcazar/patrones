@@ -34,7 +34,16 @@ package "business.sagas.dominio.datosnegocio" {
   }
   class DatoNegocio3 <<@ValueObject, record>> {
     valor : String
+    +prioridad() : Prioridad  «ORIGEN2(30) > ORIGEN1(20) > ORIGEN3(10),\notro valor -> Prioridad.normal()»
   }
+  note bottom of DatoNegocio3
+    ÚNICO lugar del lado sagas donde vive el saber ORIGEN->peso: el
+    motor (ver 14) solo conoce Prioridad como VO neutro, sin saber
+    qué origen le corresponde. Lo consume ServicioIniciarTramitacion
+    al crear la orden principal (ver 01) y ServicioSagaPrincipal la
+    hereda de la principal a las 3 hijas (orden.prioridad(), sin
+    releer datos_negocio — ver 03/18).
+  end note
   class DocumentoNegocio <<@Entity, record>> {
     nombre : String
     mimeType : String
@@ -67,6 +76,9 @@ package "business.sagas.dominio.datosnegocio" {
 
 class "ExternalId\n(business.ordermanager.dominio — ver 14)" as ExternalIdRef <<@ValueObject>>
 DatosNegocio o-- ExternalIdRef : externalId
+
+class "Prioridad\n(business.ordermanager.dominio — ver 14)" as PrioridadRef <<@ValueObject>>
+DatoNegocio3 ..> PrioridadRef : prioridad()
 
 package "business.sagas.aplicacion.puerto.salida" {
   interface PuertoDatosNegocio {
