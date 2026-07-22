@@ -73,7 +73,7 @@ class ServicioCancelarTramitacionTest {
         saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso6(new RefPaso6("ref6")));
         saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso7(new RefPaso7("ref7")));
         saga = saga.aplicarYAvanzar(new ResultadoPasoPrincipal.ResultadoPaso8(new RefPaso8("ref8")));
-        orden.reemplazarProceso(saga);
+        orden.reemplazarProceso(saga, Instant.now());
         repo.guardar(orden);
 
         assertThatThrownBy(() -> servicio.cancelarPrincipal(id, new UsuarioSoporte("ana"), "motivo"))

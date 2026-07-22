@@ -57,7 +57,7 @@ deactivate CONT
 
 note over ORDEN, POL
   La escalera nunca se agota: consumida (intentos >= 8) se sigue
-  reintentando cada 180 min indefinidamente. resetearIntentos()
+  reintentando cada 180 min indefinidamente. resetearIntentos(ahora)
   (paso OK) borra ticketAbiertoEn y ultimoError: un atasco
   posterior abre un ticket NUEVO, no reutiliza el anterior.
 end note

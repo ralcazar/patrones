@@ -26,11 +26,12 @@ end note
 activate ORQ
 
 group Transacción: checkpoint del paso (crea agregados hijos + finaliza el propio)
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado en\nreemplazarProceso, crearHijas y finalizar]
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(ResultadoPaso8(ref))
   SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar():\nPASO7_HECHO -> TERMINADA
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
   ORQ -> SAGA ++ : nuevaSaga.terminada()
   return true
 
@@ -41,7 +42,7 @@ group Transacción: checkpoint del paso (crea agregados hijos + finaliza el prop
     ORQ -> HIJAS ++ : SagaSecundariaN.crear(OrdenId.nuevo(), contexto)
     return sagaHija (estado INICIAL)
     ORQ -> ORDEN ++ : OrdenRoot.nueva(sagaHija, orden.prioridad(), ahora)
-    return ordenHija (intentos=0, proximoReintentoEn=ahora,\nprioridad=orden.prioridad(), version=0)
+    return ordenHija (intentos=0, proximoReintentoEn=ahora,\nprioridad=orden.prioridad(), version=0,\ncreadaEn=ahora, actualizadaEn=ahora)
     ORQ -> REPO ++ : crear(ordenHija)
     REPO -> REPO : procesos.save(entidadProcesoDe(sagaHija))
     REPO -> REPO : ordenes.save(entidadOrdenDe(ordenHija))
@@ -49,7 +50,7 @@ group Transacción: checkpoint del paso (crea agregados hijos + finaliza el prop
   end
 
   ORQ -> ORDEN ++ : finalizar(ahora)
-  ORDEN -> ORDEN : completadaEn = ahora; liberarToken()
+  ORDEN -> ORDEN : completadaEn = ahora; liberarToken();\nactualizadaEn = ahora
   return
   ORQ -> REPO ++ : guardar(orden)
   return

@@ -121,10 +121,10 @@ class FronteraTransaccionalIntegrationTest {
         var copiaA = repo.cargar(id); // dos instancias independientes de la MISMA fila,
         var copiaB = repo.cargar(id); // como dos pods que cargaron antes de que uno gane
 
-        copiaA.resetearIntentos();
+        copiaA.resetearIntentos(Instant.now());
         repo.guardar(copiaA); // version N -> N+1: primer escritor gana
 
-        copiaB.resetearIntentos();
+        copiaB.resetearIntentos(Instant.now());
         assertThatThrownBy(() -> repo.guardar(copiaB))
                 .isInstanceOf(ConcurrenciaOptimistaException.class);
     }

@@ -127,7 +127,7 @@ class ServicioSagaSecundaria2Test {
         // El consumer de Kafka resuelve la saga directamente y despierta la orden (ServicioRegistrarRespuestaSecundaria2).
         var orden = repo.cargar(id);
         var saga = (SagaSecundaria2) orden.proceso();
-        orden.reemplazarProceso(saga.respuestaRecibida(new RefRespuesta("resp-kafka")));
+        orden.reemplazarProceso(saga.respuestaRecibida(new RefRespuesta("resp-kafka")), Instant.now());
         orden.despertar(Instant.now());
         repo.guardar(orden);
 

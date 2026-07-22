@@ -77,7 +77,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                 ordenEntity.getIntentos(),
                 ordenEntity.getProximoReintentoEn(), uuidONull(ordenEntity.getTokenTrabajador()),
                 ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
-                ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
+                ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion(),
+                ordenEntity.getCreadaEn(), ordenEntity.getActualizadaEn());
     }
 
     @Override
@@ -89,7 +90,8 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
             return OrdenRoot.rehidratar(orden.proceso(), orden.prioridad(), ordenEntity.getIntentos(),
                     ordenEntity.getProximoReintentoEn(),
                     orden.tokenTrabajador(), ordenEntity.getTokenExpiraEn(), ordenEntity.getTicketAbiertoEn(),
-                    ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion());
+                    ordenEntity.getCompletadaEn(), detalleErrorDesde(ordenEntity), ordenEntity.getVersion(),
+                    orden.creadaEn(), orden.actualizadaEn());
         } catch (OptimisticLockingFailureException e) {
             throw new ConcurrenciaOptimistaException(orden.id(), orden.version());
         }
@@ -154,7 +156,7 @@ public class AdaptadorRepositorioOrden implements RepositorioOrden {
                 orden.tokenTrabajador() == null ? null : orden.tokenTrabajador().toString(),
                 orden.tokenExpiraEn(), orden.ticketAbiertoEn(), orden.completadaEn(),
                 error == null ? null : error.tipo(), error == null ? null : error.mensaje(),
-                orden.version());
+                orden.version(), orden.creadaEn(), orden.actualizadaEn());
     }
 
     private static DetalleError detalleErrorDesde(OrdenEntity entity) {

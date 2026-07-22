@@ -16,39 +16,49 @@ class OrdenRoot <<@AggregateRoot>> {
   -completadaEn : Instant
   -ultimoError : DetalleError
   -version : long  «ÚNICA del agregado»
+  -creadaEn : Instant  «inmutable, fijada al crear con\nel ahora de la factoría»
+  -actualizadaEn : Instant  «la fija el propio agregado en\nCADA mutación, con el ahora de la operación»
   +{static} nueva(proceso, prioridad, ahora) : OrdenRoot
   +{static} nueva(proceso, ahora) : OrdenRoot  «sobrecarga, prioridad=Prioridad.normal()»
-  +{static} rehidratar(proceso, prioridad, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn,\nultimoError, version)
+  +{static} rehidratar(proceso, prioridad, intentos, proximoReintentoEn,\ntoken, tokenExpiraEn, ticketAbiertoEn, completadaEn,\nultimoError, version, creadaEn, actualizadaEn)
   +{static} rehidratar(proceso, intentos, ...)  «sobrecarga, prioridad=Prioridad.normal()»
   +asignarToken(token, lease, ahora)
   +renovarLease(lease, ahora)
   +tieneTokenVigente(ahora) : boolean
   +liberarToken()
-  +resetearIntentos()  «intentos=0, ticketAbiertoEn=null Y ultimoError=null»
+  +resetearIntentos(ahora)  «intentos=0, ticketAbiertoEn=null Y ultimoError=null»
   +marcarTicketAbierto(ahora)
   +despertar(ahora)  «proximoReintentoEn=ahora, libera token»
   +aparcar(ventana, ahora)  «proximoReintentoEn=ahora+ventana»
   +programarReintento(PoliticaReintentos, DetalleError, ahora)  «intentos++; ultimoError=error»
-  +finalizar(ahora)  «resetearIntentos() + completadaEn=ahora, libera token»
+  +finalizar(ahora)  «resetearIntentos(ahora) + completadaEn=ahora, libera token»
   +estaViva() : boolean  «completadaEn == null»
   +turnoVencido(ahora) : boolean  «!proximoReintentoEn.isAfter(ahora),\nespejo de buscarCandidatas, ver 17»
   +proceso() : Proceso<?>
-  +reemplazarProceso(Proceso<?> nuevo)  «ÚNICO punto de sustitución\ndel campo proceso»
+  +reemplazarProceso(Proceso<?> nuevo, ahora)  «ÚNICO punto de sustitución\ndel campo proceso»
   +id() : OrdenId
   +tipo() : TipoOrden  «delega en proceso.tipo()»
   +prioridad() : Prioridad
+  +creadaEn() : Instant
+  +actualizadaEn() : Instant
 }
 note right of OrdenRoot
   Reloj determinista: nunca Instant.now(); todo método que
-  depende del tiempo recibe Instant ahora como parámetro,
-  aportado por la capa de aplicación. Una sola version protege
-  ejecución (intentos/lease/ticket/completadaEn) + negocio (proceso):
-  varios flujos mutan ambos en la misma tx (consumer Kafka,
-  soporte, arranque de secundarias), así que separarlos en dos
-  agregados violaría "un agregado por transacción". proceso ya NO
-  es final: cada transición de Proceso (VO inmutable, ver abajo)
-  devuelve una instancia nueva, y reemplazarProceso(nueva) es el
-  único método que la sustituye en el campo.
+  depende del tiempo recibe Instant ahora como ÚLTIMO parámetro,
+  aportado por la capa de aplicación (que hoistea un único
+  var ahora = Instant.now() por operación y lo reutiliza en todas
+  las mutaciones de esa transacción, ver 02-08). Una sola version
+  protege ejecución (intentos/lease/ticket/completadaEn) + negocio
+  (proceso): varios flujos mutan ambos en la misma tx (consumer
+  Kafka, soporte, arranque de secundarias), así que separarlos en
+  dos agregados violaría "un agregado por transacción". proceso ya
+  NO es final: cada transición de Proceso (VO inmutable, ver abajo)
+  devuelve una instancia nueva, y reemplazarProceso(nueva, ahora) es
+  el único método que la sustituye en el campo. creadaEn/actualizadaEn
+  las MODELA el propio agregado (ya no un @PrePersist/@PreUpdate de
+  infraestructura, ver 23): creadaEn se fija una vez, al crear
+  (nueva/rehidratar); actualizadaEn la fija CADA mutador con el ahora
+  de su operación.
 end note
 
 abstract class "Proceso<E extends Enum<E>>" as Proceso <<@ValueObject>> {
@@ -72,7 +82,7 @@ note right of Proceso
   marcarPasoActualOkManual, y las específicas de cada saga —
   cancelar, compensacionCompletada, solicitudEnviada,
   respuestaRecibida, ver 15/16) devuelve una
-  INSTANCIA NUEVA en vez de mutar; OrdenRoot.reemplazarProceso(nueva)
+  INSTANCIA NUEVA en vez de mutar; OrdenRoot.reemplazarProceso(nueva, ahora)
   es quien sustituye el valor tras cada transición (ver 02-08).
   Clase neutra del motor: no conoce "saga". Sus subclases
   concretas (SagaPrincipal, SagaSecundariaN) viven en

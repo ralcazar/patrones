@@ -42,12 +42,13 @@ ORQ -> PSIM ++ : ejecutar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria3.Ejecutada(refEjecucion)
 ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción única: checkpoint del paso
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y finalizar]
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Ejecutada(ref))
   SAGA -> SAGA : refEjecucion = ref; estado = TERMINADA
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
-  ORQ -> ORDEN ++ : finalizar(Instant.now())
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
+  ORQ -> ORDEN ++ : finalizar(ahora)
   return
   ORQ -> REPO ++ : guardar(orden)
   return

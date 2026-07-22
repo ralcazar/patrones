@@ -56,8 +56,9 @@ public class ServicioRegistrarRespuestaSecundaria2 implements CasoUsoRegistrarRe
             return;
         }
         var saga = (SagaSecundaria2) orden.proceso();
-        orden.reemplazarProceso(saga.respuestaRecibida(ref));
-        orden.despertar(Instant.now());
+        var ahora = Instant.now();
+        orden.reemplazarProceso(saga.respuestaRecibida(ref), ahora);
+        orden.despertar(ahora);
         repo.guardar(orden);
     }
 }

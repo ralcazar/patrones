@@ -87,8 +87,9 @@ public class ServicioSagaSecundaria2 implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicarSolicitud(OrdenRoot orden, SagaSecundaria2 saga) {
-        orden.reemplazarProceso(saga.solicitudEnviada());
-        orden.aparcar(VENTANA_ESPERA, Instant.now());
+        var ahora = Instant.now();
+        orden.reemplazarProceso(saga.solicitudEnviada(), ahora);
+        orden.aparcar(VENTANA_ESPERA, ahora);
         repo.guardar(orden);
         return new SenalPaso.Aparcar(VENTANA_ESPERA);
     }
@@ -107,8 +108,9 @@ public class ServicioSagaSecundaria2 implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicarConciliacionDisponible(OrdenRoot orden, SagaSecundaria2 saga, RefRespuesta ref) {
-        orden.reemplazarProceso(saga.respuestaRecibida(ref));
-        orden.finalizar(Instant.now());
+        var ahora = Instant.now();
+        orden.reemplazarProceso(saga.respuestaRecibida(ref), ahora);
+        orden.finalizar(ahora);
         repo.guardar(orden);
         return new SenalPaso.Finalizada();
     }

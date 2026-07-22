@@ -23,10 +23,11 @@ note right of ServicioSagaSecundaria1
   self.aplicar(...) -- vía proxy, para que @Transactional no se
   ignore por auto-invocación -- guarda esa misma instancia de
   OrdenRoot sin recargar: SagaSecundaria1 es un VO inmutable (ver
-  16), así que aplicar captura nuevaSaga = saga.aplicarYAvanzar(resultado)
-  y hace orden.reemplazarProceso(nuevaSaga) ANTES de mirar
-  nuevaSaga.terminada() (si terminada() -> finalizar(Instant.now()),
-  si no -> resetearIntentos()+renovarLease()); si otro actor escribió
+  16), así que aplicar hoistea un único var ahora = Instant.now()
+  y captura nuevaSaga = saga.aplicarYAvanzar(resultado)
+  y hace orden.reemplazarProceso(nuevaSaga, ahora) ANTES de mirar
+  nuevaSaga.terminada() (si terminada() -> finalizar(ahora),
+  si no -> resetearIntentos(ahora)+renovarLease(lease, ahora)); si otro actor escribió
   entre medias, guardar falla por version. Sin comprobación de
   estado de compensación (a diferencia de la principal): nunca se
   cancela ni compensa.

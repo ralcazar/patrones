@@ -65,16 +65,17 @@ ORQ -> PSEC ++ : iniciar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria1.Iniciada(refInicio)
 ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción: checkpoint del paso
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen las 3 mutaciones de abajo]
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Iniciada(refInicio))
   SAGA -> SAGA : refInicio = ref; avanzar():\nINICIAL -> INICIO_HECHO
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
   ORQ -> SAGA ++ : nuevaSaga.terminada()
   return false
-  ORQ -> ORDEN ++ : resetearIntentos()
+  ORQ -> ORDEN ++ : resetearIntentos(ahora)
   return
-  ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+  ORQ -> ORDEN ++ : renovarLease(lease, ahora)
   return
   ORQ -> REPO ++ : guardar(orden)
   return
@@ -95,14 +96,15 @@ ORQ -> PSEC ++ : confirmar(cmd) -- REST fuera de tx
 return ResultadoPasoSecundaria1.Confirmada(refConfirmacion)
 ORQ -> ORQ ++ : self.aplicar(orden, saga, resultado)  -- vía proxy (@Transactional)
 group Transacción única: checkpoint del paso
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y finalizar]
   ORQ -> SAGA ++ : saga.aplicarYAvanzar(Confirmada(ref))
   SAGA -> SAGA : refConfirmacion = ref; avanzar():\nINICIO_HECHO -> TERMINADA
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
   ORQ -> SAGA ++ : nuevaSaga.terminada()
   return true
-  ORQ -> ORDEN ++ : finalizar(Instant.now())
+  ORQ -> ORDEN ++ : finalizar(ahora)
   return
   ORQ -> REPO ++ : guardar(orden)
   return

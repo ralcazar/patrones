@@ -127,6 +127,6 @@ note as NNace
   externalId compartido. Las 3 son VO inmutables (ver 14 y 15):
   cada transición devuelve una instancia nueva; el servicio de
   aplicación correspondiente (ver 19-21) hace
-  orden.reemplazarProceso(nuevaSaga) antes de guardar.
+  orden.reemplazarProceso(nuevaSaga, ahora) antes de guardar.
 end note
 @enduml

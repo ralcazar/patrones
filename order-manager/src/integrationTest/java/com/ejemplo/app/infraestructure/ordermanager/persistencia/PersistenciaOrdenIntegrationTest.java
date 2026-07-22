@@ -174,10 +174,10 @@ class PersistenciaOrdenIntegrationTest {
         var copiaA = repo.cargar(id);
         var copiaB = repo.cargar(id);
 
-        copiaA.resetearIntentos();
+        copiaA.resetearIntentos(Instant.now());
         repo.guardar(copiaA);
 
-        copiaB.resetearIntentos();
+        copiaB.resetearIntentos(Instant.now());
         assertThatThrownBy(() -> repo.guardar(copiaB)).isInstanceOf(ConcurrenciaOptimistaException.class);
     }
 
@@ -220,7 +220,7 @@ class PersistenciaOrdenIntegrationTest {
 
         var tx = new TransactionTemplate(transactionManager);
         tx.executeWithoutResult(estado -> {
-            copiaObsoleta.resetearIntentos();
+            copiaObsoleta.resetearIntentos(Instant.now());
             // El conflicto sale de guardar() como la excepción de dominio DENTRO de la
             // transacción (donde ServicioContinuarOrden puede distinguirla del fallo de un
             // paso), no como excepción de Spring en el commit de la frontera @Transactional.
@@ -322,36 +322,21 @@ class PersistenciaOrdenIntegrationTest {
         var ahora = Instant.now();
         var idAltaPrioridad = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idAltaPrioridad), new Prioridad(30), 0,
-                ahora.minusSeconds(5), null, null, null, null, null, 0L));
+                ahora.minusSeconds(5), null, null, null, null, null, 0L,
+                ahora, ahora)); // creada_en irrelevante: gana por prioridad
         var idMismaPrioridadMasAntigua = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idMismaPrioridadMasAntigua), new Prioridad(10), 0,
-                ahora.minusSeconds(5), null, null, null, null, null, 0L));
+                ahora.minusSeconds(5), null, null, null, null, null, 0L,
+                ahora.minusSeconds(7200), ahora.minusSeconds(7200)));
         var idMismaPrioridadMasReciente = OrdenId.nuevo();
         repo.crear(OrdenRoot.rehidratar(nuevaSagaPrincipal(idMismaPrioridadMasReciente), new Prioridad(10), 0,
-                ahora.minusSeconds(5), null, null, null, null, null, 0L));
-
-        // creada_en se autoasigna por @PrePersist a Instant.now() y es updatable=false a nivel
-        // JPA: para un test determinista del desempate por creada_en, se fija con SQL nativo
-        // (UPDATE) tras persistir, dentro de su propia transacción para que quede comiteado
-        // antes de la lectura de buscarEjecutables (que usa su propia @Query nativa).
-        var tx = new TransactionTemplate(transactionManager);
-        tx.executeWithoutResult(estado -> {
-            fijarCreadaEn(idMismaPrioridadMasAntigua, ahora.minusSeconds(7200));
-            fijarCreadaEn(idMismaPrioridadMasReciente, ahora.minusSeconds(3600));
-            fijarCreadaEn(idAltaPrioridad, ahora); // creada_en irrelevante: gana por prioridad
-        });
+                ahora.minusSeconds(5), null, null, null, null, null, 0L,
+                ahora.minusSeconds(3600), ahora.minusSeconds(3600)));
 
         var candidatas = repo.buscarEjecutables(ahora, 16);
 
         assertThat(candidatas).extracting(CandidataOrden::ordenId)
                 .containsExactly(idAltaPrioridad, idMismaPrioridadMasAntigua, idMismaPrioridadMasReciente);
-    }
-
-    private void fijarCreadaEn(OrdenId id, Instant creadaEn) {
-        entityManager.createNativeQuery("UPDATE orden SET creada_en = :ts WHERE orden_id = :id")
-                .setParameter("ts", creadaEn)
-                .setParameter("id", id.valor().toString())
-                .executeUpdate();
     }
 
     @Test
@@ -643,19 +628,38 @@ class PersistenciaOrdenIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // OrdenEntity: bookkeeping de infraestructura (creadaEn/actualizadaEn)
+    // OrdenEntity: creadaEn/actualizadaEn las aporta el DOMINIO (OrdenRoot),
+    // esta entidad solo las transporta a columna.
     // ------------------------------------------------------------------
 
     @Test
-    void ordenEntity_alPersistirFijaCreadaEnYActualizadaEn() {
+    void ordenEntity_alPersistirTransportaCreadaEnYActualizadaEnDelDominio() {
         var id = OrdenId.nuevo();
-        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), Instant.now()));
+        var ahoraDeAlta = Instant.now();
+        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), ahoraDeAlta));
 
         var entity = ordenJpaRepository.findById(id.valor()).orElseThrow();
 
         assertThat(entity.getOrdenId()).isEqualTo(id.valor());
-        assertThat(entity.getCreadaEn()).isNotNull();
-        assertThat(entity.getActualizadaEn()).isNotNull();
+        assertThat(entity.getCreadaEn()).isEqualTo(ahoraDeAlta);
+        assertThat(entity.getActualizadaEn()).isEqualTo(ahoraDeAlta);
+    }
+
+    @Test
+    void ordenEntity_trasGuardarQueMutaLaOrden_actualizadaEnReflejaElAhoraDelCambioNoElDeCreacion() {
+        var id = OrdenId.nuevo();
+        var ahoraDeAlta = Instant.now().minusSeconds(3600);
+        repo.crear(OrdenRoot.nueva(nuevaSagaPrincipal(id), ahoraDeAlta));
+
+        var orden = repo.cargar(id);
+        var ahoraDelCambio = Instant.now();
+        orden.resetearIntentos(ahoraDelCambio);
+        repo.guardar(orden);
+
+        var entity = ordenJpaRepository.findById(id.valor()).orElseThrow();
+        assertThat(entity.getCreadaEn()).isEqualTo(ahoraDeAlta);
+        assertThat(entity.getActualizadaEn()).isEqualTo(ahoraDelCambio);
+        assertThat(entity.getActualizadaEn()).isNotEqualTo(entity.getCreadaEn());
     }
 
     /**

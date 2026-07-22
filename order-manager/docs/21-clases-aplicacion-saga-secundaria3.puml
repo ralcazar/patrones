@@ -21,9 +21,10 @@ note right of ServicioSagaSecundaria3
   tx), luego self.aplicar(...) -- vía proxy, para que
   @Transactional no se ignore por auto-invocación -- guarda esa
   misma instancia de OrdenRoot sin recargar: SagaSecundaria3 es un
-  VO inmutable (ver 16), así que aplicar hace
-  orden.reemplazarProceso(saga.aplicarYAvanzar(resultado)) +
-  orden.finalizar(Instant.now()) directo, sin comprobar terminada()
+  VO inmutable (ver 16), así que aplicar hoistea un único var
+  ahora = Instant.now() y hace
+  orden.reemplazarProceso(saga.aplicarYAvanzar(resultado), ahora) +
+  orden.finalizar(ahora) directo, sin comprobar terminada()
   (el único paso siempre termina la saga); si otro actor escribió
   entre medias, guardar falla por version. Siempre devuelve
   Finalizada: nunca HayMasTrabajo ni Aparcar. Sin lease propio: a

@@ -45,16 +45,17 @@ package "business.sagas.aplicacion.servicio.sagasecundaria2" {
     auto-invocación, incluida aplicarFinalizacionYaResuelta que no
     tiene REST previo -- y guarda esa misma instancia de OrdenRoot
     sin recargar: SagaSecundaria2 es un VO inmutable (ver 16), así
-    que aplicarSolicitud/aplicarConciliacionDisponible hacen
+    que aplicarSolicitud/aplicarConciliacionDisponible hoistean un
+    único var ahora = Instant.now() y hacen
     orden.reemplazarProceso(saga.solicitudEnviada() /
-    saga.respuestaRecibida(ref)) antes de aparcar/finalizar; si otro
-    actor escribió entre medias (consumer de Kafka, takeover),
-    guardar falla por version.
+    saga.respuestaRecibida(ref), ahora) antes de aparcar(ventana, ahora)/
+    finalizar(ahora); si otro actor escribió entre medias (consumer
+    de Kafka, takeover), guardar falla por version.
   end note
 
   class ServicioRegistrarRespuestaSecundaria2 <<@Service>> {
     -repo : RepositorioOrden
-    +respuestaOk(ordenId, ref)  «@Transactional: cargar (catch si ya\npurgada) + guard !estaViva()||terminada() +\norden.reemplazarProceso(saga.respuestaRecibida(ref)) + orden.despertar(ahora)»
+    +respuestaOk(ordenId, ref)  «@Transactional: cargar (catch si ya\npurgada) + guard !estaViva()||terminada() +\norden.reemplazarProceso(saga.respuestaRecibida(ref), ahora) + orden.despertar(ahora)»
   }
   note bottom of ServicioRegistrarRespuestaSecundaria2
     @Transactional directamente en respuestaOk: se invoca cross-bean

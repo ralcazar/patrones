@@ -118,17 +118,17 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicarPasoNormal(OrdenRoot orden, SagaPrincipal saga, ResultadoPasoPrincipal resultado) {
+        var ahora = Instant.now();
         var nuevaSaga = saga.aplicarYAvanzar(resultado);
-        orden.reemplazarProceso(nuevaSaga);
+        orden.reemplazarProceso(nuevaSaga, ahora);
         if (nuevaSaga.terminada()) {
-            var ahora = Instant.now();
             crearHijas(nuevaSaga.contextosArranque(), orden.prioridad(), ahora);
             orden.finalizar(ahora);
             repo.guardar(orden);
             return new SenalPaso.Finalizada();
         }
-        orden.resetearIntentos();
-        orden.renovarLease(lease, Instant.now());
+        orden.resetearIntentos(ahora);
+        orden.renovarLease(lease, ahora);
         var ordenGuardada = repo.guardar(orden);
         return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }
@@ -153,9 +153,10 @@ public class ServicioSagaPrincipal implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicarCompensacion(OrdenRoot orden, SagaPrincipal saga) {
-        orden.reemplazarProceso(saga.compensacionCompletada());
-        orden.resetearIntentos();
-        orden.renovarLease(lease, Instant.now());
+        var ahora = Instant.now();
+        orden.reemplazarProceso(saga.compensacionCompletada(), ahora);
+        orden.resetearIntentos(ahora);
+        orden.renovarLease(lease, ahora);
         var ordenGuardada = repo.guardar(orden);
         return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }

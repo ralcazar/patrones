@@ -38,10 +38,11 @@ REST -> SOP ++ : reintentarPaso(tipo, id, nombrePaso, quien)
 group Transacción (@Transactional en el propio método: invocado\ncross-bean desde el adaptador REST, el proxy aplica sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
-  SOP -> ORDEN ++ : resetearIntentos()
+  SOP -> SOP : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen resetearIntentos y despertar]
+  SOP -> ORDEN ++ : resetearIntentos(ahora)
   ORDEN -> ORDEN : intentos=0; ticketAbiertoEn=null
   return
-  SOP -> ORDEN ++ : despertar(Instant.now())
+  SOP -> ORDEN ++ : despertar(ahora)
   ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
   return
   SOP -> REPO ++ : guardar(orden)
@@ -56,14 +57,15 @@ REST -> SOP ++ : marcarPasoOk(tipo, id, nombrePaso, quien,\njustificacion, datos
 group Transacción (@Transactional en el propio método, sin self)
   SOP -> REPO ++ : cargar(id)
   return orden
+  SOP -> SOP : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y despertar]
   SOP -> ORDEN ++ : orden.proceso()
   return proceso
   SOP -> ORDEN ++ : proceso.marcarPasoActualOkManual(\nquien, justificacion, datosManuales)
   ORDEN -> ORDEN : construye el ResultadoPaso a partir de datosManuales\n(lanza DatosManualesRequeridosException si faltan);\naplica y avanza(); auditar(MARCAR_OK_MANUAL)
   return procesoNuevo (instancia nueva, VO inmutable: proceso no muta)
-  SOP -> ORDEN ++ : orden.reemplazarProceso(procesoNuevo)
-  return
-  SOP -> ORDEN ++ : despertar(Instant.now())
+  SOP -> ORDEN ++ : orden.reemplazarProceso(procesoNuevo, ahora)
+  return actualizadaEn = ahora
+  SOP -> ORDEN ++ : despertar(ahora)
   return
   SOP -> REPO ++ : guardar(orden)
   return
@@ -77,6 +79,7 @@ REST -> CANC ++ : cancelarPrincipal(id, quien, motivo)
 group Transacción (@Transactional en el propio método, sin self)
   CANC -> REPO ++ : cargar(id)
   return orden
+  CANC -> CANC : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y despertar]
   CANC -> ORDEN ++ : orden.proceso()
   return saga (cast a SagaPrincipal)
   CANC -> SAGA ++ : saga.cancelar(quien, motivo)
@@ -91,9 +94,9 @@ group Transacción (@Transactional en el propio método, sin self)
     SAGA -> SAGA : estado = COMPENSAR_PASO2 (si >= PASO2_HECHO),\nCOMPENSAR_PASO1 (si >= PASO1_HECHO) o CANCELADA;\nauditar(CANCELAR, motivo)
   end
   return nuevaSaga (instancia nueva salvo el no-op, VO inmutable: SAGA no muta)
-  CANC -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
-  CANC -> ORDEN ++ : despertar(Instant.now())
+  CANC -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
+  CANC -> ORDEN ++ : despertar(ahora)
   return
   CANC -> REPO ++ : guardar(orden)
   return
@@ -135,14 +138,15 @@ ORQ -> PCOMP ++ : puertoPaso2.compensar(CompensarPaso2(ctx.refPaso2()))\n-- REST
 return ok
 ORQ -> ORQ ++ : self.aplicarCompensacion(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción única
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen las 3 mutaciones de abajo]
   ORQ -> SAGA ++ : saga.compensacionCompletada()
   SAGA -> SAGA : COMPENSAR_PASO2 -> COMPENSAR_PASO1
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
+  ORQ -> ORDEN ++ : resetearIntentos(ahora)
   return
-  ORQ -> ORDEN ++ : resetearIntentos()
-  return
-  ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+  ORQ -> ORDEN ++ : renovarLease(lease, ahora)
   return
   ORQ -> REPO ++ : guardar(orden)
   return

@@ -163,7 +163,7 @@ class ServicioSagaPrincipalTest {
         // Soporte cancela: dispara la compensación PASO2 -> PASO1 -> CANCELADA.
         var ordenACancelar = repo.cargar(id);
         var sagaACancelar = (SagaPrincipal) ordenACancelar.proceso();
-        ordenACancelar.reemplazarProceso(sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio"));
+        ordenACancelar.reemplazarProceso(sagaACancelar.cancelar(new UsuarioSoporte("ana"), "motivo de negocio"), Instant.now());
         ordenACancelar.despertar(Instant.now());
         repo.guardar(ordenACancelar);
 
@@ -191,7 +191,7 @@ class ServicioSagaPrincipalTest {
             var ordenOtroPod = repo.cargar(id);
             var sagaOtroPod = (SagaPrincipal) ordenOtroPod.proceso();
             ordenOtroPod.reemplazarProceso(sagaOtroPod.aplicarYAvanzar(
-                    new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod"))));
+                    new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-otro-pod"))), Instant.now());
             repo.guardar(ordenOtroPod);
             return new ResultadoPasoPrincipal.ResultadoPaso3(new RefPaso3("ref3-zombi"));
         });

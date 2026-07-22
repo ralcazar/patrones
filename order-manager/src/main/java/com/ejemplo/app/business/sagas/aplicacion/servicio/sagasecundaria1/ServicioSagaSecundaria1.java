@@ -64,15 +64,16 @@ public class ServicioSagaSecundaria1 implements ProcesadorOrden {
 
     @Transactional
     public SenalPaso aplicar(OrdenRoot orden, SagaSecundaria1 saga, ResultadoPasoSecundaria1 resultado) {
+        var ahora = Instant.now();
         var nuevaSaga = saga.aplicarYAvanzar(resultado);
-        orden.reemplazarProceso(nuevaSaga);
+        orden.reemplazarProceso(nuevaSaga, ahora);
         if (nuevaSaga.terminada()) {
-            orden.finalizar(Instant.now());
+            orden.finalizar(ahora);
             repo.guardar(orden);
             return new SenalPaso.Finalizada();
         }
-        orden.resetearIntentos();
-        orden.renovarLease(lease, Instant.now());
+        orden.resetearIntentos(ahora);
+        orden.renovarLease(lease, ahora);
         var ordenGuardada = repo.guardar(orden);
         return new SenalPaso.HayMasTrabajo(ordenGuardada);
     }

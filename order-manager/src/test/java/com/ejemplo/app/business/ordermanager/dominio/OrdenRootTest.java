@@ -41,6 +41,14 @@ class OrdenRootTest {
     }
 
     @Test
+    void nueva_fijaCreadaEnYActualizadaEnAlAhoraDeAlta() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+
+        assertThat(orden.creadaEn()).isEqualTo(T0);
+        assertThat(orden.actualizadaEn()).isEqualTo(T0);
+    }
+
+    @Test
     void nueva_conPrioridadExplicita_laConservaEnElAgregado() {
         var prioridad = new Prioridad(30);
 
@@ -60,6 +68,16 @@ class OrdenRootTest {
     }
 
     @Test
+    void rehidratar_conPrioridadExplicitaSinTimestamps_defaultCreadaYActualizadaAProximoReintentoEn() {
+        // Sobrecarga de conveniencia de 10 args (con prioridad, sin timestamps).
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), new Prioridad(20), 0, T0,
+                null, null, null, null, null, 0L);
+
+        assertThat(orden.creadaEn()).isEqualTo(T0);
+        assertThat(orden.actualizadaEn()).isEqualTo(T0);
+    }
+
+    @Test
     void rehidratar_sinPrioridadExplicita_usaPrioridadNormal() {
         var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, null, null, null, null, null, 0L);
 
@@ -67,14 +85,37 @@ class OrdenRootTest {
     }
 
     @Test
+    void rehidratar_sinPrioridadNiTimestamps_defaultCreadaYActualizadaAProximoReintentoEn() {
+        // Sobrecarga de conveniencia de 9 args (sin prioridad, sin timestamps).
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), 0, T0, null, null, null, null, null, 0L);
+
+        assertThat(orden.creadaEn()).isEqualTo(T0);
+        assertThat(orden.actualizadaEn()).isEqualTo(T0);
+    }
+
+    @Test
+    void rehidratar_formaCompleta_conservaCreadaYActualizadaEnDistintas() {
+        var creadaEn = T0.minusSeconds(3600);
+        var actualizadaEn = T0.minusSeconds(30);
+
+        var orden = OrdenRoot.rehidratar(procesoCualquiera(), Prioridad.normal(), 0, T0,
+                null, null, null, null, null, 0L, creadaEn, actualizadaEn);
+
+        assertThat(orden.creadaEn()).isEqualTo(creadaEn);
+        assertThat(orden.actualizadaEn()).isEqualTo(actualizadaEn);
+    }
+
+    @Test
     void asignarToken_fijaLeaseSegunAhoraMasDuracion() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         var token = UUID.randomUUID();
+        var ahora = T0.plusSeconds(5);
 
-        orden.asignarToken(token, LEASE, T0);
+        orden.asignarToken(token, LEASE, ahora);
 
         assertThat(orden.tokenTrabajador()).isEqualTo(token);
-        assertThat(orden.tokenExpiraEn()).isEqualTo(T0.plus(LEASE));
+        assertThat(orden.tokenExpiraEn()).isEqualTo(ahora.plus(LEASE));
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
     }
 
     @Test
@@ -105,6 +146,7 @@ class OrdenRootTest {
         orden.renovarLease(LEASE, masTarde);
 
         assertThat(orden.tokenExpiraEn()).isEqualTo(masTarde.plus(LEASE));
+        assertThat(orden.actualizadaEn()).isEqualTo(masTarde);
     }
 
     @Test
@@ -119,7 +161,7 @@ class OrdenRootTest {
     }
 
     @Test
-    void resetearIntentos_ponePasoOkYCierraElTicketAbiertoYLimpiaElUltimoError() {
+    void resetearIntentos_ponePasoOkYCierraElTicketAbiertoYLimpiaElUltimoErrorYActualizaMarca() {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         var politica = new PoliticaReintentos();
         for (int i = 0; i < 8; i++) {
@@ -129,12 +171,25 @@ class OrdenRootTest {
         assertThat(orden.intentos()).isEqualTo(8);
         assertThat(orden.ticketAbiertoEn()).isNotNull();
         assertThat(orden.ultimoError()).isEqualTo(ERROR);
+        var ahora = T0.plusSeconds(5);
 
-        orden.resetearIntentos();
+        orden.resetearIntentos(ahora);
 
         assertThat(orden.intentos()).isZero();
         assertThat(orden.ticketAbiertoEn()).isNull();
         assertThat(orden.ultimoError()).isNull();
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
+    }
+
+    @Test
+    void marcarTicketAbierto_actualizaLaMarcaTemporal() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+        var ahora = T0.plusSeconds(5);
+
+        orden.marcarTicketAbierto(ahora);
+
+        assertThat(orden.ticketAbiertoEn()).isEqualTo(ahora);
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
     }
 
     @Test
@@ -147,6 +202,7 @@ class OrdenRootTest {
 
         assertThat(orden.proximoReintentoEn()).isEqualTo(ahora);
         assertThat(orden.tokenTrabajador()).isNull();
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
     }
 
     @Test
@@ -154,11 +210,13 @@ class OrdenRootTest {
         var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
         orden.asignarToken(UUID.randomUUID(), LEASE, T0);
         var ventana = Duration.ofHours(3);
+        var ahora = T0.plusSeconds(5);
 
-        orden.aparcar(ventana, T0);
+        orden.aparcar(ventana, ahora);
 
-        assertThat(orden.proximoReintentoEn()).isEqualTo(T0.plus(ventana));
+        assertThat(orden.proximoReintentoEn()).isEqualTo(ahora.plus(ventana));
         assertThat(orden.tokenTrabajador()).isNull();
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
     }
 
     @Test
@@ -173,6 +231,7 @@ class OrdenRootTest {
         assertThat(orden.proximoReintentoEn()).isEqualTo(T0.plus(Duration.ofMinutes(1)));
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.ultimoError()).isEqualTo(ERROR);
+        assertThat(orden.actualizadaEn()).isEqualTo(T0);
     }
 
     @Test
@@ -201,6 +260,7 @@ class OrdenRootTest {
         assertThat(orden.completadaEn()).isEqualTo(completada);
         assertThat(orden.tokenTrabajador()).isNull();
         assertThat(orden.estaViva()).isFalse();
+        assertThat(orden.actualizadaEn()).isEqualTo(completada);
     }
 
     @Test
@@ -228,6 +288,18 @@ class OrdenRootTest {
 
         assertThat(orden.intentos()).isEqualTo(1);
         assertThat(orden.ultimoError()).isEqualTo(ERROR);
+    }
+
+    @Test
+    void reemplazarProceso_sustituyeElProcesoYActualizaLaMarcaTemporal() {
+        var orden = OrdenRoot.nueva(procesoCualquiera(), T0);
+        var nuevoProceso = procesoCualquiera();
+        var ahora = T0.plusSeconds(5);
+
+        orden.reemplazarProceso(nuevoProceso, ahora);
+
+        assertThat(orden.proceso()).isEqualTo(nuevoProceso);
+        assertThat(orden.actualizadaEn()).isEqualTo(ahora);
     }
 
     @Test

@@ -81,16 +81,17 @@ loop hasta Aparcar / Finalizada / excepción
     return ResultadoPasoN(ref)
     ORQ -> ORQ ++ : self.aplicarPasoNormal(orden, saga, resultado)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
     group Transacción: checkpoint del paso (negocio + ejecución, un solo guardar)
+      ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen las 3 mutaciones de abajo]
       ORQ -> SAGA ++ : saga.aplicarYAvanzar(resultado)
       SAGA -> SAGA : ctx = ctx.aplicar(r); avanzar()
       return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-      ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-      return
+      ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+      return actualizadaEn = ahora
       ORQ -> SAGA ++ : nuevaSaga.terminada()
       return false (PASO1_HECHO .. PASO7_HECHO)
-      ORQ -> ORDEN ++ : resetearIntentos()
-      return intentos=0, ticketAbiertoEn=null
-      ORQ -> ORDEN ++ : renovarLease(lease, Instant.now())
+      ORQ -> ORDEN ++ : resetearIntentos(ahora)
+      return intentos=0, ticketAbiertoEn=null, actualizadaEn=ahora
+      ORQ -> ORDEN ++ : renovarLease(lease, ahora)
       return tokenExpiraEn = ahora + lease
       ORQ -> REPO ++ : guardar(orden)
       return

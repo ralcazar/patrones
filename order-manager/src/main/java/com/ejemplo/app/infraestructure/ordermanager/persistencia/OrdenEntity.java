@@ -17,8 +17,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import jakarta.persistence.Version;
@@ -33,9 +31,12 @@ import jakarta.persistence.Version;
  * forma de que una consulta vea negocio y ejecución de instantes distintos
  * (lectura mixta / torn read).
  *
- * {@code creadaEn}/{@code actualizadaEn} son bookkeeping puro de infraestructura
- * (para el criterio de limpieza y el modelo de lectura de soporte): el dominio
- * no los conoce, OrdenRoot no los modela.
+ * {@code creadaEn}/{@code actualizadaEn} las aporta el DOMINIO (OrdenRoot las
+ * modela y las fija: {@code creadaEn} al crear la orden, {@code actualizadaEn}
+ * en cada mutación con el {@code ahora} de la operación); esta entidad solo
+ * las transporta a columna, sin fijarlas por su cuenta. Lo único que sigue
+ * siendo mecanismo de infraestructura es la marca transitoria {@code nueva}
+ * (ver {@link #marcarComoNueva} más abajo).
  *
  * Implementa {@link Persistable} porque el {@code @Id} lo asigna el dominio
  * (UUID de cliente, no {@code @GeneratedValue}): con un {@code version}
@@ -123,7 +124,7 @@ public class OrdenEntity implements Persistable<UUID> {
             List<AuditoriaEntity> auditoria,
             int intentos, Instant proximoReintentoEn, String tokenTrabajador, Instant tokenExpiraEn,
             Instant ticketAbiertoEn, Instant completadaEn, String ultimoErrorTipo, String ultimoErrorMensaje,
-            long version) {
+            long version, Instant creadaEn, Instant actualizadaEn) {
         this.ordenId = ordenId;
         this.tipo = tipo;
         this.externalId = externalId;
@@ -139,20 +140,8 @@ public class OrdenEntity implements Persistable<UUID> {
         this.ultimoErrorTipo = ultimoErrorTipo;
         this.ultimoErrorMensaje = ultimoErrorMensaje;
         this.version = version;
-    }
-
-    @PrePersist
-    void alCrear() {
-        var ahora = Instant.now();
-        if (creadaEn == null) {
-            creadaEn = ahora;
-        }
-        actualizadaEn = ahora;
-    }
-
-    @PreUpdate
-    void alActualizar() {
-        actualizadaEn = Instant.now();
+        this.creadaEn = creadaEn;
+        this.actualizadaEn = actualizadaEn;
     }
 
     /** Solo la llama {@code AdaptadorRepositorioOrden.crear}: fuerza persist() en vez de merge(). */

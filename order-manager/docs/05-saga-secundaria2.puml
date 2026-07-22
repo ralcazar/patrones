@@ -49,12 +49,13 @@ ORQ -> PSOL ++ : solicitar(saga.id(), cmd) -- REST fuera de tx\n(el ordenId viaj
 return
 ORQ -> ORQ ++ : self.aplicarSolicitud(orden, saga)  -- vía proxy (@Transactional;\nauto-invocación saltaría el proxy, ver ConfiguracionSagas)
 group Transacción única
+  ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y aparcar]
   ORQ -> SAGA ++ : saga.solicitudEnviada()
   SAGA -> SAGA : estado = ESPERANDO_RESPUESTA
   return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-  return
-  ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), Instant.now())
+  ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+  return actualizadaEn = ahora
+  ORQ -> ORDEN ++ : aparcar(Duration.ofHours(3), ahora)
   ORDEN -> ORDEN : proximoReintentoEn = ahora + 3h; liberarToken()
   return
   ORQ -> REPO ++ : guardar(orden)
@@ -91,12 +92,13 @@ group Transacción (@Transactional en respuestaOk: método público,\nse invoca 
     else orden viva y proceso no terminado (camino normal)
       SREG -> ORDEN ++ : orden.proceso()
       return saga (SagaSecundaria2)
+      SREG -> SREG : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y despertar]
       SREG -> SAGA ++ : saga.respuestaRecibida(ref)
       SAGA -> SAGA : refRespuesta = ref; estado = TERMINADA
       return nuevaSaga (instancia nueva, VO inmutable: SAGA no muta)
-      SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-      return
-      SREG -> ORDEN ++ : despertar(Instant.now())
+      SREG -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+      return actualizadaEn = ahora
+      SREG -> ORDEN ++ : despertar(ahora)
       ORDEN -> ORDEN : proximoReintentoEn = ahora; liberarToken()
       return
       SREG -> REPO ++ : guardar(orden)
@@ -161,11 +163,12 @@ return Disponible(ref) | SinResultado() | FalloRegistrado(motivo)
 alt Disponible(ref): el resultado ya existía (el evento se perdió o va tarde)
   ORQ -> ORQ ++ : self.aplicarConciliacionDisponible(orden, saga, ref)  -- vía proxy (@Transactional)
   group Transacción
+    ORQ -> ORQ : ahora = Instant.now()  [hoisteado una vez, reutilizado\nen reemplazarProceso y finalizar]
     ORQ -> SAGA ++ : saga.respuestaRecibida(ref)
     return nuevaSaga (estado = TERMINADA, instancia nueva: SAGA no muta)
-    ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga)
-    return
-    ORQ -> ORDEN ++ : finalizar(Instant.now())
+    ORQ -> ORDEN ++ : orden.reemplazarProceso(nuevaSaga, ahora)
+    return actualizadaEn = ahora
+    ORQ -> ORDEN ++ : finalizar(ahora)
     return
     ORQ -> REPO ++ : guardar(orden)
     return

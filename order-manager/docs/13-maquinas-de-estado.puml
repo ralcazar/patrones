@@ -8,7 +8,7 @@ note as NInmutabilidad
   cada transición de las de abajo (aplicarYAvanzar, cancelar,
   compensacionCompletada, solicitudEnviada, respuestaRecibida)
   NO muta el objeto -- devuelve una instancia
-  NUEVA en el estado siguiente. OrdenRoot.reemplazarProceso(nueva)
+  NUEVA en el estado siguiente. OrdenRoot.reemplazarProceso(nueva, ahora)
   es quien sustituye el valor en el agregado tras cada transición
   (ver 02, 03, 04, 05, 06, 08).
 end note
@@ -116,7 +116,7 @@ note bottom of MResultado
   intentos, proximoReintentoEn, tokenTrabajador/tokenExpiraEn (lease)
   y ticketAbiertoEn NO son una FSM: son atributos operativos de
   OrdenRoot que cambian con cada método (programarReintento(),
-  resetearIntentos(), asignarToken()/renovarLease()/liberarToken(),
+  resetearIntentos(ahora), asignarToken()/renovarLease()/liberarToken(),
   marcarTicketAbierto()) independientemente del estado de negocio
   de la saga que contiene. Ya no existen EstadoTicket ni EstadoPaso:
   el ticket es ticketAbiertoEn (Instant o null) y el "paso pendiente"

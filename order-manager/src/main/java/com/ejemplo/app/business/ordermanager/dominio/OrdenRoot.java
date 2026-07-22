@@ -10,14 +10,17 @@ import org.jmolecules.ddd.annotation.Identity;
 /**
  * El ÚNICO agregado por orden: raíz que contiene el {@link Proceso} (estado de
  * NEGOCIO) y añade el estado de EJECUCIÓN (reintentos, lease del token,
- * ticket, instante de finalización). Una sola {@code version} protege el agregado
- * completo: varios flujos mutan negocio y ejecución en la misma transacción,
- * así que separarlos en dos agregados violaría la regla de un agregado por
- * transacción.
+ * ticket, instante de finalización) Y sus propias marcas temporales
+ * ({@code creadaEn}/{@code actualizadaEn}). Una sola {@code version} protege
+ * el agregado completo: varios flujos mutan negocio y ejecución en la misma
+ * transacción, así que separarlos en dos agregados violaría la regla de un
+ * agregado por transacción.
  *
  * Reloj determinista: nunca llama a {@code Instant.now()}; todo método que
  * depende del tiempo recibe {@code Instant ahora} como último parámetro, que
- * aporta la capa de aplicación.
+ * aporta la capa de aplicación. {@code actualizadaEn} la fija el propio
+ * agregado en cada mutación con ese {@code ahora}, no un {@code @PreUpdate}
+ * de infraestructura.
  */
 @AggregateRoot
 public final class OrdenRoot {
@@ -34,10 +37,13 @@ public final class OrdenRoot {
     private Instant completadaEn;
     private DetalleError ultimoError;
     private final long version;
+    private final Instant creadaEn;
+    private Instant actualizadaEn;
 
     private OrdenRoot(OrdenId id, Proceso<?> proceso, Prioridad prioridad, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
-            Instant completadaEn, DetalleError ultimoError, long version) {
+            Instant completadaEn, DetalleError ultimoError, long version,
+            Instant creadaEn, Instant actualizadaEn) {
         this.id = id;
         this.proceso = proceso;
         this.prioridad = prioridad;
@@ -49,11 +55,14 @@ public final class OrdenRoot {
         this.completadaEn = completadaEn;
         this.ultimoError = ultimoError;
         this.version = version;
+        this.creadaEn = creadaEn;
+        this.actualizadaEn = actualizadaEn;
     }
 
     /** Alta con prioridad explícita (la fija quien crea la orden, p. ej. una saga). */
     public static OrdenRoot nueva(Proceso<?> proceso, Prioridad prioridad, Instant ahora) {
-        return new OrdenRoot(proceso.id(), proceso, prioridad, 0, ahora, null, null, null, null, null, 0L);
+        return new OrdenRoot(proceso.id(), proceso, prioridad, 0, ahora, null, null, null, null, null, 0L,
+                ahora, ahora);
     }
 
     /** Alta con prioridad {@link Prioridad#normal()} (conveniencia para quien no distingue prioridad). */
@@ -64,17 +73,36 @@ public final class OrdenRoot {
     /** Para el adaptador de persistencia. */
     public static OrdenRoot rehidratar(Proceso<?> proceso, Prioridad prioridad, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
-            Instant completadaEn, DetalleError ultimoError, long version) {
+            Instant completadaEn, DetalleError ultimoError, long version,
+            Instant creadaEn, Instant actualizadaEn) {
         return new OrdenRoot(proceso.id(), proceso, prioridad, intentos, proximoReintentoEn, tokenTrabajador,
-                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
+                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version, creadaEn, actualizadaEn);
     }
 
-    /** Sobrecarga de conveniencia con {@link Prioridad#normal()} (evita romper llamantes que no distinguen prioridad). */
+    /**
+     * Sobrecarga de conveniencia con {@link Prioridad#normal()} (evita romper llamantes que no distinguen
+     * prioridad). Por defecto {@code creadaEn = actualizadaEn = proximoReintentoEn}: quien necesite marcas
+     * temporales reales debe usar la forma completa.
+     */
     public static OrdenRoot rehidratar(Proceso<?> proceso, int intentos, Instant proximoReintentoEn,
             UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
             Instant completadaEn, DetalleError ultimoError, long version) {
         return rehidratar(proceso, Prioridad.normal(), intentos, proximoReintentoEn, tokenTrabajador,
-                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version);
+                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version,
+                proximoReintentoEn, proximoReintentoEn);
+    }
+
+    /**
+     * Sobrecarga de conveniencia con prioridad explícita pero sin marcas temporales (evita romper llamantes
+     * que no las distinguen). Por defecto {@code creadaEn = actualizadaEn = proximoReintentoEn}: quien
+     * necesite marcas temporales reales debe usar la forma completa.
+     */
+    public static OrdenRoot rehidratar(Proceso<?> proceso, Prioridad prioridad, int intentos, Instant proximoReintentoEn,
+            UUID tokenTrabajador, Instant tokenExpiraEn, Instant ticketAbiertoEn,
+            Instant completadaEn, DetalleError ultimoError, long version) {
+        return rehidratar(proceso, prioridad, intentos, proximoReintentoEn, tokenTrabajador,
+                tokenExpiraEn, ticketAbiertoEn, completadaEn, ultimoError, version,
+                proximoReintentoEn, proximoReintentoEn);
     }
 
     /**
@@ -87,11 +115,13 @@ public final class OrdenRoot {
     public void asignarToken(UUID token, Duration lease, Instant ahora) {
         this.tokenTrabajador = token;
         this.tokenExpiraEn = ahora.plus(lease);
+        this.actualizadaEn = ahora;
     }
 
     /** En la tx de cada paso completado: evita que el lease venza a media orden larga. */
     public void renovarLease(Duration lease, Instant ahora) {
         this.tokenExpiraEn = ahora.plus(lease);
+        this.actualizadaEn = ahora;
     }
 
     /** Hay un worker con el token en curso y su lease todavía no ha vencido. */
@@ -106,27 +136,31 @@ public final class OrdenRoot {
     }
 
     /** Paso OK: la orden vuelve a estar "sana". Un atasco posterior abrirá un ticket NUEVO. */
-    public void resetearIntentos() {
+    public void resetearIntentos(Instant ahora) {
         this.intentos = 0;
         this.ticketAbiertoEn = null;
         this.ultimoError = null;
+        this.actualizadaEn = ahora;
     }
 
     /** Escalera de reintentos consumida (ver {@link PoliticaReintentos}): soporte ya fue avisado. */
     public void marcarTicketAbierto(Instant ahora) {
         this.ticketAbiertoEn = ahora;
+        this.actualizadaEn = ahora;
     }
 
     /** Eventos externos o intervención de soporte: la orden es candidata inmediata. */
     public void despertar(Instant ahora) {
         this.proximoReintentoEn = ahora;
         liberarToken();
+        this.actualizadaEn = ahora;
     }
 
     /** Secundaria2 esperando el evento Kafka de respuesta. */
     public void aparcar(Duration ventana, Instant ahora) {
         this.proximoReintentoEn = ahora.plus(ventana);
         liberarToken();
+        this.actualizadaEn = ahora;
     }
 
     /** Un paso ha fallado: cuenta el intento, calcula la próxima ventana con la política y libera el token. */
@@ -135,6 +169,7 @@ public final class OrdenRoot {
         this.proximoReintentoEn = ahora.plus(politica.esperaTras(intentos));
         this.ultimoError = error;
         liberarToken();
+        this.actualizadaEn = ahora;
     }
 
     /**
@@ -145,9 +180,10 @@ public final class OrdenRoot {
      * que sí lo conserva mientras la orden siga viva).
      */
     public void finalizar(Instant ahora) {
-        resetearIntentos();
+        resetearIntentos(ahora);
         this.completadaEn = ahora;
         liberarToken();
+        this.actualizadaEn = ahora;
     }
 
     /** Todavía no ha finalizado: sigue siendo candidata a ejecución. */
@@ -178,8 +214,9 @@ public final class OrdenRoot {
      * reasigna el campo — nadie más (aplicación, infraestructura) debe
      * reemplazarlo por otra vía.
      */
-    public void reemplazarProceso(Proceso<?> nuevo) {
+    public void reemplazarProceso(Proceso<?> nuevo, Instant ahora) {
         this.proceso = nuevo;
+        this.actualizadaEn = ahora;
     }
 
     public Proceso<?> proceso() { return proceso; }
@@ -195,4 +232,6 @@ public final class OrdenRoot {
     public Instant completadaEn() { return completadaEn; }
     public DetalleError ultimoError() { return ultimoError; }
     public long version() { return version; }
+    public Instant creadaEn() { return creadaEn; }
+    public Instant actualizadaEn() { return actualizadaEn; }
 }

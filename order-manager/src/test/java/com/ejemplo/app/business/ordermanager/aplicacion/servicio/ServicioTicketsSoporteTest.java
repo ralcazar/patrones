@@ -102,7 +102,7 @@ class ServicioTicketsSoporteTest {
 
         // La orden se recupera: un paso OK resetea intentos y cierra la marca de ticket.
         var orden = repo.cargar(id);
-        orden.resetearIntentos();
+        orden.resetearIntentos(Instant.now());
         repo.guardar(orden);
         assertThat(repo.estadoActual(id).ticketAbiertoEn()).isNull();
 

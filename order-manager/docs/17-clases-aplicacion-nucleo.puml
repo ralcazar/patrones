@@ -92,11 +92,14 @@ package "servicio" {
     instancia de OrdenRoot (sin recargar): el Proceso que contiene es
     un VO inmutable (ver 14), así que aplicarX captura la instancia
     nueva que devuelve la transición (saga.aplicarYAvanzar(...) etc.)
-    y la fija con orden.reemplazarProceso(nuevaSaga) antes de la
-    parte operativa de la señal
-    (resetearIntentos()+renovarLease() | aparcar() | finalizar()),
-    y guarda una única vez: si otro actor escribió con el REST en
-    vuelo, guardar falla por version (takeover seguro).
+    y la fija con orden.reemplazarProceso(nuevaSaga, ahora) antes de
+    la parte operativa de la señal
+    (resetearIntentos(ahora)+renovarLease(lease, ahora) | aparcar() |
+    finalizar()), con un único var ahora = Instant.now() hoisteado al
+    principio de cada método @Transactional y reutilizado en todas
+    sus mutaciones (fija también actualizadaEn, ver 14), y guarda una
+    única vez: si otro actor escribió con el REST en vuelo, guardar
+    falla por version (takeover seguro).
   end note
 
   class "SenalPaso" as SenalPaso <<sealed>> {

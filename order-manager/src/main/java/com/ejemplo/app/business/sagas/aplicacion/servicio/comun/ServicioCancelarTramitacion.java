@@ -31,10 +31,11 @@ public class ServicioCancelarTramitacion implements CasoUsoCancelarTramitacion {
     public void cancelarPrincipal(OrdenId id, UsuarioSoporte quien, String motivo) {
         // El agregado valida el punto de no retorno; las excepciones
         // (PuntoNoRetornoSuperadoException, etc.) suben al adaptador REST tal cual.
+        var ahora = Instant.now();
         var orden = repo.cargar(id);
         var saga = (SagaPrincipal) orden.proceso();
-        orden.reemplazarProceso(saga.cancelar(quien, motivo));
-        orden.despertar(Instant.now());
+        orden.reemplazarProceso(saga.cancelar(quien, motivo), ahora);
+        orden.despertar(ahora);
         repo.guardar(orden);
     }
 }

@@ -41,7 +41,7 @@ package "dominio.sagaprincipal" {
     exactamente lo que cada secundaria necesita. VO inmutable (ver
     14): cada transición devuelve una instancia nueva; el llamante
     (ServicioSagaPrincipal/ServicioCancelarTramitacion, ver 18)
-    hace orden.reemplazarProceso(nuevaSaga) antes de guardar.
+    hace orden.reemplazarProceso(nuevaSaga, ahora) antes de guardar.
   end note
 
   enum EstadoSagaPrincipal {

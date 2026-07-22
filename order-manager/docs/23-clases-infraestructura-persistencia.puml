@@ -142,13 +142,20 @@ package "persistencia" {
     completadaEn : Instant  «null = viva; no-null = finalizada (ok o cancelada)»
     ultimoErrorTipo / ultimoErrorMensaje : String  «clase+mensaje del\núltimo fallo de paso, sin stacktrace»
     @Version version : long  «ÚNICA del agregado, ahora protege\nTAMBIÉN el negocio en la misma fila»
-    creadaEn / actualizadaEn : Instant  «@PrePersist/@PreUpdate»
+    creadaEn / actualizadaEn : Instant  «las aporta el DOMINIO (OrdenRoot,\nver 14): esta entidad solo las transporta a columna»
   }
   class AuditoriaEntity <<@Embeddable>> {
     cuando / quien / accion / detalle
   }
 
   note bottom of OrdenEntity
+    creada_en/actualizada_en las modela y las fija el DOMINIO
+    (OrdenRoot.creadaEn/actualizadaEn, ver 14): creadaEn una vez al
+    crear la orden, actualizadaEn en CADA mutador con el ahora de su
+    operación. Ya NO hay @PrePersist alCrear()/@PreUpdate
+    alActualizar() en esta entidad -- lo único que sigue siendo
+    mecanismo de infraestructura es la marca transitoria (@Transient)
+    nueva, que decide persist() vs merge() (Persistable<UUID>).
     Tablas Oracle: DDL manual en order-manager/db/ (orden.sql,
     proceso_auditoria.sql — un DBA lo aplica a mano, sin Flyway ni
     ddl-auto: none). orden (orden_id PK; negocio: tipo, external_id,
